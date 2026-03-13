@@ -297,6 +297,8 @@ void Titan::cmd(std::string params,
         titan_->ResetEncoder(motor);
         response->success = true;
         response->message = "encoder " + std::to_string(motor) + " reset";
+        RCLCPP_INFO(this->get_logger(), "Encoder Reset Command Executed.");
+
 
     // --- current limiting ---
 

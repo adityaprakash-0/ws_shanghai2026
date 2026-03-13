@@ -78,6 +78,8 @@ private:
     int axis_linear_y_;
     int axis_angular_z_;
     int button_turbo_;
+
+    bool zero_published_ = false;
 };
 
 } // namespace studica_control

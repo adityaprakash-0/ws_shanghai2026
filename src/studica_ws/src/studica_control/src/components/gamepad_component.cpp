@@ -189,6 +189,28 @@ void GamepadController::joy_callback(const sensor_msgs::msg::Joy::SharedPtr msg)
 
 // builds a twist message from the current movement state and publishes it.
 // if turbo mode is active, scales are multiplied by the turbo multiplier.
+// void GamepadController::publish_twist() {
+//     double lin_scale = linear_scale_  * (turbo_mode_ ? turbo_multiplier_ : 1.0);
+//     double ang_scale = angular_scale_ * (turbo_mode_ ? turbo_multiplier_ : 1.0);
+
+//     geometry_msgs::msg::Twist twist_msg;
+//     twist_msg.linear.x  = linear_x_  * lin_scale;
+//     twist_msg.linear.y  = linear_y_  * lin_scale;
+//     twist_msg.linear.z  = 0.0;
+//     twist_msg.angular.x = 0.0;
+//     twist_msg.angular.y = 0.0;
+//     twist_msg.angular.z = angular_z_ * ang_scale;
+
+//     cmd_vel_publisher_->publish(twist_msg);
+
+//     if (std::abs(linear_x_) > 0.01 || std::abs(linear_y_) > 0.01 || std::abs(angular_z_) > 0.01) {
+//         RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 500,
+//                               "publishing cmd_vel — linear: [%.2f, %.2f], angular: %.2f",
+//                               twist_msg.linear.x, twist_msg.linear.y, twist_msg.angular.z);
+//     }
+// }
+
+
 void GamepadController::publish_twist() {
     double lin_scale = linear_scale_  * (turbo_mode_ ? turbo_multiplier_ : 1.0);
     double ang_scale = angular_scale_ * (turbo_mode_ ? turbo_multiplier_ : 1.0);
@@ -201,9 +223,23 @@ void GamepadController::publish_twist() {
     twist_msg.angular.y = 0.0;
     twist_msg.angular.z = angular_z_ * ang_scale;
 
-    cmd_vel_publisher_->publish(twist_msg);
+    // Check if the joysticks are inside the deadzone (effectively zero)
+    bool is_idle = (std::abs(linear_x_) < 0.001 && std::abs(linear_y_) < 0.001 && std::abs(angular_z_) < 0.001);
 
-    if (std::abs(linear_x_) > 0.01 || std::abs(linear_y_) > 0.01 || std::abs(angular_z_) > 0.01) {
+    if (is_idle) {
+        // If we are idle, only publish the STOP command ONCE. 
+        if (!zero_published_) {
+            cmd_vel_publisher_->publish(twist_msg);
+            zero_published_ = true;
+        }
+        // If zero_published_ is already true, do nothing! The gamepad stays silent.
+    } else {
+        // We are actively driving. Publish normally and reset the zero flag.
+        cmd_vel_publisher_->publish(twist_msg);
+        zero_published_ = false;
+    }
+
+    if (!is_idle) {
         RCLCPP_DEBUG_THROTTLE(this->get_logger(), *this->get_clock(), 500,
                               "publishing cmd_vel — linear: [%.2f, %.2f], angular: %.2f",
                               twist_msg.linear.x, twist_msg.linear.y, twist_msg.angular.z);

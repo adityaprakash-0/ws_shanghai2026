@@ -1,0 +1,51 @@
+# ydlidar_front:
+#   ros__parameters:
+#     port: /dev/ydlidar_front     # Uses the permanent symlink
+#     frame_id: laser_front        # Matches the TF tree we set up earlier
+#     ignore_array: ""
+#     baudrate: 230400
+#     lidar_type: 1
+#     device_type: 0
+#     sample_rate: 3
+#     abnormal_check_count: 4
+#     fixed_resolution: false #true
+#     reversion: false
+#     inverted: true
+#     auto_reconnect: true
+#     isSingleChannel: true
+#     intensity_bit: 0
+#     intensity: false
+#     support_motor_dtr: true
+#     angle_max: 180.0
+#     angle_min: -180.0
+#     range_max: 8.0
+#     range_min: 0.1
+#     frequency: 10.0
+#     invalid_range_is_inf: true
+#     debug: false
+
+ydlidar_front:
+  ros__parameters:
+    port: /dev/ydlidar_front
+    frame_id: laser_front
+    ignore_array: ""
+    baudrate: 230400
+    lidar_type: 1
+    device_type: 0
+    intensity: true
+    intensity_bit: 8
+    isSingleChannel: false
+    frequency: 10.0
+    sample_rate: 4
+    abnormal_check_count: 4
+    fixed_resolution: true
+    reversion: true
+    inverted: true
+    auto_reconnect: true
+    support_motor_dtr: false
+    angle_max: 180.0
+    angle_min: -180.0
+    range_max: 12.0
+    range_min: 0.03
+    invalid_range_is_inf: true
+    debug: false         

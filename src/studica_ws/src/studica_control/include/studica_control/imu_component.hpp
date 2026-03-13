@@ -27,6 +27,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/imu.hpp>
+#include <std_msgs/msg/float32.hpp> // <-- Added for Gyro topics
 
 #include "imu.hpp"
 #include "studica_control/srv/set_data.hpp"
@@ -56,6 +57,12 @@ private:
 
     rclcpp::Service<studica_control::srv::SetData>::SharedPtr service_;
     rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr publisher_;
+
+    // --- Added Gyro Publishers ---
+    rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr pub_gyro_x_;
+    rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr pub_gyro_y_;
+    rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr pub_gyro_z_;
+
     rclcpp::TimerBase::SharedPtr timer_;
 
     // handles incoming service commands

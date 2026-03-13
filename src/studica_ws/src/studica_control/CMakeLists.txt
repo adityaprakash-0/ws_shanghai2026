@@ -18,6 +18,13 @@ find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(std_srvs REQUIRED)
 
+find_package(nav2_core REQUIRED)
+find_package(nav2_costmap_2d REQUIRED)
+find_package(nav2_util REQUIRED)
+find_package(pluginlib REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
+
 rosidl_generate_interfaces(${PROJECT_NAME} # <- SRV files (srv, msg, action)
   "msg/DutyCycleEncoderMsg.msg"
   "msg/EncoderMsg.msg"
@@ -121,6 +128,24 @@ ament_target_dependencies(ultrasonic_component ${dependencies})
 target_link_libraries(ultrasonic_component "${cpp_typesupport_target}")
 rclcpp_components_register_nodes(ultrasonic_component "studica_control::Ultrasonic")
 
+
+add_library(smart_center_planner SHARED src/smart_center_planner.cpp)
+ament_target_dependencies(smart_center_planner
+  rclcpp
+  nav2_core
+  nav2_costmap_2d
+  nav2_util
+  pluginlib
+  geometry_msgs
+  nav_msgs
+  tf2_geometry_msgs
+)
+
+# Register the plugin XML so Nav2 can find it!
+pluginlib_export_plugin_description_file(nav2_core smart_center_plugin.xml)
+# =======================================================
+
+
 install(TARGETS
   cobra_component
   dc_encoder_component
@@ -134,6 +159,7 @@ install(TARGETS
   sharp_component
   titan_component
   ultrasonic_component
+  smart_center_planner
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
     PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE

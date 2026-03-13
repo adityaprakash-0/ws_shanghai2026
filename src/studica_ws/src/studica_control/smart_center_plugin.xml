@@ -1,0 +1,9 @@
+<library path="smart_center_planner">
+  <class name="nav2_smart_center_planner::SmartCenterPlanner" 
+         type="nav2_smart_center_planner::SmartCenterPlanner" 
+         base_class_type="nav2_core::GlobalPlanner">
+    <description>
+      A custom 8-connected A* planner that uses the costmap valley for centering.
+    </description>
+  </class>
+</library>
