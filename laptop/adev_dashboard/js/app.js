@@ -21,7 +21,6 @@
 
   const NAV_MODE_LABELS = {
     nav2: 'Nav2',
-    nav2_guard: 'Nav2 Guard',
     nav2_secret_mode: 'Secret Mode',
   };
 
@@ -76,9 +75,12 @@
     $('nav2State').textContent = formatNavStackState(t);
     $('nav2State').title = t.nav2?.action ? `action: ${t.nav2.action}` : '';
     const dwellRem = t.mission?.dwell_remaining ?? 0;
-    if (t.mission?.status === 'dwelling' && dwellRem > 0) {
-      $('missionState').textContent = 'waiting';
+    if ((t.mission?.status === 'dwelling' || t.mission?.status === 'waiting') && dwellRem > 0) {
+      $('missionState').textContent = t.mission.status === 'waiting' ? 'waiting' : 'waiting';
       $('missionDwell').textContent = `${Math.ceil(dwellRem)}s`;
+    } else if (t.mission?.status === 'looking') {
+      $('missionState').textContent = 'looking';
+      $('missionDwell').textContent = '—';
     } else {
       $('missionState').textContent = t.mission?.status ?? 'idle';
       $('missionDwell').textContent = '—';
@@ -87,6 +89,24 @@
     $('missionProgress').textContent = t.mission?.total
       ? `${t.mission.index + 1} / ${t.mission.total}` : '—';
     $('retryCount').textContent = t.mission?.retries ?? 0;
+
+    const vr = t.vision?.last_result;
+    const visionEl = $('visionResult');
+    if (visionEl) {
+      if (vr && vr.found) {
+        visionEl.textContent = `Found: ${vr.color_name} (${(vr.confidence * 100).toFixed(1)}%)`;
+        visionEl.style.color = '#138808';
+      } else if (vr) {
+        visionEl.textContent = vr.message || 'Not found';
+        visionEl.style.color = '#c45c26';
+      } else if (t.vision?.available) {
+        visionEl.textContent = t.vision.active ? 'Vision ACTIVE' : 'Vision idle (ready)';
+        visionEl.style.color = '';
+      } else {
+        visionEl.textContent = 'Vision: off (launch enable_vision:=true)';
+        visionEl.style.color = '';
+      }
+    }
 
     const pi = t.path_info || {};
     const pathEl = $('pathInfo');
@@ -165,6 +185,7 @@
       ul.appendChild(li);
     });
     renderSequenceBuilder(wps);
+    if (typeof TaskBuilder !== 'undefined') TaskBuilder.refreshWaypoints();
   }
 
   function loadSequences() {
@@ -402,10 +423,15 @@
     };
 
     $('btnMissionStart').onclick = async () => {
-      const missionWps = buildMissionWaypoints();
-      if (!missionWps) return;
       try {
-        await AdevApi.setWaypoints(missionWps);
+        if (typeof TaskBuilder !== 'undefined' && TaskBuilder.isEnabled()) {
+          const task = TaskBuilder.buildTask();
+          await AdevApi.setTask(task);
+        } else {
+          const missionWps = buildMissionWaypoints();
+          if (!missionWps) return;
+          await AdevApi.setWaypoints(missionWps);
+        }
         const res = await AdevApi.startMission();
         if (res.ok === false) alert(res.message || 'Mission start failed');
       } catch (e) { alert('Mission start failed: ' + e.message); }
@@ -468,9 +494,9 @@
       saveSequences();
     });
 
-    document.querySelectorAll('.map-toolbar button').forEach((btn) => {
+    document.querySelectorAll('.map-toolbar button[data-mode]').forEach((btn) => {
       btn.onclick = () => {
-        document.querySelectorAll('.map-toolbar button').forEach((b) => b.classList.remove('active'));
+        document.querySelectorAll('.map-toolbar button[data-mode]').forEach((b) => b.classList.remove('active'));
         btn.classList.add('active');
         MapView.setMode(btn.dataset.mode);
       };
@@ -587,6 +613,7 @@
   function init() {
     MapView.bindEvents();
     bindUI();
+    if (typeof TaskBuilder !== 'undefined') TaskBuilder.bind();
     loadSequences();
     const saved = localStorage.getItem('adev_pi_url');
     const url = saved || AdevApi.getDefaultUrl();

@@ -1,0 +1,6 @@
+# Activate (true) or idle (false) the vision gate.
+# When idle the node unsubscribes from the camera (no OpenCV work).
+bool data
+---
+bool success
+string message

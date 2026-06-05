@@ -25,7 +25,6 @@ setup(
         (os.path.join('share', package_name, 'launch'), _launch_py_files()),
         (os.path.join('share', package_name, 'scripts'), glob('scripts/*.sh')),
         (os.path.join('share', package_name, 'scripts', 'mode_nav2'), glob('scripts/mode_nav2/*.sh')),
-        (os.path.join('share', package_name, 'scripts', 'mode_nav2_guard'), glob('scripts/mode_nav2_guard/*.sh')),
         (os.path.join('share', package_name, 'scripts', 'mode_nav2_secret_mode'), glob('scripts/mode_nav2_secret_mode/*.sh')),
     ],
     install_requires=['setuptools'],

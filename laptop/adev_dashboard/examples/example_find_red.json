@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "name": "example_find_red",
+  "steps": [
+    {
+      "type": "navigate",
+      "x": 1.0,
+      "y": 2.0,
+      "yaw": 0.0,
+      "ignore_yaw": true,
+      "label": "WP1"
+    },
+    {
+      "type": "look_color",
+      "colors": ["red"],
+      "timeout_sec": 5.0,
+      "on_found": "continue",
+      "on_miss": "continue",
+      "label": "Look red"
+    },
+    {
+      "type": "wait",
+      "seconds": 1.0
+    }
+  ]
+}

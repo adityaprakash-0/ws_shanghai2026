@@ -57,6 +57,27 @@ const AdevApi = (() => {
     });
   }
 
+  async function setTask(task) {
+    return request('/api/mission/task', {
+      method: 'POST',
+      body: JSON.stringify({ task }),
+    });
+  }
+
+  async function visionGate(active) {
+    return request('/api/vision/gate', {
+      method: 'POST',
+      body: JSON.stringify({ active: !!active }),
+    });
+  }
+
+  async function visionFind(colors, timeoutSec = 5) {
+    return request('/api/vision/find', {
+      method: 'POST',
+      body: JSON.stringify({ colors, timeout_sec: timeoutSec }),
+    });
+  }
+
   async function startMission() {
     return request('/api/mission/start', { method: 'POST', body: '{}' });
   }
@@ -145,7 +166,8 @@ const AdevApi = (() => {
 
   return {
     setBaseUrl, getBaseUrl, getDefaultUrl, status, telemetry, fetchMaps, fetchMap,
-    estop, setWaypoints, startMission, stopMission, setInitialPose, setSimulation,
+    estop, setWaypoints, setTask, startMission, stopMission, setInitialPose, setSimulation,
+    visionGate, visionFind,
     connectStream, disconnectStream,
   };
 })();

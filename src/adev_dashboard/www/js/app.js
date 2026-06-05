@@ -21,7 +21,6 @@
 
   const NAV_MODE_LABELS = {
     nav2: 'Nav2',
-    nav2_guard: 'Nav2 Guard',
     nav2_secret_mode: 'Secret Mode',
   };
 

@@ -4,8 +4,8 @@
   <name>skill23_graph_planner</name>
   <version>1.0.0</version>
   <description>
-    Lightweight Nav2 global planner: Dijkstra on a GeoJSON corridor graph
-    (laptop route_dashboard export). No route_server — stock NavigateToPose + RPP.
+    Nav2 GraphPlanner plugin: plans only along GeoJSON corridor edges.
+    Used by nav2_secret_mode with stock RPP controller.
   </description>
   <maintainer email="adityaprakash.main@gmail.com">ADEV</maintainer>
   <license>MIT</license>

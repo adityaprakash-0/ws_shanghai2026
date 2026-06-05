@@ -19,10 +19,11 @@ from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist
 from nav2_msgs.action import ComputePathToPose, NavigateToPose
 from nav_msgs.msg import Path
 from rclpy.action import ActionClient
+from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
-from sensor_msgs.msg import BatteryState, LaserScan
+from sensor_msgs.msg import BatteryState, CompressedImage, LaserScan
 from std_msgs.msg import Bool, String
 from tf2_ros import Buffer, TransformListener
 
@@ -30,6 +31,14 @@ try:
     import yaml
 except ImportError:
     yaml = None
+
+try:
+    from skill23_vision.srv import FindColor, SetGate
+    _VISION_SRVS = True
+except ImportError:
+    FindColor = None  # type: ignore
+    SetGate = None  # type: ignore
+    _VISION_SRVS = False
 
 
 def yaw_to_quat(yaw: float):
@@ -59,7 +68,6 @@ ROBOT_DIMS = {
 
 NAV_MODE_LABELS = {
     'nav2': 'Nav2',
-    'nav2_guard': 'Nav2 Guard',
     'nav2_secret_mode': 'Secret Mode',
 }
 
@@ -108,6 +116,14 @@ class TelemetryStore:
                 'last_error': '',
                 'dwell_remaining': 0.0,
                 'dwell_total': 0.0,
+                'task_name': '',
+            },
+            'vision': {
+                'available': False,
+                'active': False,
+                'stream_enabled': None,
+                'last_result': None,
+                'colors': [],
             },
             'scan': [],
             'global_path': [],
@@ -181,8 +197,52 @@ class DebugLog:
             self._telemetry.update(debug_log=lines)
 
 
+def normalize_mission_steps(raw_steps):
+    """Normalize task-builder / waypoint payloads into typed steps."""
+    steps = []
+    for item in raw_steps or []:
+        if not isinstance(item, dict):
+            continue
+        stype = str(item.get('type', 'navigate')).strip().lower()
+        if stype in ('camera', 'look', 'look_for_color'):
+            stype = 'look_color'
+        if stype == 'navigate' or ('x' in item and 'y' in item and stype not in (
+                'look_color', 'wait')):
+            steps.append({
+                'type': 'navigate',
+                'x': float(item['x']),
+                'y': float(item['y']),
+                'yaw': float(item.get('yaw', 0.0)),
+                'ignore_yaw': bool(item.get('ignore_yaw', False)),
+                'label': str(item.get('label', '')),
+            })
+        elif stype == 'look_color':
+            colors = item.get('colors') or item.get('color') or []
+            if isinstance(colors, str):
+                colors = [c.strip() for c in colors.split(',') if c.strip()]
+            else:
+                colors = [str(c).strip().lower() for c in colors if str(c).strip()]
+            steps.append({
+                'type': 'look_color',
+                'colors': colors,
+                'timeout_sec': float(item.get('timeout_sec', 5.0)),
+                'retry_count': max(
+                    0, int(item.get('retry_count', item.get('retries', 0)))),
+                'on_found': str(item.get('on_found', 'continue')),
+                'on_miss': str(item.get('on_miss', 'continue')),
+                'label': str(item.get('label', '')),
+            })
+        elif stype == 'wait':
+            steps.append({
+                'type': 'wait',
+                'seconds': float(item.get('seconds', item.get('dwell_sec', 2.0))),
+                'label': str(item.get('label', '')),
+            })
+    return steps
+
+
 class MissionRunner:
-    """Waypoint mission — Nav2 in real mode, planner + path-follow point in simulation."""
+    """Typed mission steps — navigate / look_color / wait. Works in all nav modes."""
 
     XY_TOL = 0.10
     YAW_TOL = 0.18
@@ -195,7 +255,9 @@ class MissionRunner:
         self.node = bridge
         self.telemetry = telemetry
         self._work_queue = queue.Queue()
-        self.waypoints = []
+        self.steps = []
+        self.waypoints = []  # navigate poses only (map display / legacy)
+        self.task_name = ''
         self.index = 0
         self.active = False
         self.retries = 0
@@ -211,6 +273,8 @@ class MissionRunner:
         self._dwell_timer = None
         self._dwell_remaining = 0.0
         self._topic_goal_mode = False
+        self._dwell_advance = True  # False when wait-step owns the dwell timer
+        self._vision_retry_attempt = 0
 
     def enqueue(self, fn):
         self._work_queue.put(fn)
@@ -279,20 +343,40 @@ class MissionRunner:
         return False
 
     def set_waypoints(self, waypoints):
-        self.waypoints = waypoints
+        """Legacy API — plain waypoints become navigate-only steps."""
+        for wp in waypoints or []:
+            if isinstance(wp, dict):
+                wp.setdefault('ignore_yaw', False)
+        self.set_task({
+            'name': '',
+            'steps': [{'type': 'navigate', **wp} for wp in (waypoints or [])],
+        })
+
+    def set_task(self, task):
+        """Typed task from Task Builder: {name, steps:[{type,...}, ...]}."""
+        if isinstance(task, list):
+            task = {'name': '', 'steps': task}
+        steps = normalize_mission_steps(task.get('steps', []))
+        self.steps = steps
+        self.waypoints = [s for s in steps if s.get('type') == 'navigate']
+        self.task_name = str(task.get('name', '') or '')
         self.index = 0
         self.retries = 0
         self.telemetry.update(mission={
-            'total': len(waypoints),
+            'total': len(steps),
             'index': 0,
             'status': 'armed',
-            'current': waypoints[0] if waypoints else None,
+            'current': steps[0] if steps else None,
+            'task_name': self.task_name,
             'mode': 'sim_path' if self.bridge.simulation_enabled else self.bridge.nav_mode,
         })
+        self.bridge.dbg(
+            f'[mission] armed task="{self.task_name}" steps={len(steps)} '
+            f'(nav={len(self.waypoints)})')
 
     def start(self):
-        if not self.waypoints:
-            return False, 'No waypoints defined'
+        if not self.steps:
+            return False, 'No mission steps defined'
         self._cancel_timers()
         self.active = True
         self.index = 0
@@ -305,15 +389,19 @@ class MissionRunner:
             'mode': 'sim_path' if self.bridge.simulation_enabled else self.bridge.nav_mode,
             'dwell_remaining': 0.0,
             'dwell_total': 0.0,
+            'task_name': self.task_name,
+            'total': len(self.steps),
         })
         self.enqueue(self._dispatch)
         self.bridge.dbg(
-            f'[mission] START {len(self.waypoints)} waypoints mode={self.bridge.nav_mode}')
+            f'[mission] START {len(self.steps)} steps mode={self.bridge.nav_mode} '
+            f'task="{self.task_name}"')
         self.telemetry.update(
             global_path=[], local_path=[], route_path=[],
-            path_info={'plan_poses': 0, 'local_poses': 0, 'route_poses': 0, 'last_topic': ''})
+            path_info={'plan_poses': 0, 'local_poses': 0, 'route_poses': 0, 'last_topic': ''},
+            vision={'last_result': None})
         mode = 'sim path-follow' if self.bridge.simulation_enabled else 'Nav2'
-        return True, f'Mission started ({mode})'
+        return True, f'Mission started ({mode}, {len(self.steps)} steps)'
 
     def stop(self):
         self.enqueue(self._stop_impl)
@@ -357,7 +445,7 @@ class MissionRunner:
         self._cancel_nav_timers()
         if not self.active:
             return
-        if self.index >= len(self.waypoints):
+        if self.index >= len(self.steps):
             self.active = False
             self.telemetry.update(mission={
                 'active': False,
@@ -367,31 +455,120 @@ class MissionRunner:
             self.node.get_logger().info('ADEV mission complete')
             return
 
-        wp = self.waypoints[self.index]
+        step = self.steps[self.index]
+        stype = step.get('type', 'navigate')
+        self.telemetry.update(mission={
+            'index': self.index,
+            'total': len(self.steps),
+            'current': step,
+            'retries': self.retries,
+        })
+
+        if stype == 'look_color':
+            self._vision_retry_attempt = 0
+            self._dispatch_look_color(step)
+            return
+        if stype == 'wait':
+            self._dispatch_wait(step)
+            return
+
+        # navigate (default)
+        wp = step
         cx, cy, cyaw = self._current_pose()
         self.bridge.dbg(
-            f'[mission] dispatch wp {self.index + 1}/{len(self.waypoints)} '
+            f'[mission] dispatch step {self.index + 1}/{len(self.steps)} navigate '
             f'goal=({wp["x"]:.3f},{wp["y"]:.3f}) '
             f'robot=({cx:.3f},{cy:.3f},{math.degrees(cyaw):.0f}°) '
             f'mode={self.bridge.nav_mode}')
         self.bridge._log_tf_debug()
         self.node.get_logger().info(
-            f'Waypoint {self.index + 1}/{len(self.waypoints)}: '
+            f'Step {self.index + 1}/{len(self.steps)} navigate: '
             f'({wp["x"]:.3f}, {wp["y"]:.3f}) '
             f'yaw={math.degrees(wp.get("yaw", 0)):.0f}° '
             f'ignore_yaw={bool(wp.get("ignore_yaw", False))}')
-        self.telemetry.update(mission={
-            'index': self.index,
-            'total': len(self.waypoints),
-            'status': 'navigating',
-            'current': wp,
-            'retries': self.retries,
-        })
+        self.telemetry.update(mission={'status': 'navigating'})
 
         if self.bridge.simulation_enabled:
             self._dispatch_sim_plan(wp)
         else:
             self._dispatch_nav2(wp)
+
+    def _dispatch_look_color(self, step):
+        colors = step.get('colors') or []
+        timeout = float(step.get('timeout_sec', 5.0))
+        retry_count = max(0, int(step.get('retry_count', 0)))
+        attempt = self._vision_retry_attempt + 1
+        total_attempts = retry_count + 1
+        self.bridge.dbg(
+            f'[vision] look_color colors={colors} timeout={timeout:.1f}s '
+            f'attempt={attempt}/{total_attempts}')
+        self.telemetry.update(mission={
+            'status': 'looking',
+            'retries': self._vision_retry_attempt,
+        })
+        self.node.get_logger().info(
+            f'Step {self.index + 1}/{len(self.steps)} look_color: {colors} '
+            f'(attempt {attempt}/{total_attempts})')
+
+        def worker():
+            result = self.bridge.vision_find_color(colors, timeout)
+            self.enqueue(lambda: self._on_look_color_done(step, result))
+
+        threading.Thread(target=worker, daemon=True, name='adev_look_color').start()
+
+    def _on_look_color_done(self, step, result):
+        if not self.active:
+            return
+        found = bool(result.get('found'))
+        color = str(result.get('color_name', '') or '')
+        msg = str(result.get('message', '') or '')
+        self.telemetry.update(vision={
+            'last_result': {
+                'found': found,
+                'color_name': color,
+                'confidence': float(result.get('confidence', 0.0) or 0.0),
+                'message': msg,
+                'step': self.index + 1,
+            },
+        })
+        self.bridge.dbg(f'[vision] result found={found} color={color} — {msg}')
+        self.node.get_logger().info(f'Look color: {msg}')
+
+        retry_count = max(0, int(step.get('retry_count', 0)))
+        if not found and self._vision_retry_attempt < retry_count:
+            self._vision_retry_attempt += 1
+            self.telemetry.update(mission={
+                'status': 'retrying_camera',
+                'retries': self._vision_retry_attempt,
+                'last_error': msg,
+            })
+            self.bridge.dbg(
+                f'[vision] no match — retry '
+                f'{self._vision_retry_attempt}/{retry_count}')
+            self._dispatch_look_color(step)
+            return
+
+        action = str(step.get('on_found' if found else 'on_miss', 'continue')).lower()
+        if action == 'stop':
+            self.active = False
+            self._vision_retry_attempt = 0
+            self.telemetry.update(mission={
+                'active': False,
+                'status': 'stopped' if not found else 'found_stop',
+                'last_error': '' if found else msg,
+            })
+            return
+
+        self.retries = 0
+        self._vision_retry_attempt = 0
+        self.index += 1
+        self._dispatch()
+
+    def _dispatch_wait(self, step):
+        seconds = max(0.0, float(step.get('seconds', 2.0)))
+        self.bridge.dbg(f'[mission] wait {seconds:.1f}s')
+        self._dwell_advance = True
+        self._start_dwell(seconds, label='waiting')
 
     def _dispatch_sim_plan(self, wp):
         if not self.bridge.plan_is_ready():
@@ -446,7 +623,7 @@ class MissionRunner:
     def _on_plan_result(self, future):
         if not self.active:
             return
-        wp = self.waypoints[self.index]
+        wp = self.steps[self.index]
         try:
             result = future.result().result
             pts = [
@@ -537,33 +714,45 @@ class MissionRunner:
         self._rotate_to_yaw = target_yaw
 
     def _on_waypoint_success(self):
-        """Goal reached — dwell before the next waypoint (if any)."""
+        """Navigate goal reached — dwell only before another navigate step."""
         if self._dwell_timer is not None:
             return
 
-        self.node.get_logger().info(f'Waypoint {self.index + 1} reached')
+        self.node.get_logger().info(f'Step {self.index + 1} navigate reached')
         self._follow_wp = None
         self._rotate_to_yaw = None
         self._path_pts = []
         self._goal_handle = None
+        self._topic_goal_mode = False
         self.retries = 0
         self.telemetry.update(mission={'last_error': ''})
 
-        if self.index >= len(self.waypoints) - 1:
-            self.index += 1
+        next_idx = self.index + 1
+        if next_idx >= len(self.steps):
+            self.index = next_idx
             self.telemetry.update(mission={'dwell_remaining': 0.0, 'dwell_total': 0.0})
             self._dispatch()
             return
 
-        self._start_dwell(self.WAYPOINT_DWELL_SEC)
+        nxt = self.steps[next_idx]
+        # Camera / wait right after arrival — no inter-waypoint pause
+        if nxt.get('type') in ('look_color', 'wait'):
+            self.index = next_idx
+            self.telemetry.update(mission={'dwell_remaining': 0.0, 'dwell_total': 0.0})
+            self._dispatch()
+            return
 
-    def _start_dwell(self, seconds: float):
+        self._dwell_advance = True
+        self._start_dwell(self.WAYPOINT_DWELL_SEC, label='dwelling')
+
+    def _start_dwell(self, seconds: float, label: str = 'dwelling'):
         self._cancel_nav_timers()
         self._dwell_remaining = float(seconds)
         self.node.get_logger().info(
-            f'Waiting {seconds:.0f}s before waypoint {self.index + 2}/{len(self.waypoints)}')
+            f'{label.capitalize()} {seconds:.0f}s '
+            f'(step {self.index + 1}/{len(self.steps)})')
         self.telemetry.update(mission={
-            'status': 'dwelling',
+            'status': label,
             'dwell_remaining': round(self._dwell_remaining, 1),
             'dwell_total': seconds,
         })
@@ -573,8 +762,9 @@ class MissionRunner:
         if not self.active:
             return
         self._dwell_remaining = max(0.0, self._dwell_remaining - 0.25)
+        status = self.telemetry.snapshot().get('mission', {}).get('status', 'dwelling')
         self.telemetry.update(mission={
-            'status': 'dwelling',
+            'status': status if status in ('dwelling', 'waiting') else 'dwelling',
             'dwell_remaining': round(self._dwell_remaining, 1),
         })
         if self._dwell_remaining <= 0.0:
@@ -584,7 +774,7 @@ class MissionRunner:
             self.index += 1
             self.telemetry.update(mission={'dwell_remaining': 0.0, 'dwell_total': 0.0})
             self.node.get_logger().info(
-                f'Dwell complete — advancing to waypoint {self.index + 1}/{len(self.waypoints)}')
+                f'Dwell complete — advancing to step {self.index + 1}/{len(self.steps)}')
             self._dispatch()
 
     def _waypoint_reached(self):
@@ -623,7 +813,7 @@ class MissionRunner:
     def _poll_topic_goal(self):
         if not self.active or not self._topic_goal_mode:
             return
-        wp = self.waypoints[self.index]
+        wp = self.steps[self.index]
         cx, cy, cyaw = self._current_pose()
         dist = math.hypot(float(wp['x']) - cx, float(wp['y']) - cy)
         if dist > self.XY_TOL:
@@ -714,7 +904,7 @@ class MissionRunner:
                 f'[nav] NavigateToPose send failed: {reason} — trying goal_pose')
             self.node.get_logger().warn(
                 f'NavigateToPose failed ({reason}) — falling back to /goal_pose')
-            wp = self.waypoints[self.index]
+            wp = self.steps[self.index]
             self._dispatch_nav2_goal_topic(wp)
             return
         self.bridge.dbg('[nav] NavigateToPose goal ACCEPTED — waiting for path + result')
@@ -726,7 +916,7 @@ class MissionRunner:
     def _poll_xy_goal(self):
         if not self.active or self._goal_handle is None:
             return
-        wp = self.waypoints[self.index]
+        wp = self.steps[self.index]
         if not wp.get('ignore_yaw', False):
             return
         cx, cy, _ = self._current_pose()
@@ -831,8 +1021,13 @@ class AdevBridgeNode(Node):
     self._cached_pose = {'x': 0.0, 'y': 0.0, 'yaw': 0.0}
     self._sim_pending = None
     self._sim_apply_timer = None
+    self._vision_preview_jpeg = b''
+    self._vision_preview_lock = threading.Lock()
+    self._vision_cb_group = ReentrantCallbackGroup()
     dims = ROBOT_DIMS.get(self.robot, ROBOT_DIMS['allterrain'])
     self.telemetry.update(robot_dims=dims)
+
+    self._init_vision_clients()
 
     self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
     self.estop_pub = self.create_publisher(Bool, '/adev/estop', 10)
@@ -868,6 +1063,12 @@ class AdevBridgeNode(Node):
     self.create_subscription(PoseStamped, '/adev/sim_pose', self._sim_pose_cb, 10)
     self.create_subscription(Twist, '/cmd_vel_nav', self._cmd_vel_nav_cb, 10)
     self.create_subscription(Twist, '/cmd_vel', self._cmd_vel_out_cb, 10)
+    preview_qos = QoSProfile(depth=1, reliability=ReliabilityPolicy.BEST_EFFORT)
+    self.create_subscription(
+        CompressedImage, '/adev/vision/preview/compressed',
+        self._vision_preview_cb, preview_qos)
+    self.create_subscription(
+        String, '/adev/vision/status', self._vision_status_cb, 10)
 
     self.tf_buffer = Buffer(
         cache_time=rclpy.duration.Duration(seconds=30.0))
@@ -887,8 +1088,7 @@ class AdevBridgeNode(Node):
             f'nav_mode={self.nav_mode}')
         if self.nav_mode == 'nav2_secret_mode':
             self.dbg(
-                '[config] nav2_secret_mode uses skill23_graph_planner '
-                'nav2_secret_<robot>.yaml (GraphPlanner + stock BT + RPP)')
+                '[config] nav2_secret_mode uses GraphPlanner + RPP')
         self.get_logger().info(
             f'ADEV API bridge on :{self.http_port} (API only — UI runs on laptop) | '
             f'robot={self.robot} mode={self.nav_mode}')
@@ -904,6 +1104,126 @@ class AdevBridgeNode(Node):
   def dbg(self, msg: str):
     self.get_logger().info(msg)
     self.debug_log.add(msg)
+
+  def _init_vision_clients(self):
+    self._find_color_cli = None
+    self._set_gate_cli = None
+    if not _VISION_SRVS:
+      self.telemetry.update(vision={
+        'available': False,
+        'active': False,
+        'colors': [],
+        'last_result': None,
+      })
+      self.get_logger().info(
+        'skill23_vision not installed — camera task blocks unavailable '
+        '(navigation still works)')
+      return
+    self._find_color_cli = self.create_client(
+      FindColor, '/adev/vision/find_color',
+      callback_group=self._vision_cb_group)
+    self._set_gate_cli = self.create_client(
+      SetGate, '/adev/vision/set_gate',
+      callback_group=self._vision_cb_group)
+    self.telemetry.update(vision={
+      'available': False,
+      'active': False,
+      'stream_enabled': None,
+      'colors': ['red', 'orange', 'yellow', 'green', 'blue', 'purple', 'white', 'black'],
+      'last_result': None,
+    })
+
+  def vision_is_ready(self) -> bool:
+    return bool(
+      self._find_color_cli is not None
+      and self._find_color_cli.service_is_ready())
+
+  def vision_find_color(self, colors, timeout_sec: float = 5.0) -> dict:
+    """Blocking call for mission worker thread. Safe if vision stack absent."""
+    if self._find_color_cli is None:
+      return {
+        'found': False,
+        'color_name': '',
+        'confidence': 0.0,
+        'message': 'skill23_vision not built/sourced — enable_vision launch arg?',
+      }
+    if not self._find_color_cli.wait_for_service(timeout_sec=2.0):
+      return {
+        'found': False,
+        'color_name': '',
+        'confidence': 0.0,
+        'message': 'Vision gate not running (launch with enable_vision:=true)',
+      }
+    req = FindColor.Request()
+    req.colors = [str(c) for c in colors]
+    req.timeout_sec = float(timeout_sec)
+    future = self._find_color_cli.call_async(req)
+    deadline = time.time() + float(timeout_sec) + 3.0
+    while rclpy.ok() and not future.done() and time.time() < deadline:
+      time.sleep(0.05)
+    if not future.done():
+      return {
+        'found': False,
+        'color_name': '',
+        'confidence': 0.0,
+        'message': 'find_color service timeout',
+      }
+    try:
+      res = future.result()
+      return {
+        'found': bool(res.found),
+        'color_name': str(res.color_name or ''),
+        'confidence': float(res.confidence),
+        'u': int(res.u),
+        'v': int(res.v),
+        'message': str(res.message or ''),
+      }
+    except Exception as exc:
+      return {
+        'found': False,
+        'color_name': '',
+        'confidence': 0.0,
+        'message': f'find_color error: {exc}',
+      }
+
+  def vision_set_gate(self, active: bool) -> dict:
+    if self._set_gate_cli is None:
+      return {'success': False, 'message': 'vision unavailable'}
+    if not self._set_gate_cli.wait_for_service(timeout_sec=1.0):
+      return {'success': False, 'message': 'set_gate service not ready'}
+    req = SetGate.Request()
+    req.data = bool(active)
+    future = self._set_gate_cli.call_async(req)
+    deadline = time.time() + 3.0
+    while rclpy.ok() and not future.done() and time.time() < deadline:
+      time.sleep(0.05)
+    if not future.done():
+      return {'success': False, 'message': 'set_gate timeout'}
+    try:
+      res = future.result()
+      return {'success': bool(res.success), 'message': str(res.message or '')}
+    except Exception as exc:
+      return {'success': False, 'message': str(exc)}
+
+  def _vision_preview_cb(self, msg: CompressedImage):
+    with self._vision_preview_lock:
+      self._vision_preview_jpeg = bytes(msg.data)
+
+  def _vision_status_cb(self, msg: String):
+    try:
+      data = json.loads(msg.data)
+    except Exception:
+      return
+    self.telemetry.update(vision={
+      'available': True,
+      'active': bool(data.get('active', False)),
+      'stream_enabled': data.get('stream_enabled'),
+      'colors': data.get('colors') or self.telemetry.snapshot().get('vision', {}).get('colors', []),
+    })
+
+  def get_vision_preview_jpeg(self) -> bytes:
+    with self._vision_preview_lock:
+      return self._vision_preview_jpeg
 
   def nav_is_ready(self) -> bool:
     return self.nav_client.server_is_ready()
@@ -1300,16 +1620,36 @@ class AdevBridgeNode(Node):
 
             if path == '/api/status':
                 mode = node.nav_mode
+                snap = store.snapshot()
                 self._json_response(200, {
                     'ok': True,
                     'robot': node.robot,
                     'nav_mode': mode,
                     'nav_mode_label': NAV_MODE_LABELS.get(mode, mode),
+                    'vision_available': bool(
+                        snap.get('vision', {}).get('available')
+                        or node.vision_is_ready()),
                 })
                 return
 
             if path == '/api/telemetry':
                 self._json_response(200, store.snapshot())
+                return
+
+            if path == '/api/vision/preview':
+                jpeg = node.get_vision_preview_jpeg()
+                if not jpeg:
+                    self.send_response(204)
+                    self._cors()
+                    self.end_headers()
+                    return
+                self.send_response(200)
+                self.send_header('Content-Type', 'image/jpeg')
+                self.send_header('Cache-Control', 'no-cache')
+                self._cors()
+                self.send_header('Content-Length', str(len(jpeg)))
+                self.end_headers()
+                self.wfile.write(jpeg)
                 return
 
             if path == '/api/stream':
@@ -1372,7 +1712,19 @@ class AdevBridgeNode(Node):
                 for wp in wps:
                     wp.setdefault('ignore_yaw', False)
                 node.mission.set_waypoints(wps)
-                self._json_response(200, {'count': len(wps)})
+                self._json_response(200, {'count': len(wps), 'steps': len(node.mission.steps)})
+                return
+
+            if path == '/api/mission/task':
+                # Task Builder payload: {name, steps:[...]} or {steps:[...]}
+                task = body.get('task', body)
+                node.mission.set_task(task)
+                self._json_response(200, {
+                    'ok': True,
+                    'name': node.mission.task_name,
+                    'steps': len(node.mission.steps),
+                    'waypoints': len(node.mission.waypoints),
+                })
                 return
 
             if path == '/api/mission/start':
@@ -1386,6 +1738,24 @@ class AdevBridgeNode(Node):
             if path == '/api/mission/stop':
                 node.mission.stop()
                 self._json_response(200, {'ok': True})
+                return
+
+            if path == '/api/vision/gate':
+                active = bool(body.get('active', False))
+
+                def _gate_worker():
+                    return node.vision_set_gate(active)
+
+                # Run briefly on HTTP thread — service call sleeps, not on executor
+                result = _gate_worker()
+                self._json_response(200 if result.get('success') else 503, result)
+                return
+
+            if path == '/api/vision/find':
+                colors = body.get('colors') or []
+                timeout = float(body.get('timeout_sec', 5.0))
+                result = node.vision_find_color(colors, timeout)
+                self._json_response(200, result)
                 return
 
             if path == '/api/initial_pose':

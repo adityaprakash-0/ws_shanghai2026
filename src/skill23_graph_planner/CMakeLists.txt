@@ -20,16 +20,7 @@ find_package(tf2 REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 find_package(nlohmann_json REQUIRED)
 
-include_directories(include)
-
-add_library(graph_planner_plugin SHARED
-  src/graph_planner.cpp
-)
-target_include_directories(graph_planner_plugin PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>
-)
-ament_target_dependencies(graph_planner_plugin
+set(COMMON_DEPS
   rclcpp
   rclcpp_lifecycle
   nav2_core
@@ -41,8 +32,19 @@ ament_target_dependencies(graph_planner_plugin
   tf2
   tf2_geometry_msgs
 )
-target_link_libraries(graph_planner_plugin nlohmann_json::nlohmann_json)
 
+include_directories(include)
+
+# GraphPlanner — Nav2 global planner on a GeoJSON corridor graph
+add_library(graph_planner_plugin SHARED
+  src/graph_planner.cpp
+)
+target_include_directories(graph_planner_plugin PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+ament_target_dependencies(graph_planner_plugin ${COMMON_DEPS})
+target_link_libraries(graph_planner_plugin nlohmann_json::nlohmann_json)
 pluginlib_export_plugin_description_file(nav2_core graph_planner_plugin.xml)
 
 install(TARGETS graph_planner_plugin
@@ -60,9 +62,6 @@ install(DIRECTORY launch config
 
 ament_export_include_directories(include)
 ament_export_libraries(graph_planner_plugin)
-ament_export_dependencies(
-  rclcpp nav2_core nav2_util nav2_costmap_2d pluginlib
-  geometry_msgs nav_msgs tf2 tf2_geometry_msgs
-)
+ament_export_dependencies(${COMMON_DEPS})
 
 ament_package()

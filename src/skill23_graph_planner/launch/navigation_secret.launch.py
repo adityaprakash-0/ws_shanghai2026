@@ -1,4 +1,4 @@
-"""nav2_secret_mode: AMCL + GraphPlanner + stock BT + RPP (no route_server)."""
+"""nav2_secret_mode: GraphPlanner corridors + RPP follow."""
 
 import os
 import sys

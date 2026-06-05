@@ -1,48 +1,53 @@
-# skill23_graph_planner — nav2_secret_mode
+# skill23_graph_planner — secret corridor navigation
 
-Lightweight **Nav2 GlobalPlanner** on your GeoJSON corridor graph.
+Plans paths **only along GeoJSON corridor edges** (between walls).
+Local following uses stock **RPP** (same as normal nav2).
 
-## Modes (ADEV dashboard)
+## Two ADEV modes
 
-| # | Mode | Description |
-|---|------|-------------|
-| 1 | `nav2` | Standard Nav2 |
-| 2 | `nav2_guard` | Nav2 + wheel safety guard |
-| 3 | `nav2_secret_mode` | GraphPlanner + stock BT + RPP |
+| Mode | Planner | Controller | Use when |
+|------|---------|------------|----------|
+| `nav2` | Theta\* | RPP | Dynamic obstacles / free space |
+| `nav2_secret_mode` | **GraphPlanner** | RPP | Fixed corridors (your graph) |
 
-## Params (planner only changed)
+## How it works
 
-Copied from each robot’s stock Nav2 yaml; **only** `planner_server.GridBased` updated:
+```
+goal → GraphPlanner (snap to nodes, Dijkstra on edges) → /plan
+     → RPP FollowPath → /cmd_vel
+```
+
+## Params
 
 | Robot | File |
 |-------|------|
 | mecanum | `config/nav2_secret_mecanum.yaml` |
-| allterrain | `config/nav2_secret_allterrain.yaml` |
 | xdrive | `config/nav2_secret_xdrive.yaml` |
+| allterrain | `config/nav2_secret_allterrain.yaml` |
 
 ```yaml
 GridBased:
   plugin: skill23_graph_planner/GraphPlanner
-  graph_filepath: ""          # filled at launch
+  graph_filepath: ""   # set at launch
   path_density: 0.05
   max_snap_distance: 1.5
-  allow_same_node: true
 ```
 
-## Pipeline
-
-```
-AMCL → NavigateToPose (stock BT) → GraphPlanner → /plan → RPP (+ local costmap)
-```
+BT: `config/navigate_secret.xml` replans slowly (0.2 Hz).
 
 ## Launch
 
 ```bash
 source ~/skill23_ws/install/setup.bash
-
 ~/skill23_ws/src/adev_dashboard/scripts/launch_adev_dashboard.sh nav2_secret_mode mecanum \
   ~/skill23_ws/test_map11.yaml \
   ~/skill23_ws/test_map11_graph.geojson
 ```
 
-Alias: `secret_mode` also works as the mode argument.
+## Build
+
+```bash
+cd ~/skill23_ws
+colcon build --packages-select skill23_graph_planner --symlink-install
+source install/setup.bash
+```

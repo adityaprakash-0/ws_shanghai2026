@@ -1,0 +1,91 @@
+# Pick-place software params — node names must match launch
+pp_mission:
+  ros__parameters:
+    robot: "xdrive"
+    xy_tol: 0.02
+    yaw_tol: 0.05
+    settle_samples: 8
+    settle_dt: 0.05
+    arrival_timeout_sec: 30.0
+    vel_settle: 0.02
+    cmd_vel_topic: "/pp/cmd_vel"
+    odom_topic: "/pp/odom"
+
+pp_manipulator:
+  ros__parameters:
+    elevator_cmd_topic: "/titan1/m_0/cmd"
+    elevator_enc_topic: "/titan1/m_0/encoder"
+    linear_cmd_topic: "/linear_servo/cmd"
+    gripper_cmd_topic: "/gripper_servo/cmd"
+    elevator_duty: 0.45
+    elevator_slow_duty: 0.20
+    elevator_deadband_ticks: 40.0
+    elevator_slow_zone_ticks: 200.0
+    elevator_timeout_sec: 12.0
+    elevator_progress_timeout_sec: 2.0
+    servo_settle_sec: 0.8
+    elevator_targets_json: '{"up": 0.0, "up_mid": 700.0, "down_mid": 1400.0, "down": 2000.0}'
+    linear_angles_json: '{"retract": 0.0, "mid": 45.0, "extend": 90.0}'
+    gripper_angles_json: '{"open": 90.0, "close": -20.0}'
+
+pp_go_to_goal:
+  ros__parameters:
+    robot: "xdrive"
+    odom_topic: "/pp/odom"
+    cmd_vel_topic: "/pp/cmd_vel"
+    kp_lin: 0.8
+    kd_lin: 0.02
+    kp_ang: 1.6
+    kd_ang: 0.02
+    vmax: 0.22
+    wmax: 0.55
+    min_speed: 0.08
+    min_ang_speed: 0.12
+    xy_tol: 0.025
+    yaw_tol: 0.05
+    no_progress_timeout_sec: 20.0
+
+pp_relative_move:
+  ros__parameters:
+    robot: "xdrive"
+    odom_topic: "/pp/odom"
+    cmd_vel_topic: "/pp/cmd_vel"
+
+pp_align_cobra:
+  ros__parameters:
+    robot: "xdrive"
+    cobra_topics: ["/line_follower/ch_0", "/line_follower/ch_1", "/line_follower/ch_2", "/line_follower/ch_3"]
+    tape_threshold: 1.5
+    confirm_frames: 20
+    timeout_sec: 8.0
+    kp_lat: 0.25
+    kp_yaw: 0.4
+    vmax: 0.12
+    wmax: 0.25
+    cmd_vel_topic: "/pp/cmd_vel"
+
+pp_align_camera:
+  ros__parameters:
+    robot: "xdrive"
+    cmd_vel_topic: "/pp/cmd_vel"
+    image_width: 640.0
+    center_tol_px: 40.0
+    confirm_frames: 10
+    timeout_sec: 8.0
+    kp: 0.002
+    vmax: 0.12
+    wmax: 0.3
+
+pp_odom_fusion:
+  ros__parameters:
+    source_odom_topic: "/wheel/odom"
+    odom_topic: "/pp/odom"
+    odom_frame: "pp_odom"
+    base_frame: "base_footprint"
+
+pp_bridge:
+  ros__parameters:
+    robot: "xdrive"
+    http_port: 8081
+    maps_dir: "/home/vmx/skill23_ws"
+    relay_cmd_vel: true
