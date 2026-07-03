@@ -50,12 +50,23 @@ ament_target_dependencies(lidar_merger_node
   message_filters
 )
 
+
+add_executable(confidence_scan_gate src/confidence_scan_gate.cpp)
+ament_target_dependencies(confidence_scan_gate
+  rclcpp
+  sensor_msgs
+  nav_msgs
+  tf2
+  tf2_ros
+)
+
 # --- Install Executables ---
 install(TARGETS
   pid_move
   pid_turn
   allterrain_node
   lidar_merger_node
+  confidence_scan_gate
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -16,7 +16,7 @@ def generate_launch_description():
 
     # File Paths
     exec_path = os.path.join(studica_pkg_prefix, 'lib', 'studica_control', 'manual_composition')
-    default_params = os.path.join(studica_pkg_share, 'config', 'params.yaml')
+    default_params = os.path.join(studica_pkg_share, 'config', 'params_allterrain.yaml')
     urdf_file = os.path.join(allterrain_pkg_share, 'urdf', 'allterrain_robot.urdf')
     ekf_config_file = os.path.join(allterrain_pkg_share, 'config', 'ekf_allterrain.yaml')
     slam_config_file = os.path.join(studica_pkg_share, 'config', 'slam_params.yaml')
@@ -52,12 +52,12 @@ def generate_launch_description():
     
     laser_front_tf = Node(
         package='tf2_ros', executable='static_transform_publisher', name='tf_laser_front',
-        arguments=['0.172', '0', '0.15', '0', '0', '0', '1', 'base_link', 'laser_front']
+        arguments=['0.195', '0', '0.15', '0', '0', '0', '1', 'base_link', 'laser_front']
     )
     
     laser_back_tf = Node(
         package='tf2_ros', executable='static_transform_publisher', name='tf_laser_back',
-        arguments=['-0.172', '0', '0.15', '3.14159', '0', '0', 'base_link', 'laser_back']
+        arguments=['-0.195', '0', '0.15', '3.14159', '0', '0', 'base_link', 'laser_back']
     )
 
     # 4. Hardware LiDAR Drivers
@@ -121,7 +121,22 @@ def generate_launch_description():
         executable='async_slam_toolbox_node',
         name='slam_toolbox',
         output='screen',
-        parameters=[slam_config_file]
+        parameters=[slam_config_file],
+        # Force SLAM to use the gated/filtered scan instead of the raw one
+        remappings=[('/scan', '/scan_filtered')]
+    )
+
+    confidence_gate_node = Node(
+        package='allterrain',
+        executable='confidence_scan_gate',
+        name='confidence_scan_gate_node',
+        output='screen',
+        parameters=[{
+            'input_scan_topic': '/scan',
+            'output_scan_topic': '/scan_filtered',
+            'map_topic': '/map',
+            'odom_topic': '/odometry/filtered', # Assuming your EKF outputs to this default
+        }]
     )
 
 
@@ -132,8 +147,8 @@ def generate_launch_description():
     # --- Staggered Timers to prevent race conditions ---
     delayed_rf2o = TimerAction(period=8.0, actions=[rf2o_node])
     delayed_ekf = TimerAction(period=7.0, actions=[ekf_node])
-    delayed_slam = TimerAction(period=9.0, actions=[slam_node])
-
+    delayed_slam = TimerAction(period=10.0, actions=[slam_node])
+    delayed_gate = TimerAction(period=12.0, actions=[confidence_gate_node]) 
     return LaunchDescription([
         params_arg,
         manual_composition,
@@ -141,12 +156,14 @@ def generate_launch_description():
         imu_tf,
         laser_front_tf,
         laser_back_tf,
-       # ydlidar_front_node,
-      #  ydlidar_back_node,
+        ydlidar_front_node,
+        ydlidar_back_node,
         allterrain_node,
-        delayed_ydf,
-        delayed_ydb,
+        lidar_merger_node,
+        #delayed_ydf,
+        #delayed_ydb,
        # delayed_rf2o,         # T+8s: Starts Laser Odometry
         delayed_ekf,          # T+10s: Starts Sensor Fusion (IMU + Laser)
-      #  delayed_slam          # T+15s: Starts Mapping
+        delayed_slam ,         # T+15s: Starts Mapping
+        delayed_gate 
     ])

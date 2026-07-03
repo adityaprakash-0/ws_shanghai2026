@@ -126,7 +126,7 @@ void Imu::publish_data() {
     pub_gyro_y_->publish(msg_y);
     pub_gyro_z_->publish(msg_z);
 
-    // ---------------------------------------------------------
+    // -----------------------------------f----------------------
     // 2. CONVERT FIXED EULER ANGLES TO QUATERNION (Radians)
     // ---------------------------------------------------------
     // This perfectly synchronizes your /gyro_z topic with the /imu topic

@@ -11,7 +11,7 @@ def generate_launch_description():
     pkg_share  = get_package_share_directory('studica_control')
 
     exec_path      = os.path.join(pkg_prefix, 'lib', 'studica_control', 'manual_composition')
-    default_params = os.path.join(pkg_share, 'config', 'params.yaml')
+    default_params = os.path.join(pkg_share, 'config', 'params_allterrain.yaml')
 
     params_arg = DeclareLaunchArgument(
         'params_file',
@@ -39,20 +39,6 @@ def generate_launch_description():
         output='screen'
     )
 
-    mecanum_node = Node(
-        package='mecanum',
-        executable='mecanum_node',
-        name='mecanum_node',
-        output='screen'
-    )
-
-
-    xdrive_node = Node(
-        package='xdrive',
-        executable='xdrive_node',
-        name='xdrive_node',
-        output='screen'
-    )
 
     # 3. PID Controllers
     pid_move_node = Node(
@@ -80,9 +66,8 @@ def generate_launch_description():
     return LaunchDescription([
         params_arg,
         manual_composition,
-        xdrive_node,
-       # allterrain_node,
-      #  pid_move_node,
-       # pid_turn_node,
+        allterrain_node,
+        pid_move_node,
+        pid_turn_node,
        # task_manager_node
     ])

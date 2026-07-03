@@ -33,8 +33,16 @@
   <depend>pluginlib</depend>
   <depend>nav_msgs</depend>
   <depend>tf2_geometry_msgs</depend>
+  
+  <!-- NEW DEPENDENCIES FOR MECANUM CONTROLLER -->
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>angles</depend>
 
   <export>
     <build_type>ament_cmake</build_type>
+    <!-- EXPORT BOTH PLUGINS (Matching your exact filenames) -->
+    <nav2_core plugin="${prefix}/smart_center_plugin.xml" />
+    <nav2_core plugin="${prefix}/mecanum_grid_controller.xml" />
   </export>
 </package>

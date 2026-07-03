@@ -502,6 +502,7 @@ void Titan::resend_speeds() {
     if (!enabled_) return;
     for (int i = 0; i < 4; i++) {
         titan_->SetSpeed(i, speeds_[i]); 
+      //  titan_->SetTargetVelocity(i, speeds_[i]);
     }
 }
 

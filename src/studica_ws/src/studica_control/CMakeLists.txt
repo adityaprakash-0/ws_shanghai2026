@@ -25,6 +25,11 @@ find_package(pluginlib REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(tf2_geometry_msgs REQUIRED)
 
+# NEW REQUIRED PACKAGES FOR MECANUM CONTROLLER
+find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(angles REQUIRED)
+
 rosidl_generate_interfaces(${PROJECT_NAME} # <- SRV files (srv, msg, action)
   "msg/DutyCycleEncoderMsg.msg"
   "msg/EncoderMsg.msg"
@@ -128,7 +133,6 @@ ament_target_dependencies(ultrasonic_component ${dependencies})
 target_link_libraries(ultrasonic_component "${cpp_typesupport_target}")
 rclcpp_components_register_nodes(ultrasonic_component "studica_control::Ultrasonic")
 
-
 add_library(smart_center_planner SHARED src/smart_center_planner.cpp)
 ament_target_dependencies(smart_center_planner
   rclcpp
@@ -141,8 +145,48 @@ ament_target_dependencies(smart_center_planner
   tf2_geometry_msgs
 )
 
-# Register the plugin XML so Nav2 can find it!
+add_library(smart_center_planner_mecanum SHARED src/smart_center_planner_mecanum.cpp)
+ament_target_dependencies(smart_center_planner_mecanum
+  rclcpp
+  nav2_core
+  nav2_costmap_2d
+  nav2_util
+  pluginlib
+  geometry_msgs
+  nav_msgs
+  tf2_geometry_msgs
+)
+
+add_library(mecanum_grid_controller SHARED
+  src/mecanum_grid_controller.cpp
+)
+target_include_directories(mecanum_grid_controller PUBLIC include)
+ament_target_dependencies(mecanum_grid_controller
+  rclcpp
+  nav2_core
+  nav2_costmap_2d
+  nav2_util
+  pluginlib
+  geometry_msgs
+  nav_msgs
+  tf2
+  tf2_ros
+  tf2_geometry_msgs
+  angles
+)
+
+# Register the plugin XML so Nav2 can find it (Matching exactly your file tree)
 pluginlib_export_plugin_description_file(nav2_core smart_center_plugin.xml)
+pluginlib_export_plugin_description_file(nav2_core smart_center_plugin_mecanum.xml)
+pluginlib_export_plugin_description_file(nav2_core mecanum_grid_controller.xml)
+
+# INSTALL THE XML FILES TO SHARE DIRECTORY
+install(FILES
+  smart_center_plugin.xml
+  smart_center_plugin_mecanum.xml
+  mecanum_grid_controller.xml
+  DESTINATION share/${PROJECT_NAME}
+)
 # =======================================================
 
 
@@ -160,6 +204,8 @@ install(TARGETS
   titan_component
   ultrasonic_component
   smart_center_planner
+  smart_center_planner_mecanum
+  mecanum_grid_controller
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
     PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE

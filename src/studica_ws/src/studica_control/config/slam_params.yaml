@@ -15,8 +15,8 @@ slam_toolbox:
     # -----------------------------------------
     # Map Grid Parameters
     # -----------------------------------------
-    resolution: 0.05 # 5cm per pixel (Standard for high-res indoor mapping)
-    max_laser_range: 12.0 # Maximum distance to trust the LiDAR (meters)
+    resolution: 0.03 # 5cm per pixel (Standard for high-res indoor mapping)
+    max_laser_range: 10.0 # Maximum distance to trust the LiDAR (meters)
     minimum_time_interval: 0.5 # Wait at least 0.5s between map updates (saves CPU)
     transform_timeout: 0.2
     tf_buffer_duration: 30.0

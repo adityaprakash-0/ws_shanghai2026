@@ -22,6 +22,7 @@ setup(
         'console_scripts': [
             'task_manager_allterrain = mypackage.task_manager_allterrain:main',
             'custom_teleop_allterrain = mypackage.custom_teleop_allterrain:main',
+            'task_manager_mecanum = mypackage.task_manager_mecanum:main',
         ],
     },
 )

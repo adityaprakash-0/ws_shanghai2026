@@ -1,0 +1,10 @@
+<library path="mecanum_grid_controller">
+  <class name="nav2_mecanum_grid_controller::MecanumGridController" 
+         type="nav2_mecanum_grid_controller::MecanumGridController" 
+         base_class_type="nav2_core::Controller">
+    <description>
+      A lightweight, pure-omnidirectional grid controller for Mecanum drives.
+      Follows paths with zero deviation by separating X and Y PID translation.
+    </description>
+  </class>
+</library>

@@ -13,6 +13,9 @@ find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(tf2 REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(studica_control REQUIRED)
+find_package(message_filters REQUIRED) 
 
 # Build the executable
 add_executable(mecanum_node src/mecanum_node.cpp)
@@ -25,9 +28,17 @@ ament_target_dependencies(mecanum_node
   tf2
 )
 
+add_executable(pid_move src/pid_move.cpp)
+ament_target_dependencies(pid_move rclcpp std_msgs geometry_msgs studica_control)
+
+add_executable(pid_turn src/pid_turn.cpp)
+ament_target_dependencies(pid_turn rclcpp std_msgs geometry_msgs studica_control)
+
 # Install the executable so ROS 2 can find it using ros2 run
 install(TARGETS
   mecanum_node
+  pid_move
+  pid_turn
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -39,5 +50,12 @@ if(BUILD_TESTING)
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
 endif()
+
+
+install(DIRECTORY 
+  config
+  urdf
+  DESTINATION share/${PROJECT_NAME}
+)
 
 ament_package()

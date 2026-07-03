@@ -1,0 +1,9 @@
+<library path="smart_center_planner_mecanum">
+  <class name="nav2_smart_center_planner_mecanum::SmartCenterPlanner" 
+         type="nav2_smart_center_planner_mecanum::SmartCenterPlanner" 
+         base_class_type="nav2_core::GlobalPlanner">
+    <description>
+      A custom 4-connected A* planner that uses the costmap valley for centering.
+    </description>
+  </class>
+</library>

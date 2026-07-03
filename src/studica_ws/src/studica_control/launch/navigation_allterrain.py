@@ -17,17 +17,17 @@ def generate_launch_description():
  
     # File Paths
     exec_path = os.path.join(studica_pkg_prefix, 'lib', 'studica_control', 'manual_composition')
-    default_params = os.path.join(studica_pkg_share, 'config', 'params.yaml')
+    default_params = os.path.join(studica_pkg_share, 'config', 'params_allterrain.yaml')
     urdf_file = os.path.join(allterrain_pkg_share, 'urdf', 'allterrain_robot.urdf')
     ekf_config_file = os.path.join(allterrain_pkg_share, 'config', 'ekf_allterrain.yaml')
     
     # Pathing for Nav2 and Maps
     default_nav2_params_path = os.path.join(allterrain_pkg_share, 'config', 'nav2_allterrain.yaml')
     # Hardcoded path to your active workspace map
-    default_map_path = os.path.expanduser('~/skill23_ws/test_map2.yaml')
+    default_map_path = os.path.expanduser('~/skill23_ws/test_map10.yaml')
 
-    ydlidar_front_config = os.path.join(studica_pkg_share, 'config', 'front_lidar.yaml')
-    ydlidar_back_config = os.path.join(studica_pkg_share, 'config', 'back_lidar.yaml')
+    ydlidar_front_config = os.path.join(studica_pkg_share, 'config', 'front_lidar_nav.yaml')
+    ydlidar_back_config = os.path.join(studica_pkg_share, 'config', 'back_lidar_nav.yaml')
     nav2_launch_file = os.path.join(nav2_bringup_dir, 'launch', 'bringup_launch.py')
 
     with open(urdf_file, 'r') as infp:
@@ -135,6 +135,20 @@ def generate_launch_description():
             'autostart': 'true'
         }.items()
     )
+    
+    confidence_gate_node = Node(
+        package='allterrain',
+        executable='confidence_scan_gate',
+        name='confidence_scan_gate_node',
+        output='screen',
+        parameters=[{
+            'input_scan_topic': '/scan',
+            'output_scan_topic': '/scan_filtered',
+            'map_topic': '/map',
+            'odom_topic': '/odometry/filtered', # EKF default output
+        }]
+    )
+        
 
     # --- Staggered Timers to prevent race conditions & CPU choking ---
     delayed_rf2o = TimerAction(period=12.0, actions=[rf2o_node])
@@ -146,6 +160,14 @@ def generate_launch_description():
         actions=[
             LogInfo(msg="[INIT] Hardware & EKF warm-up complete. Launching Nav2 Stack..."),
             nav2_bringup_cmd
+        ]
+    )
+
+    delayed_gate = TimerAction(
+        period=15.0, 
+        actions=[
+            LogInfo(msg="[INIT] Map & Nav2 active. Launching Confidence Scan Gate..."),
+            confidence_gate_node
         ]
     )
 
@@ -176,5 +198,8 @@ def generate_launch_description():
         allterrain_node,
        #delayed_rf2o,         # T+8s: Starts Laser Odometry
         delayed_ekf,          # T+10s: Starts Sensor Fusion (IMU + Laser)
-        delayed_nav2_cmd      # T+18s: Starts Nav2 Path Planning & AMCL
+       confidence_gate_node
+       #delayed_nav2_cmd,      # T+18s: Starts Nav2 Path Planning & AMCL
+       #delayed_gate
+
     ])
