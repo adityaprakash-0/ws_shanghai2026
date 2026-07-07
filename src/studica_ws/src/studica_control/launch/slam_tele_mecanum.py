@@ -1,6 +1,6 @@
 import os
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess, DeclareLaunchArgument
+from launch.actions import ExecuteProcess, DeclareLaunchArgument, LogInfo
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch.actions import TimerAction
@@ -12,7 +12,10 @@ def generate_launch_description():
     studica_pkg_prefix = get_package_prefix('studica_control')
     studica_pkg_share  = get_package_share_directory('studica_control')
     mecanum_pkg_share = get_package_share_directory('mecanum')
+    allterrain_pkg_share = get_package_share_directory('allterrain')
     ydlidar_dir = get_package_share_directory('ydlidar_ros2_driver')
+    gate_params_file = os.path.join(allterrain_pkg_share, 'config', 'confidence_scan_gate.yaml')
+
 
     # File Paths
     exec_path = os.path.join(studica_pkg_prefix, 'lib', 'studica_control', 'manual_composition')
@@ -124,6 +127,23 @@ def generate_launch_description():
         parameters=[slam_config_file]
     )
 
+    confidence_gate_node = Node(
+        package='allterrain',
+        executable='confidence_scan_gate',
+        name='confidence_scan_gate_node',
+        output='screen',
+        parameters=[gate_params_file],
+    )
+
+    delayed_gate = TimerAction(
+        period=7.0, 
+        actions=[
+            LogInfo(msg="[INIT] Map & Nav2 active. Launching Confidence Scan Gate..."),
+            confidence_gate_node
+        ]
+    )
+
+
 
     delayed_ydf = TimerAction(period=2.0, actions=[ydlidar_front_node])
     delayed_ydb = TimerAction(period=5.0, actions=[ydlidar_back_node])
@@ -131,7 +151,7 @@ def generate_launch_description():
    
     # --- Staggered Timers to prevent race conditions ---
     delayed_rf2o = TimerAction(period=8.0, actions=[rf2o_node])
-    delayed_ekf = TimerAction(period=7.0, actions=[ekf_node])
+    delayed_ekf = TimerAction(period=5.0, actions=[ekf_node])
     delayed_slam = TimerAction(period=10.0, actions=[slam_node])
 
     return LaunchDescription([
@@ -147,5 +167,6 @@ def generate_launch_description():
         lidar_merger_node,
        # delayed_rf2o,         # T+8s: Starts Laser Odometry
         delayed_ekf,          # T+10s: Starts Sensor Fusion (IMU + Laser)
+        delayed_gate,
         delayed_slam          # T+15s: Starts Mapping
     ])

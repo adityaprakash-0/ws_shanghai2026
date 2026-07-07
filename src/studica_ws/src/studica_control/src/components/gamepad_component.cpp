@@ -223,18 +223,14 @@ void GamepadController::publish_twist() {
     twist_msg.angular.y = 0.0;
     twist_msg.angular.z = angular_z_ * ang_scale;
 
-    // Check if the joysticks are inside the deadzone (effectively zero)
     bool is_idle = (std::abs(linear_x_) < 0.001 && std::abs(linear_y_) < 0.001 && std::abs(angular_z_) < 0.001);
 
     if (is_idle) {
-        // If we are idle, only publish the STOP command ONCE. 
         if (!zero_published_) {
             cmd_vel_publisher_->publish(twist_msg);
             zero_published_ = true;
         }
-        // If zero_published_ is already true, do nothing! The gamepad stays silent.
     } else {
-        // We are actively driving. Publish normally and reset the zero flag.
         cmd_vel_publisher_->publish(twist_msg);
         zero_published_ = false;
     }

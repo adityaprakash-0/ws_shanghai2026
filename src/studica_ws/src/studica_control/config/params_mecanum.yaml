@@ -133,16 +133,16 @@ control_server:
         enable_pin: 6
 
     # -------------------------------------------------------------------------
-    # Gamepad — joystick/gamepad input to cmd_vel
+    # Gamepad — disabled during autonomous Nav2 (fights /cmd_vel with Nav2)
     # -------------------------------------------------------------------------
     gamepad:
-      enabled: true
+      enabled: false
       axis_linear_x: 1
       axis_linear_y: 0
       axis_angular_z: 2
       button_turbo: 5
       linear_scale: 0.4
-      angular_scale: 1.0
+      angular_scale: 0.4
       deadzone: 0.05
       turbo_multiplier: 2.0
       publish_rate: 50

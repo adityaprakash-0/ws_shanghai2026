@@ -1,0 +1,40 @@
+# Confidence scan gate — filters drift / ghost lidar hits before Nav2 costmaps.
+# AMCL stays on raw /scan; only costmaps use /scan_filtered (see nav2_allterrain.yaml).
+
+confidence_scan_gate_node:
+  ros__parameters:
+    input_scan_topic: /scan
+    output_scan_topic: /scan_filtered
+    map_topic: /map
+    odom_topic: /odometry/filtered
+
+    bootstrap_scan_count: 30
+    min_occupied_cells_before_gating: 200
+
+    # Motion gate — duty-cycle skid-steer (odom twist from wheel encoders, m/s + rad/s)
+    enable_motion_gate: true
+    max_linear_speed: 0.45
+    max_angular_speed: 0.85
+    max_linear_accel: 1.0
+    max_angular_accel: 1.8
+
+    # Overlap — relaxed for 60 cm corridors (logs showed 0.47–0.51 failing at 0.58)
+    enable_overlap_gate: true
+    sample_stride: 3
+    min_validation_points: 25
+    min_overlap_ratio: 0.45
+    occupied_near_radius: 0.12
+
+    # Ghost wall — phantom obstacles from AMCL / scan drift
+    enable_ghost_wall_gate: true
+    ghost_min_offset: 0.08
+    ghost_max_offset: 0.35
+    ghost_max_point_gap: 0.18
+    ghost_min_run_length: 1.1
+
+    enable_starvation_guard: true
+    starvation_window_size: 50
+    starvation_threshold: 0.85
+
+    pass_on_tf_failure: true
+    debug_log_every_n_scans: 20

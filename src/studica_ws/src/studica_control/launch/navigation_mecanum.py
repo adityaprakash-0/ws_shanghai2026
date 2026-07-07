@@ -15,6 +15,7 @@ def generate_launch_description():
     studica_pkg_share  = get_package_share_directory('studica_control')
     allterrain_pkg_share = get_package_share_directory('allterrain')
     mecanum_pkg_share = get_package_share_directory('mecanum')
+    gate_params_file = os.path.join(allterrain_pkg_share, 'config', 'confidence_scan_gate.yaml')
     ydlidar_dir = get_package_share_directory('ydlidar_ros2_driver')
     nav2_bringup_dir = get_package_share_directory('nav2_bringup')
  
@@ -27,7 +28,7 @@ def generate_launch_description():
     # Pathing for Nav2 and Maps
     default_nav2_params_path = os.path.join(mecanum_pkg_share, 'config', 'nav2_mecanum.yaml')
     # Hardcoded path to your active workspace map
-    default_map_path = os.path.expanduser('~/skill23_ws/test_map6.yaml')
+    default_map_path = os.path.expanduser('~/skill23_ws/test_map11.yaml')
 
     ydlidar_front_config = os.path.join(studica_pkg_share, 'config', 'front_lidar_nav.yaml')
     ydlidar_back_config = os.path.join(studica_pkg_share, 'config', 'back_lidar_nav.yaml')
@@ -124,7 +125,7 @@ def generate_launch_description():
     mecanum_node = Node(
         package='mecanum',
         executable='mecanum_node',
-        name='amecanum_node',
+        name='mecanum_node',
         output='screen'
     )
 
@@ -139,6 +140,15 @@ def generate_launch_description():
         }.items()
     )
 
+    # /scan → gate → /scan_filtered (costmaps only); AMCL uses raw /scan
+    confidence_gate_node = Node(
+        package='allterrain',
+        executable='confidence_scan_gate',
+        name='confidence_scan_gate_node',
+        output='screen',
+        parameters=[gate_params_file],
+    )
+
     # --- Staggered Timers to prevent race conditions & CPU choking ---
     delayed_rf2o = TimerAction(period=12.0, actions=[rf2o_node])
     delayed_ekf = TimerAction(period=3.0, actions=[ekf_node])
@@ -149,6 +159,15 @@ def generate_launch_description():
         actions=[
             LogInfo(msg="[INIT] Hardware & EKF warm-up complete. Launching Nav2 Stack..."),
             nav2_bringup_cmd
+        ]
+    )
+
+
+    delayed_gate = TimerAction(
+        period=15.0, 
+        actions=[
+            LogInfo(msg="[INIT] Map & Nav2 active. Launching Confidence Scan Gate..."),
+            confidence_gate_node
         ]
     )
 
@@ -202,11 +221,11 @@ def generate_launch_description():
         ydlidar_back_node,
         lidar_merger_node,
         mecanum_node,
-       #delayed_rf2o,         # T+8s: Starts Laser Odometry
-        delayed_ekf,          # T+10s: Starts Sensor Fusion (IMU + Laser)
-     #   delayed_nav2_cmd,     # T+18s: Starts Nav2 Path Planning & AMCL
-        shutdown_handler_front, # <-- ADDED
-        shutdown_handler_back   # <-- ADDED
+        delayed_ekf,
+        delayed_nav2_cmd,
+        delayed_gate,
+        shutdown_handler_front,
+        shutdown_handler_back,
     ])
 
 

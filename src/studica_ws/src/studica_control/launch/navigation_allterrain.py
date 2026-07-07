@@ -12,6 +12,7 @@ def generate_launch_description():
     studica_pkg_prefix = get_package_prefix('studica_control')
     studica_pkg_share  = get_package_share_directory('studica_control')
     allterrain_pkg_share = get_package_share_directory('allterrain')
+    gate_params_file = os.path.join(allterrain_pkg_share, 'config', 'confidence_scan_gate.yaml')
     ydlidar_dir = get_package_share_directory('ydlidar_ros2_driver')
     nav2_bringup_dir = get_package_share_directory('nav2_bringup')
  
@@ -136,17 +137,13 @@ def generate_launch_description():
         }.items()
     )
     
+    # /scan → gate → /scan_filtered (costmaps only); AMCL uses raw /scan
     confidence_gate_node = Node(
         package='allterrain',
         executable='confidence_scan_gate',
         name='confidence_scan_gate_node',
         output='screen',
-        parameters=[{
-            'input_scan_topic': '/scan',
-            'output_scan_topic': '/scan_filtered',
-            'map_topic': '/map',
-            'odom_topic': '/odometry/filtered', # EKF default output
-        }]
+        parameters=[gate_params_file],
     )
         
 
@@ -196,10 +193,7 @@ def generate_launch_description():
         ydlidar_back_node,
         lidar_merger_node,
         allterrain_node,
-       #delayed_rf2o,         # T+8s: Starts Laser Odometry
-        delayed_ekf,          # T+10s: Starts Sensor Fusion (IMU + Laser)
-       confidence_gate_node
-       #delayed_nav2_cmd,      # T+18s: Starts Nav2 Path Planning & AMCL
-       #delayed_gate
-
+        delayed_ekf,
+        delayed_nav2_cmd,
+        delayed_gate,
     ])

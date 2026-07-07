@@ -30,6 +30,8 @@ LDCONF_FILE="/etc/ld.so.conf.d/studica_ws.conf"
 cat <<EOF | sudo tee "$LDCONF_FILE" > /dev/null
 # studica_control workspace
 $WS/install/studica_control/lib
+$WS/local_sysroot/lib
+$WS/local_sysroot/opt/ros/humble/lib
 # ROS2 Humble
 /opt/ros/humble/lib
 /opt/ros/humble/lib/aarch64-linux-gnu
@@ -55,6 +57,29 @@ if [ ! -f "$UDEV_RULE" ]; then
     echo "OK  udev rule for I2C installed"
 else
     echo "OK  I2C udev rule already present"
+fi
+
+# Orbbec depth camera USB rules (from local_sysroot; install via scripts/install_depth_camera.sh)
+ORBBEC_UDEV_SRC="$WS/local_sysroot/etc/udev/rules.d/99-obsensor-libusb.rules"
+if [ -f "$ORBBEC_UDEV_SRC" ]; then
+    sudo cp "$ORBBEC_UDEV_SRC" /etc/udev/rules.d/99-obsensor-libusb.rules
+    sudo chmod 644 /etc/udev/rules.d/99-obsensor-libusb.rules
+    sudo udevadm control --reload-rules
+    sudo udevadm trigger
+    echo "OK  Orbbec USB udev rules installed"
+elif [ -f "$HOME/depth_camera/ros-humble-orbbec-camera_jammy_arm64.deb" ]; then
+    echo "WARN Orbbec debs found but not in local_sysroot — run: $WS/scripts/install_depth_camera.sh"
+fi
+
+if ! id -nG "$USER" | tr ' ' '\n' | grep -qx video; then
+    sudo usermod -aG video "$USER"
+    echo "OK  added $USER to video group (re-login or: newgrp video)"
+fi
+
+# Orbbec SDK uses POSIX shared memory lock in /dev/shm (orbbec_device_lock)
+if [ "$(stat -c '%a' /dev/shm 2>/dev/null || echo 0)" != "1777" ]; then
+    sudo chmod 1777 /dev/shm
+    echo "OK  /dev/shm permissions fixed (was blocking orbbec_device_lock)"
 fi
 
 echo ""

@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADEV Dashboard | WorldSkills India</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="tricolor"></div>
+  <header>
+    <div class="brand">
+      <div class="india-badge" title="Team India"><span>🇮🇳 INDIA</span></div>
+      <div class="chakra" aria-hidden="true"></div>
+      <div>
+        <h1>Developed by ADEV</h1>
+        <div class="team">WorldSkills · <b>Team India</b></div>
+        <div class="sub">Navigation &amp; Localization</div>
+      </div>
+    </div>
+    <div class="conn-badge">
+      <span class="conn-dot" id="connDot"></span>
+      <span id="connText">OFFLINE</span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <!-- LEFT: Robot & Connection -->
+    <aside class="panel sidebar-left">
+      <div class="panel-title">Robot &amp; Connection</div>
+      <div class="panel-body">
+        <label class="field">Pi Bridge URL</label>
+        <input type="text" id="piUrl" placeholder="http://10.42.0.1:8080">
+        <button class="btn btn-primary" id="btnConnect">Connect</button>
+        <div id="connStatus" class="conn-status"></div>
+
+        <label class="field">Robot Platform</label>
+        <select id="robotSelect">
+          <option value="allterrain">All-Terrain (Diff Drive)</option>
+          <option value="mecanum">Mecanum (Omnidirectional)</option>
+          <option value="xdrive">X-Drive (4WD)</option>
+        </select>
+        <p style="font-size:0.7rem;color:#8ba3c7;margin-bottom:0.8rem;">
+          Launch matching stack on Pi:<br>
+          <code style="color:#ff9933">~/skill23_ws/src/studica_ws/scripts/ros2_pi.sh launch adev_dashboard adev_dashboard.launch.py robot:=TYPE</code>
+        </p>
+
+        <div class="toggle-row">
+          <span>Simulation Mode</span>
+          <div class="toggle" id="toggleSim" title="Test mission without robot"></div>
+        </div>
+
+        <label class="field">Map</label>
+        <select id="mapSelect"></select>
+        <button class="btn btn-ghost" id="btnLoadMap">Load Map from Pi</button>
+
+        <label class="field">Or load local map files</label>
+        <p style="font-size:0.68rem;color:#8ba3c7;margin-bottom:0.4rem;">
+          Pick <b>.yaml</b> then <b>.pgm</b> (same folder). If files show a padlock, run
+          <code>chmod 644 test_map10.yaml test_map10.pgm</code> on laptop.
+        </p>
+        <input type="file" id="mapFile" accept=".yaml,.yml">
+        <input type="file" id="mapPgmFile" accept=".pgm">
+        <button class="btn btn-ghost" id="btnLoadLocalMap">Load Local Map</button>
+        <div id="mapStatus" class="map-status"></div>
+
+        <div class="estop-wrap">
+          <button class="btn btn-danger" id="btnEstop">EMERGENCY STOP</button>
+        </div>
+      </div>
+      <div class="footer-note">Fully offline · No rosbridge · HTTP/SSE</div>
+    </aside>
+
+    <!-- CENTER: Map -->
+    <main class="map-area">
+      <div class="map-frame-label">TEAM INDIA · LIVE MAP</div>
+      <div class="map-meta-info" id="mapMetaInfo">—</div>
+      <div class="map-toolbar">
+        <button class="active" data-mode="waypoint">+ Waypoint</button>
+        <button data-mode="measure">Measure</button>
+        <button data-mode="initial_pose">Set Pose</button>
+        <button type="button" id="btnFitMap">Fit Map</button>
+        <button type="button" id="btnCenterRobot">Center Robot</button>
+      </div>
+      <canvas id="mapCanvas"></canvas>
+      <div class="map-hint">White = free · Black = wall · Gray = unknown · Scroll zoom · Alt+drag pan</div>
+    </main>
+
+    <!-- RIGHT: Mission & Status -->
+    <aside class="panel sidebar-right">
+      <div class="panel-title">Mission Control</div>
+      <div class="panel-body">
+        <label class="field">Last waypoint yaw (degrees)</label>
+        <div style="display:flex;gap:0.4rem;">
+          <input type="number" id="wpYaw" value="0" step="5" style="margin-bottom:0">
+          <button class="btn btn-ghost" id="btnSetYaw" style="width:auto;margin:0">Set</button>
+        </div>
+
+        <label class="field checkbox-row">
+          <input type="checkbox" id="chkIgnoreYaw" title="Next / last waypoint: reach XY only">
+          <span>Ignore yaw at goal (✓ XY only)</span>
+        </label>
+
+        <ul class="waypoint-list" id="waypointList"></ul>
+
+        <div class="panel-title" style="margin:0.6rem -0.75rem 0;border-top:1px solid #1e3a5f">Sequences</div>
+        <div class="toggle-row" style="margin-top:0.5rem">
+          <span>Use saved sequences</span>
+          <div class="toggle" id="toggleSequences" title="When ON, pick a sequence before start"></div>
+        </div>
+        <div id="sequencePanel" class="sequence-panel hidden">
+          <p class="seq-hint">Click waypoint numbers to build: <strong id="seqChainPreview">—</strong></p>
+          <div id="sequenceBuilder" class="seq-builder"></div>
+          <div class="seq-actions">
+            <button type="button" class="btn btn-ghost" id="btnSeqUndo">← Undo</button>
+            <button type="button" class="btn btn-ghost" id="btnSeqClear">Clear</button>
+          </div>
+          <label class="field">Sequence name</label>
+          <input type="text" id="sequenceName" placeholder="e.g. Loop A">
+          <button class="btn btn-ghost" id="btnSeqSave">💾 Save sequence</button>
+          <label class="field">Select saved sequence</label>
+          <select id="sequenceSelect"><option value="">— choose sequence —</option></select>
+          <button class="btn btn-ghost" id="btnSeqDelete">Delete selected</button>
+        </div>
+
+        <button class="btn btn-green" id="btnMissionStart">▶ Mission Start</button>
+        <button class="btn btn-ghost" id="btnMissionStop">■ Stop Mission</button>
+        <button class="btn btn-ghost" id="btnClearWp">Clear Waypoints</button>
+
+        <div class="panel-title" style="margin:0.8rem -0.75rem 0;border-top:1px solid #1e3a5f">Status</div>
+
+        <div class="status-grid" style="margin-top:0.6rem">
+          <div class="stat-card">
+            <div class="label">Robot State</div>
+            <div class="value" id="robotState">IDLE</div>
+          </div>
+          <div class="stat-card nav2">
+            <div class="label">Nav2</div>
+            <div class="value" id="nav2State">—</div>
+          </div>
+          <div class="stat-card mission">
+            <div class="label">Mission</div>
+            <div class="value" id="missionState">idle</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">Progress</div>
+            <div class="value" id="missionProgress">—</div>
+          </div>
+          <div class="stat-card dwell">
+            <div class="label">Next goal in</div>
+            <div class="value" id="missionDwell">—</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">Retries</div>
+            <div class="value" id="retryCount">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">HW E-Stop</div>
+            <div class="value" id="estopHw">OK</div>
+          </div>
+        </div>
+
+        <div style="margin-top:0.7rem">
+          <div class="label field">Pose (map frame)</div>
+          <div class="status-grid">
+            <div class="stat-card"><div class="label">X</div><div class="value" id="poseX">—</div></div>
+            <div class="stat-card"><div class="label">Y</div><div class="value" id="poseY">—</div></div>
+          </div>
+          <div class="stat-card" style="margin-top:0.4rem">
+            <div class="label">Yaw</div>
+            <div class="value" id="poseYaw">—</div>
+          </div>
+        </div>
+
+        <div style="margin-top:0.7rem">
+          <div class="label field">Battery</div>
+          <div class="stat-card">
+            <div class="value" id="batteryPct">—</div>
+            <div class="label" id="batteryVolt">—</div>
+            <div class="battery-bar"><div class="fill" id="batteryFill" style="width:0%"></div></div>
+          </div>
+        </div>
+
+        <div class="measure-readout" style="margin-top:0.6rem">
+          Measure: <span id="measureDist">—</span>
+        </div>
+      </div>
+    </aside>
+
+    <div class="bottom-bar">
+      <div class="panel">
+        <div class="panel-title">Localization</div>
+        <div class="panel-body" style="font-size:0.78rem;color:#8ba3c7">
+          AMCL + EKF fusion · TF map→base_footprint · Use <b>Set Pose</b> to re-localize on map
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Simulation</div>
+        <div class="panel-body" style="font-size:0.78rem;color:#8ba3c7">
+          Planner path once · point follows line · no RPP / BT / collision in sim
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Recovery</div>
+        <div class="panel-body" style="font-size:0.78rem;color:#8ba3c7">
+          Auto spin / backup / clear costmap on failure · Mission retries until waypoint reached
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

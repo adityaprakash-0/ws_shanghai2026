@@ -205,6 +205,7 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/float64.hpp"
+#include "std_msgs/msg/bool.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "sensor_msgs/msg/imu.hpp"
 #include "nav_msgs/msg/odometry.hpp"
@@ -213,6 +214,7 @@
 #include "tf2/LinearMath/Matrix3x3.h"
 #include "std_msgs/msg/float32.hpp"
 #include "std_msgs/msg/float32_multi_array.hpp"
+#include "std_msgs/msg/bool.hpp"
 
 // REMOVED TF BROADCASTER INCLUDE - The EKF handles this now!
 
@@ -241,6 +243,11 @@ public:
 
         cmd_vel_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
             "/cmd_vel", 10, std::bind(&AllTerrainNode::cmd_vel_callback, this, std::placeholders::_1));
+
+        sim_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+            "/adev/simulation", 10, [this](const std_msgs::msg::Bool::SharedPtr msg) {
+                simulation_mode_ = msg->data;
+            });
         
         imu_sub_ = this->create_subscription<sensor_msgs::msg::Imu>(
             "/imu", 10, std::bind(&AllTerrainNode::imu_callback, this, std::placeholders::_1));
@@ -275,11 +282,18 @@ private:
     rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr robot_dist_pub_;
     
     rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
+    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sim_sub_;
     rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
     rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr sub_fl_enc_, sub_fr_enc_, sub_rl_enc_, sub_rr_enc_;
     rclcpp::TimerBase::SharedPtr odom_timer_;
+    bool simulation_mode_ = false;
 
     void cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg) {
+        if (simulation_mode_) {
+            return;
+        }
+        // Nav2 cmd_vel.linear.x / angular.z are Titan duty cycles (−1.0…1.0), not m/s.
+        // Skid-steer mix: left = v − ω, right = v + ω (see titan_component /cmd topics).
         double linear = msg->linear.x;
         double angular = msg->angular.z;
 
@@ -304,6 +318,9 @@ private:
     }
 
     void publish_odometry() {
+        if (simulation_mode_) {
+            return;
+        }
         rclcpp::Time current_time = this->now();
         double dt = (current_time - last_time_).seconds();
         if (dt <= 0.0) return;
