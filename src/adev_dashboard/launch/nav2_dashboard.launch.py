@@ -11,33 +11,21 @@ from launch_ros.actions import Node
 def _launch_setup(context, *args, **kwargs):
     studica_share = get_package_share_directory('studica_control')
     robot = LaunchConfiguration('robot').perform(context)
-    nav2_on_laptop = LaunchConfiguration('nav2_on_laptop').perform(context).lower() in (
-        'true', '1', 'yes',
-    )
 
-    nav_files_on_pi = {
+    nav_files = {
         'allterrain': 'navigation_allterrain.py',
         'mecanum': 'navigation_mecanum.py',
         'xdrive': 'navigation_xdrive.py',
     }
-    nav_files_pi_only = {
-        'allterrain': 'navigation_allterrain_pi.py',
-        'mecanum': 'navigation_mecanum_pi.py',
-        'xdrive': 'navigation_xdrive_pi.py',
-    }
-
-    nav_files = nav_files_pi_only if nav2_on_laptop else nav_files_on_pi
 
     if robot not in nav_files:
         raise RuntimeError(
             f"Unknown robot '{robot}'. Use: allterrain | mecanum | xdrive")
 
     nav_launch_args = {}
-    if not nav2_on_laptop:
-        # Use map_file (not map) so we do not shadow navigation_<robot>.py's map default.
-        map_explicit = LaunchConfiguration('map_file').perform(context).strip()
-        if map_explicit:
-            nav_launch_args['map'] = map_explicit
+    map_explicit = LaunchConfiguration('map_file').perform(context).strip()
+    if map_explicit:
+        nav_launch_args['map'] = map_explicit
 
     nav_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -52,6 +40,7 @@ def _launch_setup(context, *args, **kwargs):
         output='screen',
         parameters=[{
             'robot': robot,
+            'nav_mode': 'nav2',
             'http_port': int(LaunchConfiguration('http_port').perform(context)),
             'maps_dir': os.path.expanduser('~/skill23_ws'),
         }],
@@ -69,20 +58,13 @@ def _launch_setup(context, *args, **kwargs):
 
 def generate_launch_description():
     return LaunchDescription([
-        # Root (sudo) manual_composition and user adev_bridge must share DDS discovery.
-        # Without this, /battery_state and other VMX topics are invisible to the bridge.
         SetEnvironmentVariable('FASTDDS_BUILTIN_TRANSPORTS', 'UDPv4'),
         DeclareLaunchArgument(
             'robot', default_value='allterrain',
             description='Robot platform: allterrain | mecanum | xdrive'),
         DeclareLaunchArgument(
             'map_file', default_value='',
-            description='Optional map yaml. If empty, navigation_<robot>.py default is used '
-                        '(mecanum → test_map11.yaml).'),
-        DeclareLaunchArgument(
-            'nav2_on_laptop', default_value='false',
-            description='If true, Pi runs hardware/sensors only; start Nav2 on laptop '
-                        '(laptop_nav2_ws) over Pi hotspot with same ROS_DOMAIN_ID.'),
+            description='Optional map yaml override.'),
         DeclareLaunchArgument('http_port', default_value='8080'),
         OpaqueFunction(function=_launch_setup),
     ])

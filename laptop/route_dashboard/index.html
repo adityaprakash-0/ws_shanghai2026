@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Route Graph Builder | ADEV</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="tricolor"></div>
+  <header>
+    <div class="brand">
+      <div class="india-badge" title="Team India"><span>🇮🇳 INDIA</span></div>
+      <div class="chakra" aria-hidden="true"></div>
+      <div>
+        <h1>Route Graph Builder</h1>
+        <div class="team">WorldSkills · <b>Team India</b></div>
+        <div class="sub">Offline · Export GeoJSON · Missions use ADEV Dashboard</div>
+      </div>
+    </div>
+    <div class="conn-badge">
+      <span class="conn-dot online" id="connDot"></span>
+      <span id="connText">OFFLINE TOOL</span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="panel sidebar-left">
+      <div class="panel-title">Load Map</div>
+      <div class="panel-body">
+        <label class="field">Map YAML</label>
+        <input type="file" id="mapFile" accept=".yaml,.yml">
+
+        <label class="field">Map PGM</label>
+        <input type="file" id="mapPgmFile" accept=".pgm">
+
+        <p style="font-size:0.68rem;color:#8ba3c7;margin-bottom:0.4rem;">
+          Pick <b>.yaml</b> then <b>.pgm</b> (from Pi <code>~/skill23_ws/</code>).
+          If files show a padlock: <code>chmod 644 map.yaml map.pgm</code>
+        </p>
+
+        <button class="btn btn-primary" id="btnLoadLocalMap">Load Local Map</button>
+        <div id="mapStatus" class="map-status"></div>
+
+        <div class="panel-title" style="margin:0.8rem -0.65rem 0;border-top:1px solid #1e3a5f">Load / Save Graph</div>
+        <label class="field">Graph GeoJSON</label>
+        <input type="file" id="graphFile" accept=".geojson,.json,application/geo+json,application/json">
+        <p style="font-size:0.68rem;color:#8ba3c7;margin-bottom:0.4rem;">
+          Load an existing <code>*_graph.geojson</code> onto the map (nodes, edges, IDs).
+          Edit / add nodes, then <b>Save Graph</b> to overwrite that file.
+        </p>
+        <button class="btn btn-primary" id="btnLoadGraph">Load Graph</button>
+        <button class="btn btn-green" id="btnSaveGraph" style="margin-top:0.35rem">Save Graph (overwrite)</button>
+        <div id="graphFileStatus" class="map-status"></div>
+
+        <div class="panel-title" style="margin:0.8rem -0.65rem 0;border-top:1px solid #1e3a5f">After export</div>
+        <p style="font-size:0.72rem;color:#8ba3c7;margin-top:0.5rem;line-height:1.4">
+          <code>scp *_graph.geojson vmx@&lt;pi-ip&gt;:~/skill23_ws/</code><br><br>
+          Run missions with <b>ADEV Dashboard</b> (port 8080), not this tool.
+          Use Pi mode <code>nav2_secret_mode</code> with this graph.
+        </p>
+      </div>
+      <div class="footer-note">Graph builder only · No Pi connection required</div>
+    </aside>
+
+    <main class="map-area">
+      <div class="map-frame-label">ROUTE GRAPH · MAP</div>
+      <div class="map-meta-info" id="mapMetaInfo">—</div>
+      <div class="map-toolbar">
+        <button class="active" data-mode="graph">+ Node</button>
+        <button data-mode="measure">Measure</button>
+        <button type="button" id="btnFitMap">Fit Map</button>
+      </div>
+      <canvas id="mapCanvas"></canvas>
+      <div class="map-hint">White = free · Black = wall · Click + Node on corridors · Scroll zoom · Alt+drag pan</div>
+    </main>
+
+    <aside class="panel sidebar-right">
+      <div class="panel-title">Graph</div>
+      <div class="panel-body">
+        <div class="status-grid">
+          <div class="stat-card">
+            <div class="label">Nodes</div>
+            <div class="value" id="nodeCount">0</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">Edges</div>
+            <div class="value" id="edgeCount">0</div>
+          </div>
+        </div>
+
+        <label class="field" for="wallClearanceM">Wall clearance (m)</label>
+        <input type="number" id="wallClearanceM" min="0" max="2" step="0.01" value="0.15"
+               title="Minimum distance from black walls for nodes and edges">
+        <p id="wallClearanceHint" style="font-size:0.68rem;color:#8ba3c7;margin:0.2rem 0 0.5rem;line-height:1.35">
+          Edges stay at least this far from walls (e.g. 0.15 m ≈ 15 cm). Re-run autoconnect after changing.
+        </p>
+
+        <button class="btn btn-ghost" id="btnUndo">Undo last</button>
+        <button class="btn btn-ghost" id="btnAutoconnect">Autoconnect (line of sight)</button>
+        <button class="btn btn-ghost" id="btnPruneEdges">Remove edges too close to walls</button>
+        <button class="btn btn-green" id="btnExportGraph">Export GeoJSON</button>
+        <button class="btn btn-green" id="btnSaveGraphSide">Save Graph (overwrite)</button>
+        <button class="btn btn-ghost" id="btnClearGraph">Clear Graph</button>
+
+        <p style="font-size:0.68rem;color:#8ba3c7;margin-top:0.5rem;line-height:1.35">
+          Place nodes on <b>white paths</b>, at least <b>wall clearance</b> from black walls.
+          Autoconnect links nodes in the <b>same open area</b> — not through walls or tight corners.
+          Nodes in different rooms need a <b>doorway path</b> of nodes to connect.
+        </p>
+
+        <div class="panel-title" style="margin:0.8rem -0.75rem 0;border-top:1px solid #1e3a5f">Nodes</div>
+        <ul class="waypoint-list" id="nodeList"></ul>
+
+        <div class="measure-readout" style="margin-top:0.6rem">
+          Measure: <span id="measureDist">—</span>
+        </div>
+      </div>
+    </aside>
+
+    <div class="bottom-bar">
+      <div class="panel">
+        <div class="panel-title">1 · Build / Load</div>
+        <div class="panel-body">Load yaml+pgm · load GeoJSON or place nodes · autoconnect</div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">2 · Save</div>
+        <div class="panel-body">Save Graph overwrites the loaded file · or Export as new name</div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">3 · Navigate</div>
+        <div class="panel-body">Pi: <code>nav2_secret_mode</code> · Laptop: ADEV dashboard missions</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/graph.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -60,6 +60,9 @@ ament_target_dependencies(confidence_scan_gate
   tf2_ros
 )
 
+add_executable(scan_relay src/scan_relay.cpp)
+ament_target_dependencies(scan_relay rclcpp sensor_msgs)
+
 # --- Install Executables ---
 install(TARGETS
   pid_move
@@ -67,6 +70,7 @@ install(TARGETS
   allterrain_node
   lidar_merger_node
   confidence_scan_gate
+  scan_relay
   DESTINATION lib/${PROJECT_NAME}
 )
 

@@ -1,0 +1,10 @@
+<library path="graph_planner_plugin">
+  <class name="skill23_graph_planner/GraphPlanner"
+         type="skill23_graph_planner::GraphPlanner"
+         base_class_type="nav2_core::GlobalPlanner">
+    <description>
+      Dijkstra planner on a GeoJSON corridor graph (nodes + directed edges).
+      Intended for safe centerline graphs (~15 cm from walls).
+    </description>
+  </class>
+</library>

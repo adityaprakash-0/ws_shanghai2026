@@ -5,6 +5,7 @@ import base64
 import json
 import math
 import os
+import queue
 import subprocess
 import threading
 import time
@@ -18,6 +19,7 @@ from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist
 from nav2_msgs.action import ComputePathToPose, NavigateToPose
 from nav_msgs.msg import Path
 from rclpy.action import ActionClient
+from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, HistoryPolicy
 from sensor_msgs.msg import BatteryState, LaserScan
@@ -55,6 +57,18 @@ ROBOT_DIMS = {
     'xdrive': {'length': 0.43, 'width': 0.40},
 }
 
+NAV_MODE_LABELS = {
+    'nav2': 'Nav2',
+    'nav2_guard': 'Nav2 Guard',
+    'nav2_secret_mode': 'Secret Mode',
+}
+
+PATH_DEBUG_TOPICS = (
+    '/plan',
+    '/local_plan',
+    '/route_path',
+)
+
 
 def path_to_points(msg: Path, max_pts: int = 120):
     if not msg.poses:
@@ -72,6 +86,7 @@ class TelemetryStore:
         self._data = {
             'connected': True,
             'robot': 'allterrain',
+            'nav_mode': 'nav2',
             'simulation': False,
             'pose': {'x': 0.0, 'y': 0.0, 'yaw': 0.0},
             'battery': {'voltage': 0.0, 'percentage': 0.0, 'valid': False, 'source': 'none'},
@@ -80,6 +95,7 @@ class TelemetryStore:
             'nav2': {
                 'available': False,
                 'state': 'unknown',
+                'action': '',
                 'mission': 'idle',
             },
             'mission': {
@@ -96,6 +112,14 @@ class TelemetryStore:
             'scan': [],
             'global_path': [],
             'local_path': [],
+            'route_path': [],
+            'path_info': {
+                'plan_poses': 0,
+                'local_poses': 0,
+                'route_poses': 0,
+                'last_topic': '',
+            },
+            'debug_log': [],
             'robot_dims': {'length': 0.43, 'width': 0.40},
         }
 
@@ -140,6 +164,23 @@ def densify_path(points, step: float = 0.04):
     return dense
 
 
+class DebugLog:
+    """Ring buffer of recent nav debug lines — streamed to dashboard."""
+
+    def __init__(self, telemetry: TelemetryStore, max_lines: int = 40):
+        self._telemetry = telemetry
+        self._max_lines = max_lines
+        self._lock = threading.Lock()
+
+    def add(self, msg: str):
+        line = f'{time.strftime("%H:%M:%S")} {msg}'
+        with self._lock:
+            lines = list(self._telemetry._data.get('debug_log', []))
+            lines.append(line)
+            lines = lines[-self._max_lines:]
+            self._telemetry.update(debug_log=lines)
+
+
 class MissionRunner:
     """Waypoint mission — Nav2 in real mode, planner + path-follow point in simulation."""
 
@@ -153,8 +194,7 @@ class MissionRunner:
         self.bridge = bridge
         self.node = bridge
         self.telemetry = telemetry
-        self.nav_client = ActionClient(bridge, NavigateToPose, 'navigate_to_pose')
-        self.plan_client = ActionClient(bridge, ComputePathToPose, 'compute_path_to_pose')
+        self._work_queue = queue.Queue()
         self.waypoints = []
         self.index = 0
         self.active = False
@@ -170,6 +210,73 @@ class MissionRunner:
         self._ignore_yaw_cancel = False
         self._dwell_timer = None
         self._dwell_remaining = 0.0
+        self._topic_goal_mode = False
+
+    def enqueue(self, fn):
+        self._work_queue.put(fn)
+
+    def process_work(self):
+        while True:
+            try:
+                fn = self._work_queue.get_nowait()
+            except queue.Empty:
+                break
+            fn()
+
+    def check_nav2_server(self):
+        if self.bridge.simulation_enabled:
+            plan_ready = self.bridge.plan_is_ready()
+            self.bridge.dbg(
+                f'[nav-check] sim mode planner ready={plan_ready}')
+            self.telemetry.update(nav2={
+                'available': plan_ready,
+                'state': 'planning' if plan_ready else 'planner_unavailable',
+                'action': 'compute_path_to_pose' if plan_ready else '',
+            })
+            return plan_ready
+
+        nav_ready = self.bridge.nav_is_ready()
+        if nav_ready != self.bridge._last_nav_ready:
+            self.bridge.dbg(
+                f'[nav-check] navigate_to_pose ready={nav_ready} '
+                f'mission_active={self.active}')
+            if self.bridge._last_nav_ready and not nav_ready:
+                self.bridge.dbg(
+                    '[nav] ALERT: navigate_to_pose server LOST — '
+                    'wait or relaunch stack before mission')
+        self.bridge._last_nav_ready = nav_ready
+        if self.active and (self._goal_handle is not None or self._topic_goal_mode):
+            self.telemetry.update(nav2={
+                'available': True,
+                'state': 'navigating',
+                'action': (
+                    'navigate_to_pose' if self._goal_handle is not None
+                    else 'goal_pose'),
+            })
+            return True
+
+        if self.active and not nav_ready:
+            self.telemetry.update(nav2={
+                'available': False,
+                'state': 'navigating',
+                'action': 'navigate_to_pose',
+            })
+            return False
+
+        if nav_ready:
+            nav2_update = {
+                'available': True,
+                'action': 'navigate_to_pose',
+                'state': 'navigating' if self.active else 'ready',
+            }
+            self.telemetry.update(nav2=nav2_update)
+            return True
+
+        nav2_update = {'available': False, 'action': ''}
+        if not self.active:
+            nav2_update['state'] = 'unavailable'
+        self.telemetry.update(nav2=nav2_update)
+        return False
 
     def set_waypoints(self, waypoints):
         self.waypoints = waypoints
@@ -180,7 +287,7 @@ class MissionRunner:
             'index': 0,
             'status': 'armed',
             'current': waypoints[0] if waypoints else None,
-            'mode': 'sim_path' if self.bridge.simulation_enabled else 'nav2',
+            'mode': 'sim_path' if self.bridge.simulation_enabled else self.bridge.nav_mode,
         })
 
     def start(self):
@@ -191,23 +298,35 @@ class MissionRunner:
         self.index = 0
         self.retries = 0
         self._ignore_yaw_cancel = False
+        self.bridge._smoother_seen = False
         self.telemetry.update(mission={
             'active': True,
             'status': 'running',
-            'mode': 'sim_path' if self.bridge.simulation_enabled else 'nav2',
+            'mode': 'sim_path' if self.bridge.simulation_enabled else self.bridge.nav_mode,
             'dwell_remaining': 0.0,
             'dwell_total': 0.0,
         })
-        self._dispatch()
+        self.enqueue(self._dispatch)
+        self.bridge.dbg(
+            f'[mission] START {len(self.waypoints)} waypoints mode={self.bridge.nav_mode}')
+        self.telemetry.update(
+            global_path=[], local_path=[], route_path=[],
+            path_info={'plan_poses': 0, 'local_poses': 0, 'route_poses': 0, 'last_topic': ''})
         mode = 'sim path-follow' if self.bridge.simulation_enabled else 'Nav2'
         return True, f'Mission started ({mode})'
 
     def stop(self):
+        self.enqueue(self._stop_impl)
+
+    def _stop_impl(self):
         self.active = False
+        self._topic_goal_mode = False
         self._cancel_timers()
         if self._goal_handle is not None:
-            self._goal_handle.cancel_goal_async()
+            handle = self._goal_handle
             self._goal_handle = None
+            self.bridge.dbg('[nav] canceling active goal (mission stop)')
+            handle.cancel_goal_async()
         self._rotate_to_yaw = None
         self.telemetry.update(mission={
             'active': False,
@@ -249,6 +368,13 @@ class MissionRunner:
             return
 
         wp = self.waypoints[self.index]
+        cx, cy, cyaw = self._current_pose()
+        self.bridge.dbg(
+            f'[mission] dispatch wp {self.index + 1}/{len(self.waypoints)} '
+            f'goal=({wp["x"]:.3f},{wp["y"]:.3f}) '
+            f'robot=({cx:.3f},{cy:.3f},{math.degrees(cyaw):.0f}°) '
+            f'mode={self.bridge.nav_mode}')
+        self.bridge._log_tf_debug()
         self.node.get_logger().info(
             f'Waypoint {self.index + 1}/{len(self.waypoints)}: '
             f'({wp["x"]:.3f}, {wp["y"]:.3f}) '
@@ -268,7 +394,8 @@ class MissionRunner:
             self._dispatch_nav2(wp)
 
     def _dispatch_sim_plan(self, wp):
-        if not self.plan_client.wait_for_server(timeout_sec=2.0):
+        if not self.bridge.plan_is_ready():
+            self.bridge.dbg('[nav] compute_path_to_pose NOT ready — retry 2s')
             self.node.get_logger().warn('Planner not ready — retry in 2s')
             self._pending_timer = self.node.create_timer(2.0, self._timer_dispatch)
             return
@@ -296,20 +423,25 @@ class MissionRunner:
         goal.goal.pose.orientation.z = gqz
         goal.goal.pose.orientation.w = gqw
 
+        self.bridge.dbg(
+            f'[nav] sim ComputePathToPose '
+            f'({cx:.2f},{cy:.2f})->({wp["x"]:.2f},{wp["y"]:.2f})')
         self.telemetry.update(nav2={'available': True, 'state': 'planning'})
-        future = self.plan_client.send_goal_async(goal)
-        future.add_done_callback(self._on_plan_goal_sent)
+        self.bridge.send_plan_goal(goal, self._on_plan_goal_sent_bridge)
 
-    def _on_plan_goal_sent(self, future):
+    def _on_plan_goal_sent_bridge(self, handle, reason='ok'):
         if not self.active:
             return
-        handle = future.result()
-        if not handle.accepted:
-            self.node.get_logger().warn('ComputePathToPose rejected — retry')
+        if handle is None or reason != 'accepted':
+            self.bridge.dbg(f'[nav] ComputePathToPose failed: {reason}')
+            self.node.get_logger().warn(
+                f'ComputePathToPose failed ({reason}) — retry')
             self._schedule_retry()
             return
+        self.bridge.dbg('[nav] ComputePathToPose goal accepted')
         result_future = handle.get_result_async()
-        result_future.add_done_callback(self._on_plan_result)
+        result_future.add_done_callback(
+            lambda fut: self.enqueue(lambda: self._on_plan_result(fut)))
 
     def _on_plan_result(self, future):
         if not self.active:
@@ -321,8 +453,10 @@ class MissionRunner:
                 (p.pose.position.x, p.pose.position.y)
                 for p in result.path.poses
             ]
+            self.bridge.dbg(
+                f'[path] sim plan result: {len(pts)} poses')
         except Exception as exc:
-            self.node.get_logger().warn(f'Plan failed: {exc} — straight line')
+            self.bridge.dbg(f'[path] sim plan exception: {exc}')
             cx, cy, _ = self._current_pose()
             pts = [(cx, cy), (float(wp['x']), float(wp['y']))]
 
@@ -456,29 +590,138 @@ class MissionRunner:
     def _waypoint_reached(self):
         self._on_waypoint_success()
 
+    def _make_goal_pose(self, wp):
+        msg = PoseStamped()
+        msg.header.frame_id = 'map'
+        msg.header.stamp = self.node.get_clock().now().to_msg()
+        msg.pose.position.x = float(wp['x'])
+        msg.pose.position.y = float(wp['y'])
+        _, _, qz, qw = yaw_to_quat(float(wp.get('yaw', 0.0)))
+        msg.pose.orientation.z = qz
+        msg.pose.orientation.w = qw
+        return msg
+
+    def _dispatch_nav2_goal_topic(self, wp):
+        """Publish goal_pose — bt_navigator re-sends via navigate_to_pose internally."""
+        self._topic_goal_mode = True
+        self._goal_handle = None
+        msg = self._make_goal_pose(wp)
+        self.bridge.publish_nav_goal(msg)
+        self.bridge.dbg(
+            '[nav] published /goal_pose + /bt_navigator/goal_pose '
+            f'({wp["x"]:.3f},{wp["y"]:.3f}) — waiting for /plan or /local_plan')
+        self.node.get_logger().info(
+            'Navigate via /goal_pose topic (watch for /plan in logs)')
+        self.telemetry.update(nav2={
+            'available': True,
+            'state': 'navigating',
+            'action': 'goal_pose',
+        })
+        if self._poll_timer is None:
+            self._poll_timer = self.node.create_timer(0.25, self._poll_topic_goal)
+
+    def _poll_topic_goal(self):
+        if not self.active or not self._topic_goal_mode:
+            return
+        wp = self.waypoints[self.index]
+        cx, cy, cyaw = self._current_pose()
+        dist = math.hypot(float(wp['x']) - cx, float(wp['y']) - cy)
+        if dist > self.XY_TOL:
+            return
+        if wp.get('ignore_yaw', False):
+            self._topic_goal_mode = False
+            self.bridge.dbg(f'[nav] topic goal XY reached dist={dist:.3f}')
+            self._on_waypoint_success()
+            return
+        target_yaw = float(wp.get('yaw', 0.0))
+        if abs(normalize_angle(target_yaw - cyaw)) < self.YAW_TOL:
+            self._topic_goal_mode = False
+            self.bridge.dbg('[nav] topic goal pose reached')
+            self._on_waypoint_success()
+
     def _dispatch_nav2(self, wp):
-        if not self.nav_client.wait_for_server(timeout_sec=1.5):
-            self.telemetry.update(nav2={'available': False, 'state': 'unavailable'})
-            self._pending_timer = self.node.create_timer(2.0, self._timer_dispatch)
+        if not self.bridge.nav_wait_ready(timeout_sec=15.0):
+            self.bridge.dbg(
+                '[nav] navigate_to_pose unavailable (15s) — retry in 3s')
+            self.bridge._log_action_discovery()
+            self.telemetry.update(mission={
+                'status': 'retrying',
+                'last_error': 'navigate_to_pose unavailable — is Nav2 still active?',
+            })
+            self._pending_timer = self.node.create_timer(3.0, self._timer_dispatch)
             return
 
-        self.telemetry.update(nav2={'available': True, 'state': 'navigating'})
-
+        self._topic_goal_mode = False
         goal = NavigateToPose.Goal()
-        goal.pose = PoseStamped()
-        goal.pose.header.frame_id = 'map'
-        goal.pose.header.stamp = rclpy.time.Time().to_msg()
-        goal.pose.pose.position.x = float(wp['x'])
-        goal.pose.pose.position.y = float(wp['y'])
-        _, _, qz, qw = yaw_to_quat(float(wp.get('yaw', 0.0)))
-        goal.pose.pose.orientation.z = qz
-        goal.pose.pose.orientation.w = qw
-
-        send_future = self.nav_client.send_goal_async(goal)
-        send_future.add_done_callback(self._on_goal_sent)
-
+        goal.pose = self._make_goal_pose(wp)
+        cx, cy, cyaw = self._current_pose()
+        self.bridge.dbg(
+            f'[nav] send NavigateToPose action '
+            f'robot=({cx:.2f},{cy:.2f}) goal=({wp["x"]:.2f},{wp["y"]:.2f}) '
+            f'nav_mode={self.bridge.nav_mode}')
+        # #region agent log
+        try:
+            import json as _json
+            import time as _time
+            route_ready = False
+            path_ready = False
+            try:
+                from rclpy.action import ActionClient as _AC
+                from nav2_msgs.action import ComputeRoute as _CR, ComputePathToPose as _CP
+                rc = getattr(self.bridge, '_dbg_route_client', None)
+                if rc is None:
+                    self.bridge._dbg_route_client = _AC(self.bridge, _CR, 'compute_route')
+                    self.bridge._dbg_path_client = _AC(self.bridge, _CP, 'compute_path_to_pose')
+                route_ready = self.bridge._dbg_route_client.wait_for_server(timeout_sec=0.2)
+                path_ready = self.bridge._dbg_path_client.wait_for_server(timeout_sec=0.2)
+            except Exception as _exc:
+                route_ready = f'err:{_exc}'
+                path_ready = route_ready
+            with open('/home/vmx/skill23_ws/.cursor/debug-8cd67e.log', 'a', encoding='utf-8') as _f:
+                _f.write(_json.dumps({
+                    'sessionId': '8cd67e',
+                    'runId': 'post-fix',
+                    'hypothesisId': 'A',
+                    'location': 'bridge_node.py:_dispatch_nav2',
+                    'message': 'mission dispatch action readiness',
+                    'data': {
+                        'nav_mode': self.bridge.nav_mode,
+                        'compute_route_ready': route_ready,
+                        'compute_path_to_pose_ready': path_ready,
+                        'goal': {'x': wp['x'], 'y': wp['y']},
+                        'robot': {'x': cx, 'y': cy, 'yaw_deg': math.degrees(cyaw)},
+                    },
+                    'timestamp': int(_time.time() * 1000),
+                }) + '\n')
+        except Exception:
+            pass
+        # #endregion
+        self.node.get_logger().info('Sending NavigateToPose via navigate_to_pose')
+        self.telemetry.update(nav2={
+            'available': True,
+            'state': 'navigating',
+            'action': 'navigate_to_pose',
+        })
+        self.bridge.send_nav_goal(goal, self._on_nav_goal_sent_bridge)
         if wp.get('ignore_yaw', False) and self._poll_timer is None:
             self._poll_timer = self.node.create_timer(0.25, self._poll_xy_goal)
+
+    def _on_nav_goal_sent_bridge(self, handle, reason='ok'):
+        if not self.active:
+            return
+        if handle is None or reason != 'accepted':
+            self.bridge.dbg(
+                f'[nav] NavigateToPose send failed: {reason} — trying goal_pose')
+            self.node.get_logger().warn(
+                f'NavigateToPose failed ({reason}) — falling back to /goal_pose')
+            wp = self.waypoints[self.index]
+            self._dispatch_nav2_goal_topic(wp)
+            return
+        self.bridge.dbg('[nav] NavigateToPose goal ACCEPTED — waiting for path + result')
+        self._goal_handle = handle
+        result_future = handle.get_result_async()
+        result_future.add_done_callback(
+            lambda fut: self.enqueue(lambda: self._on_result(fut)))
 
     def _poll_xy_goal(self):
         if not self.active or self._goal_handle is None:
@@ -496,6 +739,7 @@ class MissionRunner:
             if self._poll_timer is not None:
                 self._poll_timer.cancel()
                 self._poll_timer = None
+            self.bridge.dbg('[nav] canceling goal (ignore_yaw XY reached)')
             handle.cancel_goal_async()
             self._on_waypoint_success()
 
@@ -503,24 +747,34 @@ class MissionRunner:
         self._cancel_nav_timers()
         self._dispatch()
 
-    def _on_goal_sent(self, future):
-        if not self.active:
-            return
-        goal_handle = future.result()
-        if not goal_handle.accepted:
-            self.node.get_logger().warn('NavigateToPose goal rejected — retrying')
-            self._schedule_retry()
-            return
-        self._goal_handle = goal_handle
-        result_future = goal_handle.get_result_async()
-        result_future.add_done_callback(self._on_result)
-
     def _on_result(self, future):
         if not self.active:
             return
         self._goal_handle = None
         status = future.result().status
         status_name = GOAL_STATUS_NAMES.get(status, str(status))
+        self.bridge.dbg(f'[nav] goal result: {status_name} (code {status})')
+        # #region agent log
+        try:
+            import json as _json
+            import time as _time
+            with open('/home/vmx/skill23_ws/.cursor/debug-8cd67e.log', 'a', encoding='utf-8') as _f:
+                _f.write(_json.dumps({
+                    'sessionId': '8cd67e',
+                    'runId': 'post-fix',
+                    'hypothesisId': 'A',
+                    'location': 'bridge_node.py:_on_result',
+                    'message': 'nav goal result',
+                    'data': {
+                        'status': status_name,
+                        'code': status,
+                        'nav_mode': self.bridge.nav_mode,
+                    },
+                    'timestamp': int(_time.time() * 1000),
+                }) + '\n')
+        except Exception:
+            pass
+        # #endregion
         if status == GoalStatus.STATUS_SUCCEEDED:
             self._cancel_nav_timers()
             self._on_waypoint_success()
@@ -532,6 +786,7 @@ class MissionRunner:
         else:
             self._cancel_nav_timers()
             err = f'Nav2 goal {status_name} (code {status})'
+            self.bridge.dbg(f'[nav] goal FAILED: {err}')
             self.node.get_logger().warn(
                 f'Waypoint {self.index + 1} failed: {err} — retrying in 2s')
             self.telemetry.update(mission={'last_error': err, 'status': 'retrying'})
@@ -547,20 +802,32 @@ class AdevBridgeNode(Node):
   def __init__(self):
     super().__init__('adev_bridge')
     self.declare_parameter('robot', 'allterrain')
+    self.declare_parameter('nav_mode', 'nav2')
     self.declare_parameter('http_port', 8080)
     self.declare_parameter('maps_dir', os.path.expanduser('~/skill23_ws'))
 
     self.robot = self.get_parameter('robot').value
+    self.nav_mode = self.get_parameter('nav_mode').value
     self.http_port = int(self.get_parameter('http_port').value)
     self.maps_dir = self.get_parameter('maps_dir').value
 
     self.telemetry = TelemetryStore()
-    self.telemetry.update(robot=self.robot)
+    self.telemetry.update(
+        robot=self.robot,
+        nav_mode=self.nav_mode,
+    )
+    self.debug_log = DebugLog(self.telemetry)
+    self.nav_client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
+    self.plan_client = ActionClient(self, ComputePathToPose, 'compute_path_to_pose')
     self.mission = MissionRunner(self, self.telemetry)
     self.estop_active = False
     self.simulation_enabled = False
     self.pose_initialized = True  # AMCL set_initial_pose in nav2 yaml
     self._battery_rx_count = 0
+    self._cmd_vel_nav_rx = 0
+    self._cmd_vel_rx = 0
+    self._smoother_seen = False
+    self._last_nav_ready = None
     self._cached_pose = {'x': 0.0, 'y': 0.0, 'yaw': 0.0}
     self._sim_pending = None
     self._sim_apply_timer = None
@@ -574,6 +841,9 @@ class AdevBridgeNode(Node):
         PoseWithCovarianceStamped, '/adev/sim_seed', 10)
     self.initial_pose_pub = self.create_publisher(
         PoseWithCovarianceStamped, '/initialpose', 10)
+    self.goal_pose_pub = self.create_publisher(PoseStamped, '/goal_pose', 10)
+    self.bt_goal_pose_pub = self.create_publisher(
+        PoseStamped, '/bt_navigator/goal_pose', 10)
     init_sim = Bool()
     init_sim.data = False
     self.sim_pub.publish(init_sim)
@@ -592,25 +862,185 @@ class AdevBridgeNode(Node):
     self.create_subscription(LaserScan, '/scan_filtered', self._scan_cb, scan_qos)
     self.create_subscription(Path, '/plan', self._global_plan_cb, path_qos)
     self.create_subscription(Path, '/local_plan', self._local_plan_cb, path_qos)
+    self.create_subscription(Path, '/route_path', self._route_path_cb, path_qos)
     self.create_subscription(
         PoseWithCovarianceStamped, '/amcl_pose', self._amcl_pose_cb, 10)
     self.create_subscription(PoseStamped, '/adev/sim_pose', self._sim_pose_cb, 10)
+    self.create_subscription(Twist, '/cmd_vel_nav', self._cmd_vel_nav_cb, 10)
+    self.create_subscription(Twist, '/cmd_vel', self._cmd_vel_out_cb, 10)
 
-    self.tf_buffer = Buffer()
+    self.tf_buffer = Buffer(
+        cache_time=rclpy.duration.Duration(seconds=30.0))
     self.tf_listener = TransformListener(self.tf_buffer, self)
     self.create_timer(0.2, self._update_pose)
     self.create_timer(5.0, self._check_battery)
+    self.create_timer(0.05, lambda: self.mission.process_work())
+    self.create_timer(2.0, lambda: self.mission.check_nav2_server())
+    self.create_timer(5.0, self._log_cmd_vel_health)
 
     self._http_ready = threading.Event()
     self._http_thread = threading.Thread(target=self._run_http, daemon=True)
     self._http_thread.start()
     if self._http_ready.wait(timeout=5.0):
+        self.dbg(
+            f'bridge ready port={self.http_port} robot={self.robot} '
+            f'nav_mode={self.nav_mode}')
+        if self.nav_mode == 'nav2_secret_mode':
+            self.dbg(
+                '[config] nav2_secret_mode uses skill23_graph_planner '
+                'nav2_secret_<robot>.yaml (GraphPlanner + stock BT + RPP)')
         self.get_logger().info(
-            f'ADEV API bridge on :{self.http_port} (API only — UI runs on laptop) | robot={self.robot}')
+            f'ADEV API bridge on :{self.http_port} (API only — UI runs on laptop) | '
+            f'robot={self.robot} mode={self.nav_mode}')
     else:
         self.get_logger().error(
             f'HTTP bridge failed to start on port {self.http_port}. '
             'Kill stale process: pkill -f adev_bridge  then relaunch.')
+
+  def publish_nav_goal(self, msg: PoseStamped):
+    self.goal_pose_pub.publish(msg)
+    self.bt_goal_pose_pub.publish(msg)
+
+  def dbg(self, msg: str):
+    self.get_logger().info(msg)
+    self.debug_log.add(msg)
+
+  def nav_is_ready(self) -> bool:
+    return self.nav_client.server_is_ready()
+
+  def nav_wait_ready(self, timeout_sec: float = 15.0) -> bool:
+    if self.nav_client.server_is_ready():
+      return True
+    return self.nav_client.wait_for_server(timeout_sec=timeout_sec)
+
+  def plan_is_ready(self) -> bool:
+    return self.plan_client.server_is_ready()
+
+  def _lookup_tf_map_base(self, timeout_sec: float = 0.3):
+    """Latest map→base_footprint; prefer clock-now then zero-time."""
+    timeout = rclpy.duration.Duration(seconds=timeout_sec)
+    errors = []
+    for stamp in (self.get_clock().now(), rclpy.time.Time()):
+      try:
+        return self.tf_buffer.lookup_transform(
+            'map', 'base_footprint', stamp, timeout=timeout)
+      except Exception as exc:
+        errors.append(str(exc))
+    raise RuntimeError(errors[-1] if errors else 'tf lookup failed')
+
+  def _log_action_discovery(self):
+    ready = self.nav_client.server_is_ready()
+    waited = self.nav_client.wait_for_server(timeout_sec=0.5)
+    self.dbg(
+        f'[nav] navigate_to_pose server_is_ready={ready} '
+        f'wait_for_server(0.5s)={waited}')
+
+  def _log_tf_debug(self):
+    try:
+      tf = self._lookup_tf_map_base(timeout_sec=0.3)
+      t = tf.transform.translation
+      yaw = quat_to_yaw(tf.transform.rotation.z, tf.transform.rotation.w)
+      self.dbg(
+          f'[tf] map->base_footprint OK ({t.x:.3f},{t.y:.3f},{math.degrees(yaw):.0f}°)')
+    except Exception as exc:
+      self.dbg(f'[tf] map->base_footprint FAILED: {exc}')
+
+  def send_nav_goal(self, goal, on_sent_cb):
+    if not self.nav_wait_ready(timeout_sec=15.0):
+      self.dbg('[nav] wait_for_server(navigate_to_pose) TIMEOUT 15s')
+      on_sent_cb(None, 'wait_timeout')
+      return
+    self.dbg('[nav] wait_for_server OK — send_goal_async')
+    future = self.nav_client.send_goal_async(goal)
+    future.add_done_callback(
+        lambda f: self.mission.enqueue(
+            lambda: self._on_nav_goal_future(f, on_sent_cb)))
+
+  def _on_nav_goal_future(self, future, on_sent_cb):
+    try:
+      handle = future.result()
+    except Exception as exc:
+      self.dbg(f'[nav] send_goal_async exception: {exc}')
+      on_sent_cb(None, f'exception:{exc}')
+      return
+    if handle is None:
+      self.dbg('[nav] send_goal_async returned None')
+      on_sent_cb(None, 'null_handle')
+      return
+    if not handle.accepted:
+      self.dbg('[nav] bt_navigator REJECTED goal')
+      on_sent_cb(handle, 'rejected')
+      return
+    on_sent_cb(handle, 'accepted')
+
+  def send_plan_goal(self, goal, on_sent_cb):
+    if not self.plan_client.wait_for_server(timeout_sec=5.0):
+      self.dbg('[nav] wait_for_server(compute_path_to_pose) TIMEOUT 5s')
+      on_sent_cb(None, 'wait_timeout')
+      return
+    future = self.plan_client.send_goal_async(goal)
+    future.add_done_callback(
+        lambda f: self.mission.enqueue(
+            lambda: self._on_plan_goal_future(f, on_sent_cb)))
+
+  def _on_plan_goal_future(self, future, on_sent_cb):
+    try:
+      handle = future.result()
+    except Exception as exc:
+      on_sent_cb(None, f'exception:{exc}')
+      return
+    if handle is None or not handle.accepted:
+      on_sent_cb(handle, 'rejected')
+      return
+    on_sent_cb(handle, 'accepted')
+
+  def _update_path_telemetry(self, topic: str, msg: Path, key: str):
+    pts = path_to_points(msg)
+    n = len(msg.poses)
+
+    if key == 'global_path' and n >= 1:
+      cx, cy = self._cached_pose['x'], self._cached_pose['y']
+      a = msg.poses[0].pose.position
+      if math.hypot(a.x - cx, a.y - cy) > 2.5:
+        return
+
+    info = dict(self.telemetry.snapshot().get('path_info', {}))
+    info['last_topic'] = topic
+    if key == 'global_path':
+      info['plan_poses'] = n
+    elif key == 'local_path':
+      info['local_poses'] = n
+    elif key == 'route_path':
+      info['route_poses'] = n
+    update = {key: pts, 'path_info': info}
+    if key == 'route_path' and pts:
+      update['global_path'] = pts
+    self.telemetry.update(**update)
+
+  def _cmd_vel_nav_cb(self, msg: Twist):
+    self._cmd_vel_nav_rx += 1
+    if self.mission.active and not self._smoother_seen:
+      self.cmd_vel_pub.publish(msg)
+
+  def _cmd_vel_out_cb(self, _msg: Twist):
+    self._cmd_vel_rx += 1
+    self._smoother_seen = True
+
+  def _log_cmd_vel_health(self):
+    if not self.mission.active:
+      self._cmd_vel_nav_rx = 0
+      self._cmd_vel_rx = 0
+      return
+    nav = self._cmd_vel_nav_rx
+    out = self._cmd_vel_rx
+    self._cmd_vel_nav_rx = 0
+    self._cmd_vel_rx = 0
+    if nav > 0 and out == 0:
+      self.dbg(
+          f'[cmd_vel] WARNING: /cmd_vel_nav={nav}/5s but /cmd_vel=0 '
+          '(velocity_smoother likely inactive — need cmd_vel_relay)')
+    elif nav > 0 or out > 0:
+      self.dbg(f'[cmd_vel] /cmd_vel_nav={nav}/5s /cmd_vel={out}/5s')
 
   def _estop_hw_cb(self, msg: Bool):
     self.telemetry.update(estop_hw=bool(msg.data))
@@ -651,11 +1081,14 @@ class AdevBridgeNode(Node):
         'source': 'waiting_for_control_server',
     })
 
-  def _global_plan_cb(self, msg: Path):
-    self.telemetry.update(global_path=path_to_points(msg))
-
   def _local_plan_cb(self, msg: Path):
-    self.telemetry.update(local_path=path_to_points(msg))
+    self._update_path_telemetry('/local_plan', msg, 'local_path')
+
+  def _route_path_cb(self, msg: Path):
+    self._update_path_telemetry('/route_path', msg, 'route_path')
+
+  def _global_plan_cb(self, msg: Path):
+    self._update_path_telemetry('/plan', msg, 'global_path')
 
   def _store_pose(self, x: float, y: float, yaw: float):
     self._cached_pose = {
@@ -668,9 +1101,7 @@ class AdevBridgeNode(Node):
 
   def _lookup_map_pose(self):
     try:
-        tf = self.tf_buffer.lookup_transform(
-            'map', 'base_footprint', rclpy.time.Time(),
-            timeout=rclpy.duration.Duration(seconds=0.2))
+        tf = self._lookup_tf_map_base(timeout_sec=0.2)
         t = tf.transform.translation
         yaw = quat_to_yaw(tf.transform.rotation.z, tf.transform.rotation.w)
         return t.x, t.y, yaw
@@ -732,9 +1163,7 @@ class AdevBridgeNode(Node):
     if self.simulation_enabled:
       return
     try:
-        tf = self.tf_buffer.lookup_transform(
-            'map', 'base_footprint', rclpy.time.Time(),
-            timeout=rclpy.duration.Duration(seconds=0.05))
+        tf = self._lookup_tf_map_base(timeout_sec=0.1)
         t = tf.transform.translation
         self._store_pose(
             t.x, t.y, quat_to_yaw(tf.transform.rotation.z, tf.transform.rotation.w))
@@ -870,7 +1299,13 @@ class AdevBridgeNode(Node):
             path = parsed.path
 
             if path == '/api/status':
-                self._json_response(200, {'ok': True, 'robot': node.robot})
+                mode = node.nav_mode
+                self._json_response(200, {
+                    'ok': True,
+                    'robot': node.robot,
+                    'nav_mode': mode,
+                    'nav_mode_label': NAV_MODE_LABELS.get(mode, mode),
+                })
                 return
 
             if path == '/api/telemetry':
@@ -994,8 +1429,10 @@ class AdevBridgeNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = AdevBridgeNode()
+    executor = MultiThreadedExecutor(num_threads=4)
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     except (KeyboardInterrupt, Exception):
         pass
     try:

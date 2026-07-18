@@ -45,7 +45,8 @@ public:
 
     // main constructor — connects to the sensor and sets up topics/services
     Ultrasonic(std::shared_ptr<VMXPi> vmx, const std::string &name,
-               VMXChannelIndex ping, VMXChannelIndex echo, const std::string &frame_id);
+               VMXChannelIndex ping, VMXChannelIndex echo, const std::string &frame_id,
+               double publish_rate_hz = 20.0);
 
     ~Ultrasonic();
 

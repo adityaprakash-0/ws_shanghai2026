@@ -94,10 +94,21 @@ def generate_launch_description():
         }.items(),
     )
 
-    confidence_gate_node = Node(
-        package='allterrain', executable='confidence_scan_gate',
-        name='confidence_scan_gate_node', output='screen',
-        parameters=[gate_params_file],
+    # --- DISABLED for Pi CPU testing (gate is already C++ in allterrain) ---
+    # confidence_gate_node = Node(
+    #     package='allterrain', executable='confidence_scan_gate',
+    #     name='confidence_scan_gate_node', output='screen',
+    #     parameters=[gate_params_file],
+    # )
+    scan_filtered_relay = Node(
+        package='allterrain',
+        executable='scan_relay',
+        name='scan_filtered_relay',
+        output='screen',
+        parameters=[{
+            'input_scan_topic': '/scan',
+            'output_scan_topic': '/scan_filtered',
+        }],
     )
 
     delayed_ekf = TimerAction(period=3.0, actions=[ekf_node])
@@ -108,11 +119,18 @@ def generate_launch_description():
             nav2_bringup_cmd,
         ],
     )
-    delayed_gate = TimerAction(
+    # delayed_gate = TimerAction(
+    #     period=15.0,
+    #     actions=[
+    #         LogInfo(msg='[INIT] Map & Nav2 active. Launching Confidence Scan Gate...'),
+    #         confidence_gate_node,
+    #     ],
+    # )
+    delayed_scan_relay = TimerAction(
         period=15.0,
         actions=[
-            LogInfo(msg='[INIT] Map & Nav2 active. Launching Confidence Scan Gate...'),
-            confidence_gate_node,
+            LogInfo(msg='[INIT] Gate disabled — relaying /scan -> /scan_filtered for costmaps'),
+            scan_filtered_relay,
         ],
     )
 
@@ -140,6 +158,6 @@ def generate_launch_description():
         manual_composition, robot_state_publisher,
         imu_tf, laser_front_tf, laser_back_tf,
         ydlidar_front_node, ydlidar_back_node, lidar_merger_node,
-        xdrive_node, delayed_ekf, delayed_nav2_cmd, delayed_gate,
+        xdrive_node, delayed_ekf, delayed_nav2_cmd, delayed_scan_relay,
         shutdown_handler_front, shutdown_handler_back,
     ])

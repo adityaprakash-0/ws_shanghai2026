@@ -131,11 +131,15 @@
 
         <div class="status-grid" style="margin-top:0.6rem">
           <div class="stat-card">
+            <div class="label">Nav Mode</div>
+            <div class="value" id="navMode">—</div>
+          </div>
+          <div class="stat-card">
             <div class="label">Robot State</div>
             <div class="value" id="robotState">IDLE</div>
           </div>
           <div class="stat-card nav2">
-            <div class="label">Nav2</div>
+            <div class="label">Nav Stack</div>
             <div class="value" id="nav2State">—</div>
           </div>
           <div class="stat-card mission">
@@ -183,6 +187,21 @@
 
         <div class="measure-readout" style="margin-top:0.6rem">
           Measure: <span id="measureDist">—</span>
+        </div>
+
+        <div style="margin-top:0.7rem">
+          <div class="label field">Planned path</div>
+          <div class="stat-card" style="font-size:0.78rem">
+            <span style="color:#b400dc">■</span> route
+            <span style="color:navy">■</span> global/plan
+            <span style="color:#138808">■</span> local
+            <div class="value" id="pathInfo" style="font-size:0.75rem;margin-top:0.25rem">no path yet</div>
+          </div>
+        </div>
+
+        <div style="margin-top:0.7rem">
+          <div class="label field">Nav debug (Pi)</div>
+          <pre id="navDebug" class="nav-debug-log">—</pre>
         </div>
       </div>
     </aside>

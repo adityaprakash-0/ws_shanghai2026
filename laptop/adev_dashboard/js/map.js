@@ -15,6 +15,7 @@ const MapView = (() => {
   let scan = [];
   let globalPath = [];
   let localPath = [];
+  let routePath = [];
   let robotDims = { length: 0.43, width: 0.40 };
   let waypoints = [];
   let missionIndex = 0;
@@ -218,9 +219,10 @@ const MapView = (() => {
     draw();
   }
 
-  function setPaths(global, local) {
+  function setPaths(global, local, route) {
     globalPath = global || [];
     localPath = local || [];
+    routePath = route || [];
     draw();
   }
 
@@ -362,6 +364,7 @@ const MapView = (() => {
 
     drawGrid(g);
 
+    drawPathLine(g, routePath, 'rgba(180, 0, 220, 0.9)', 3);
     drawPathLine(g, globalPath, 'rgba(0, 0, 128, 0.85)', 3);
     drawPathLine(g, localPath, 'rgba(19, 136, 8, 0.9)', 2);
 

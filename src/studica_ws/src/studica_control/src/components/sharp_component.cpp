@@ -17,7 +17,17 @@
 
 #include "studica_control/sharp_component.hpp"
 
+#include <algorithm>
+
 namespace studica_control {
+
+namespace {
+int period_ms_from_hz(double hz)
+{
+    const double clamped = std::max(1.0, std::min(hz, 20.0));
+    return static_cast<int>(1000.0 / clamped);
+}
+}  // namespace
 
 
 // reads sharp parameters from params.yaml and creates one node per entry
@@ -26,6 +36,8 @@ std::vector<std::shared_ptr<rclcpp::Node>> Sharp::initialize(rclcpp::Node *contr
     std::vector<std::shared_ptr<rclcpp::Node>> sharp_nodes;
 
     control->declare_parameter<std::vector<std::string>>("sharp.sensors", std::vector<std::string>{});
+    control->declare_parameter<double>("sharp.publish_rate_hz", 20.0);
+    const double publish_rate_hz = control->get_parameter("sharp.publish_rate_hz").as_double();
     std::vector<std::string> sensor_ids = control->get_parameter("sharp.sensors").as_string_array();
 
     for (const auto &sensor : sensor_ids) {
@@ -41,7 +53,7 @@ std::vector<std::shared_ptr<rclcpp::Node>> Sharp::initialize(rclcpp::Node *contr
         RCLCPP_INFO(control->get_logger(), "%s -> port: %d, frame_id: %s",
                     sensor.c_str(), port, frame_id.c_str());
 
-        auto sharp = std::make_shared<Sharp>(vmx, sensor, port, frame_id);
+        auto sharp = std::make_shared<Sharp>(vmx, sensor, port, frame_id, publish_rate_hz);
         sharp_nodes.push_back(sharp);
     }
 
@@ -55,7 +67,8 @@ Sharp::Sharp(const rclcpp::NodeOptions & options) : Node("sharp", options) {}
 
 // main constructor — connects to the sensor and sets up the publisher,
 // service, and periodic timer
-Sharp::Sharp(std::shared_ptr<VMXPi> vmx, const std::string &name, VMXChannelIndex port, const std::string &frame_id)
+Sharp::Sharp(std::shared_ptr<VMXPi> vmx, const std::string &name, VMXChannelIndex port, const std::string &frame_id,
+             double publish_rate_hz)
     : rclcpp::Node(name), vmx_(vmx), port_(port), frame_id_(frame_id) {
 
     sharp_ = std::make_shared<studica_driver::Sharp>(port_, vmx_);
@@ -67,8 +80,10 @@ Sharp::Sharp(std::shared_ptr<VMXPi> vmx, const std::string &name, VMXChannelInde
 
     publisher_ = this->create_publisher<sensor_msgs::msg::Range>(name + "/range", 10);
     timer_ = this->create_wall_timer(
-        std::chrono::milliseconds(50),
+        std::chrono::milliseconds(period_ms_from_hz(publish_rate_hz)),
         std::bind(&Sharp::publish_range, this));
+
+    RCLCPP_INFO(this->get_logger(), "%s sharp publish_rate=%.1f Hz", name.c_str(), publish_rate_hz);
 }
 
 Sharp::~Sharp() {}

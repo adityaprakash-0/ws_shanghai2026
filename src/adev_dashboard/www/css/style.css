@@ -515,6 +515,22 @@ input, select {
   margin-top: 0.5rem;
 }
 
+.nav-debug-log {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  line-height: 1.35;
+  color: #9ec5e8;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  padding: 0.4rem;
+  margin: 0;
+  max-height: 140px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .footer-note {
   font-size: 0.62rem;
   color: var(--muted);

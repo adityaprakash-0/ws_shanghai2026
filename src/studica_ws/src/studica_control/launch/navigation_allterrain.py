@@ -138,12 +138,23 @@ def generate_launch_description():
     )
     
     # /scan → gate → /scan_filtered (costmaps only); AMCL uses raw /scan
-    confidence_gate_node = Node(
+    # --- DISABLED for Pi CPU testing (gate is already C++ in allterrain) ---
+    # confidence_gate_node = Node(
+    #     package='allterrain',
+    #     executable='confidence_scan_gate',
+    #     name='confidence_scan_gate_node',
+    #     output='screen',
+    #     parameters=[gate_params_file],
+    # )
+    scan_filtered_relay = Node(
         package='allterrain',
-        executable='confidence_scan_gate',
-        name='confidence_scan_gate_node',
+        executable='scan_relay',
+        name='scan_filtered_relay',
         output='screen',
-        parameters=[gate_params_file],
+        parameters=[{
+            'input_scan_topic': '/scan',
+            'output_scan_topic': '/scan_filtered',
+        }],
     )
         
 
@@ -160,12 +171,19 @@ def generate_launch_description():
         ]
     )
 
-    delayed_gate = TimerAction(
-        period=15.0, 
+    # delayed_gate = TimerAction(
+    #     period=15.0,
+    #     actions=[
+    #         LogInfo(msg="[INIT] Map & Nav2 active. Launching Confidence Scan Gate..."),
+    #         confidence_gate_node
+    #     ]
+    # )
+    delayed_scan_relay = TimerAction(
+        period=15.0,
         actions=[
-            LogInfo(msg="[INIT] Map & Nav2 active. Launching Confidence Scan Gate..."),
-            confidence_gate_node
-        ]
+            LogInfo(msg="[INIT] Gate disabled — relaying /scan -> /scan_filtered for costmaps"),
+            scan_filtered_relay,
+        ],
     )
 
     fake_map_odom_tf = Node(
@@ -195,5 +213,5 @@ def generate_launch_description():
         allterrain_node,
         delayed_ekf,
         delayed_nav2_cmd,
-        delayed_gate,
+        delayed_scan_relay,
     ])

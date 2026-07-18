@@ -21,7 +21,17 @@
 
 #include "studica_control/ultrasonic_component.hpp"
 
+#include <algorithm>
+
 namespace studica_control {
+
+namespace {
+int period_ms_from_hz(double hz)
+{
+    const double clamped = std::max(1.0, std::min(hz, 20.0));
+    return static_cast<int>(1000.0 / clamped);
+}
+}  // namespace
 
 
 // reads ultrasonic parameters from params.yaml and creates one node per entry
@@ -30,6 +40,8 @@ std::vector<std::shared_ptr<rclcpp::Node>> Ultrasonic::initialize(rclcpp::Node *
     std::vector<std::shared_ptr<rclcpp::Node>> ultrasonic_nodes;
 
     control->declare_parameter<std::vector<std::string>>("ultrasonic.sensors", std::vector<std::string>{});
+    control->declare_parameter<double>("ultrasonic.publish_rate_hz", 20.0);
+    const double publish_rate_hz = control->get_parameter("ultrasonic.publish_rate_hz").as_double();
     std::vector<std::string> sensor_ids = control->get_parameter("ultrasonic.sensors").as_string_array();
 
     for (const auto &sensor : sensor_ids) {
@@ -48,7 +60,7 @@ std::vector<std::shared_ptr<rclcpp::Node>> Ultrasonic::initialize(rclcpp::Node *
         RCLCPP_INFO(control->get_logger(), "%s -> ping: %d, echo: %d, frame_id: %s",
                     sensor.c_str(), ping, echo, frame_id.c_str());
 
-        auto ultrasonic = std::make_shared<Ultrasonic>(vmx, sensor, ping, echo, frame_id);
+        auto ultrasonic = std::make_shared<Ultrasonic>(vmx, sensor, ping, echo, frame_id, publish_rate_hz);
         ultrasonic_nodes.push_back(ultrasonic);
     }
 
@@ -63,7 +75,8 @@ Ultrasonic::Ultrasonic(const rclcpp::NodeOptions &options) : Node("ultrasonic", 
 // main constructor — connects to the sensor and sets up the publisher,
 // service, and periodic timer
 Ultrasonic::Ultrasonic(std::shared_ptr<VMXPi> vmx, const std::string &name,
-                       VMXChannelIndex ping, VMXChannelIndex echo, const std::string &frame_id)
+                       VMXChannelIndex ping, VMXChannelIndex echo, const std::string &frame_id,
+                       double publish_rate_hz)
     : Node(name), vmx_(vmx), ping_(ping), echo_(echo), frame_id_(frame_id) {
 
     ultrasonic_ = std::make_shared<studica_driver::Ultrasonic>(ping_, echo_, vmx_);
@@ -75,8 +88,10 @@ Ultrasonic::Ultrasonic(std::shared_ptr<VMXPi> vmx, const std::string &name,
 
     publisher_ = this->create_publisher<sensor_msgs::msg::Range>(name + "/range", 10);
     timer_ = this->create_wall_timer(
-        std::chrono::milliseconds(50),
+        std::chrono::milliseconds(period_ms_from_hz(publish_rate_hz)),
         std::bind(&Ultrasonic::publish_range, this));
+
+    RCLCPP_INFO(this->get_logger(), "%s ultrasonic publish_rate=%.1f Hz", name.c_str(), publish_rate_hz);
 }
 
 Ultrasonic::~Ultrasonic() {}

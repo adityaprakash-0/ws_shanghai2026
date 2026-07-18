@@ -19,6 +19,27 @@
 
   const $ = (id) => document.getElementById(id);
 
+  const NAV_MODE_LABELS = {
+    nav2: 'Nav2',
+    nav2_guard: 'Nav2 Guard',
+    nav2_secret_mode: 'Secret Mode',
+  };
+
+  function formatNavMode(mode) {
+    return NAV_MODE_LABELS[mode] || mode || '—';
+  }
+
+  function formatNavStackState(t) {
+    const nav2 = t.nav2 || {};
+    if (t.mission?.active && (t.mission?.status === 'navigating' || t.mission?.status === 'retrying')) {
+      return nav2.state === 'navigating' ? 'navigating' : (t.mission.status || 'navigating');
+    }
+    if (!nav2.available) {
+      return nav2.state === 'unknown' ? 'starting…' : 'unavailable';
+    }
+    return nav2.state || 'ready';
+  }
+
   function setConnStatus(msg, ok) {
     const el = $('connStatus');
     if (!el) return;
@@ -50,7 +71,10 @@
     $('poseYaw').textContent = t.pose?.yaw != null
       ? `${(t.pose.yaw * 180 / Math.PI).toFixed(1)}°` : '—';
 
-    $('nav2State').textContent = t.nav2?.state ?? '—';
+    $('navMode').textContent = formatNavMode(t.nav_mode);
+    $('navMode').title = t.nav2?.action ? `action: ${t.nav2.action}` : '';
+    $('nav2State').textContent = formatNavStackState(t);
+    $('nav2State').title = t.nav2?.action ? `action: ${t.nav2.action}` : '';
     const dwellRem = t.mission?.dwell_remaining ?? 0;
     if (t.mission?.status === 'dwelling' && dwellRem > 0) {
       $('missionState').textContent = 'waiting';
@@ -63,6 +87,22 @@
     $('missionProgress').textContent = t.mission?.total
       ? `${t.mission.index + 1} / ${t.mission.total}` : '—';
     $('retryCount').textContent = t.mission?.retries ?? 0;
+
+    const pi = t.path_info || {};
+    const pathEl = $('pathInfo');
+    if (pathEl) {
+      const parts = [];
+      if (pi.route_poses) parts.push(`route:${pi.route_poses}`);
+      if (pi.plan_poses) parts.push(`plan:${pi.plan_poses}`);
+      if (pi.local_poses) parts.push(`local:${pi.local_poses}`);
+      pathEl.textContent = parts.length
+        ? `${parts.join(' · ')} (${pi.last_topic || '—'})`
+        : 'no path yet';
+    }
+    const dbgEl = $('navDebug');
+    if (dbgEl && Array.isArray(t.debug_log)) {
+      dbgEl.textContent = t.debug_log.slice(-12).join('\n');
+    }
 
     const bat = t.battery || {};
     if (bat.valid) {
@@ -81,18 +121,20 @@
     $('robotState').textContent = t.mission?.active
       ? (t.mission?.status === 'dwelling'
         ? 'DWELL'
-        : (t.mission?.mode === 'sim_path' ? 'SIM MISSION' : 'MISSION'))
-      : t.nav2?.state === 'navigating' ? 'NAVIGATING' : 'IDLE';
+        : (t.mission?.mode === 'sim_path'
+          ? 'SIM MISSION'
+          : `${formatNavMode(t.nav_mode || t.mission?.mode)} MISSION`))
+      : formatNavStackState(t) === 'navigating' ? 'NAVIGATING' : 'IDLE';
 
     if (!state.simulation) {
       MapView.setPose(t.pose || { x: 0, y: 0, yaw: 0 });
       MapView.setScan(t.scan);
-      MapView.setPaths(t.global_path, t.local_path);
+      MapView.setPaths(t.global_path, t.local_path, t.route_path);
       MapView.setRobotDims(t.robot_dims);
       MapView.setWaypoints(MapView.getWaypoints(), t.mission?.index ?? 0);
     } else {
       MapView.setPose(t.pose || { x: 0, y: 0, yaw: 0 });
-      MapView.setPaths(t.global_path, t.local_path);
+      MapView.setPaths(t.global_path, t.local_path, t.route_path);
       MapView.setRobotDims(t.robot_dims);
       MapView.setWaypoints(MapView.getWaypoints(), t.mission?.index ?? 0);
     }
