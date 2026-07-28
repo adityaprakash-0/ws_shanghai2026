@@ -19,10 +19,10 @@ class TaskManager(Node):
         # axis_mode: 0.0 = Forward/Backward, 1.0 = Left/Right (Strafe)
         # Format: ('turn', angle_degrees)
         self.mission_plan = [
-            ('move', 4.0, 0.0, 0.0),   # Move FORWARD 1 meter keeping 0 heading
-           # ('turn', 90.0),            # Turn 90 degrees CCW
+            ('move', 1.0, 0.0, 0.0),   # Move FORWARD 1 meter keeping 0 heading
            # ('turn', -90.0),            # Turn 90 degrees CCW
-           # ('move', -1.0, 1.0, 0.0),   # Move FORWARD 1 meter keeping 0 heading
+           # ('turn', -90.0),            # Turn 90 degrees CCW
+          #  ('move', -1.0, 1.0, 0.0),   # Move FORWARD 1 meter keeping 0 heading
          #   ('move', 0.5, 1.0, 0.0),   # STRAFE 0.5 meters (Y-axis)
          #   ('turn', -90.0)            # Turn 90 degrees CW
         ]

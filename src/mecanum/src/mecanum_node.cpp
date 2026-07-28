@@ -17,7 +17,7 @@ using namespace std::chrono_literals;
 class MecanumNode : public rclcpp::Node {
 public:
     MecanumNode() : Node("mecanum_node") {
-        this->declare_parameter<double>("ticks_per_rev", 1464.0);
+        this->declare_parameter<double>("ticks_per_rev", 1221.6);
         this->declare_parameter<double>("wheel_radius", 0.05);
 
         ticks_per_rev_ = this->get_parameter("ticks_per_rev").as_double();
@@ -178,12 +178,26 @@ private:
         odom.twist.twist.linear.y = v_y;
         odom.twist.twist.angular.z = v_th;
 
-        odom.pose.covariance[0] = 0.01;
-        odom.pose.covariance[7] = 0.01;
-        odom.pose.covariance[35] = 0.01;
-        odom.twist.covariance[0] = 0.01;
-        odom.twist.covariance[7] = 0.01;
-        odom.twist.covariance[35] = 0.01;
+        // pose cov 6x6 row-major: x,y,z,roll,pitch,yaw
+        // twist cov: vx,vy,vz,vroll,vpitch,vyaw
+        // Unused axes → 1e6 so EKF / consumers ignore them.
+        for (int i = 0; i < 36; ++i) {
+            odom.pose.covariance[i] = 0.0;
+            odom.twist.covariance[i] = 0.0;
+        }
+        odom.pose.covariance[0]  = 0.05;   // x  (m^2) — wheel slip
+        odom.pose.covariance[7]  = 0.05;   // y  (m^2) — strafe slip
+        odom.pose.covariance[14] = 1e6;    // z
+        odom.pose.covariance[21] = 1e6;    // roll
+        odom.pose.covariance[28] = 1e6;    // pitch
+        odom.pose.covariance[35] = 0.02;   // yaw (rad^2) — from IMU delta
+
+        odom.twist.covariance[0]  = 0.1;   // vx
+        odom.twist.covariance[7]  = 0.1;   // vy
+        odom.twist.covariance[14] = 1e6;   // vz
+        odom.twist.covariance[21] = 1e6;   // vroll
+        odom.twist.covariance[28] = 1e6;   // vpitch
+        odom.twist.covariance[35] = 0.001; // vyaw — IMU Δyaw/dt, matches gyro noise
 
         odom_pub_->publish(odom);
 

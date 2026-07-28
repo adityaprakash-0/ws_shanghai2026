@@ -111,12 +111,15 @@ void Sharp::cmd(std::string params, std::shared_ptr<studica_control::srv::SetDat
 // distance is converted from centimetres to metres. readings outside the
 // sensor's valid range are set to infinity so downstream nodes can filter them.
 void Sharp::publish_range() {
-    constexpr double min_range    = 0.1;   // metres — gp2y0a21yk minimum
-    constexpr double max_range    = 0.8;   // metres — gp2y0a21yk maximum
+    constexpr double min_range    = 0.1;   // metres — GP2Y0A21YK0F minimum
+    constexpr double max_range    = 0.8;   // metres — GP2Y0A21YK0F maximum
     constexpr double field_of_view = 0.26; // radians — approximate cone width
 
-    float distance = sharp_->GetDistance() / 100.0; // cm to metres
-    if (distance < min_range || distance > max_range) distance = INFINITY;
+    float dist_cm = sharp_->GetDistance();
+    float distance = dist_cm / 100.0f; // cm to metres
+    if (dist_cm < 0.0f || distance < min_range || distance > max_range) {
+        distance = INFINITY;
+    }
 
     sensor_msgs::msg::Range msg;
     msg.header.stamp    = this->get_clock()->now();

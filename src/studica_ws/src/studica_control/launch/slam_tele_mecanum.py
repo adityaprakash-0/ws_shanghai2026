@@ -30,6 +30,7 @@ def generate_launch_description():
     with open(urdf_file, 'r') as infp:
         robot_desc = infp.read()
 
+    # used to pass command-line argument
     params_arg = DeclareLaunchArgument('params_file', default_value=default_params)
 
     # 1. Core Hardware Driver (Runs as root)
@@ -47,21 +48,9 @@ def generate_launch_description():
         parameters=[{'robot_description': robot_desc}]
     )
 
-    # 3. Static Transforms (IMU and Dual LiDARs)
-    imu_tf = Node(
-        package='tf2_ros', executable='static_transform_publisher', name='tf_imu',
-        arguments=['0', '0', '0.20', '0', '0', '0', '1', 'base_link', 'imu_link']
-    )
-    
-    laser_front_tf = Node(
-        package='tf2_ros', executable='static_transform_publisher', name='tf_laser_front',
-        arguments=['0.195', '0', '0.15', '0', '0', '0', '1', 'base_link', 'laser_front']
-    )
-    
-    laser_back_tf = Node(
-        package='tf2_ros', executable='static_transform_publisher', name='tf_laser_back',
-        arguments=['-0.195', '0', '0.15', '3.14159', '0', '0', 'base_link', 'laser_back']
-    )
+    # 3. Sensor frames (imu_link, laser_front, laser_back) come from URDF
+    #    via robot_state_publisher — single source of truth (±0.21 m, back yaw=π).
+    #    Do NOT also publish static TFs for those frames (would conflict).
 
     # 4. Hardware LiDAR Drivers
     ydlidar_front_node = Node(
@@ -158,15 +147,12 @@ def generate_launch_description():
         params_arg,
         manual_composition,
         robot_state_publisher,
-        imu_tf,
-        laser_front_tf,
-        laser_back_tf,
         ydlidar_front_node,
         ydlidar_back_node,
         mecanum_node,
         lidar_merger_node,
-       # delayed_rf2o,         # T+8s: Starts Laser Odometry
-        delayed_ekf,          # T+10s: Starts Sensor Fusion (IMU + Laser)
-        delayed_gate,
-        delayed_slam          # T+15s: Starts Mapping
+       # delayed_rf2o,         # optional laser odom — keep OFF unless added to EKF as odom1
+        delayed_ekf,          # T+5s: wheel XY + IMU yaw → /odometry/filtered
+       # delayed_gate,
+        delayed_slam          # T+10s: SLAM Toolbox on /scan + odom TF
     ])

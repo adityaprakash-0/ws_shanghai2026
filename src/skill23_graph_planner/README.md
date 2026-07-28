@@ -17,6 +17,9 @@ goal → GraphPlanner (snap to nodes, Dijkstra on edges) → /plan
      → RPP FollowPath → /cmd_vel
 ```
 
+Secret YAML is tuned **lighter than stock nav2** on Pi 4B:
+fewer AMCL particles, coarser costmaps (0.05 m), slower update rates.
+GraphPlanner itself is cheap; the load was AMCL + costmaps + early Nav2 bringup.
 ## Params
 
 | Robot | File |

@@ -130,6 +130,7 @@ void Imu::publish_data() {
     // 2. CONVERT FIXED EULER ANGLES TO QUATERNION (Radians)
     // ---------------------------------------------------------
     // This perfectly synchronizes your /gyro_z topic with the /imu topic
+    //convert to radians
     double roll_rad  = ros_roll  * (M_PI / 180.0);
     double pitch_rad = ros_pitch * (M_PI / 180.0);
     double yaw_rad   = ros_yaw   * (M_PI / 180.0);
@@ -155,15 +156,38 @@ void Imu::publish_data() {
     // ---------------------------------------------------------
     msg.angular_velocity.x = -imu_->GetRawGyroY() * (M_PI / 180.0);
     msg.angular_velocity.y =  imu_->GetRawGyroX() * (M_PI / 180.0);
-    msg.angular_velocity.z =  imu_->GetRawGyroZ() * (M_PI / 180.0); // Flipped for CCW+
+    msg.angular_velocity.z =  imu_->GetRawGyroZ() * (M_PI / 180.0); 
 
     msg.linear_acceleration.x = -imu_->GetRawAccelY() * 9.80665;
     msg.linear_acceleration.y =  imu_->GetRawAccelX() * 9.80665;
     msg.linear_acceleration.z =  imu_->GetRawAccelZ() * 9.80665; // Gravity remains down (Z+ up)
 
-    msg.orientation_covariance = {1e6, 0.0, 0.0, 0.0, 1e6, 0.0, 0.0, 0.0, 0.0005};
-    msg.angular_velocity_covariance = {1e6, 0.0, 0.0, 0.0, 1e6, 0.0, 0.0, 0.0, 0.0005};
-    msg.linear_acceleration_covariance = {0.5, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.5};
+    // msg.orientation_covariance = {1e6, 0.0, 0.0, 0.0, 1e6, 0.0, 0.0, 0.0, 0.0005};
+
+    // msg.angular_velocity_covariance = {1e6, 0.0, 0.0, 0.0, 1e6, 0.0, 0.0, 0.0, 0.0005};
+
+    // msg.linear_acceleration_covariance = {0.5, 0.0, 0.0, 0.0, 0.5, 0.0, 0.0, 0.0, 0.5};
+
+    // Row-major 3x3 covariances (xx,xy,xz, yx,yy,yz, zx,zy,zz).
+    //the three values are roll, pitch , yaw ; so roll = x , pitch = y, yaw = z
+    // From NavX specs + drive-test still noise (4x inflated):
+    //   yaw ~0.25–0.5 deg/min drift, mag ±2° → yaw var ~0.02 rad^2
+    //   wz still σ≈0.0076 rad/s → var ~0.001
+    //   ax/ay still σ≈0.085 m/s^2 → var ~0.12
+    // 1e6 on unused axes = "do not trust" for 2D EKF (not REP-145 -1).
+    // Do NOT use -1 here: that means "measurement absent"; we publish values.
+    msg.orientation_covariance = {
+        1e6, 0.0, 0.0,
+        0.0, 1e6, 0.0,
+        0.0, 0.0, 0.02};   // roll/pitch unused; yaw used
+    msg.angular_velocity_covariance = {
+        1e6, 0.0, 0.0,
+        0.0, 1e6, 0.0,
+        0.0, 0.0, 0.001};  // wx/wy unused; wz (vyaw)
+    msg.linear_acceleration_covariance = {
+        0.12, 0.0, 0.0,
+        0.0, 0.12, 0.0,
+        0.0, 0.0, 0.5};    // ax/ay from still noise; az mostly gravity
 
     publisher_->publish(msg);
 }

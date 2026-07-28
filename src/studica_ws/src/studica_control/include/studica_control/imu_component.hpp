@@ -11,7 +11,8 @@
  *     orientation      — quaternion (x, y, z, w), relative to power-on heading
  *     angular_velocity — radians per second (converted from deg/s)
  *     linear_accel     — metres per second squared (converted from g)
- *   covariance fields are set to -1 (unknown) per ros2 convention (rep-145).
+ *   covariances: real variances on used axes (yaw/wz/ax/ay); large (1e6) on
+ *   unused roll/pitch/wx/wy. Do not use -1 unless a field is unpublished.
  *
  * service: <name>/get_imu_data (studica_control/SetData)
  *   params field sets the command:

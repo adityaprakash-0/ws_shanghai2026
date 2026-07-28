@@ -54,21 +54,7 @@ def generate_launch_description():
         parameters=[{'robot_description': robot_desc}]
     )
 
-    # 3. Static Transforms (IMU and Dual LiDARs)
-    imu_tf = Node(
-        package='tf2_ros', executable='static_transform_publisher', name='tf_imu',
-        arguments=['0', '0', '0.20', '0', '0', '0', '1', 'base_link', 'imu_link']
-    )
-    
-    laser_front_tf = Node(
-        package='tf2_ros', executable='static_transform_publisher', name='tf_laser_front',
-        arguments=['0.172', '0', '0.15', '0', '0', '0', '1', 'base_link', 'laser_front']
-    )
-    
-    laser_back_tf = Node(
-        package='tf2_ros', executable='static_transform_publisher', name='tf_laser_back',
-        arguments=['-0.172', '0', '0.15', '3.14159', '0', '0', 'base_link', 'laser_back']
-    )
+    # 3. Sensor frames from URDF (imu_link, laser_front ±0.21, laser_back yaw=π)
 
     # 4. Hardware LiDAR Drivers
     ydlidar_front_node = Node(
@@ -202,9 +188,6 @@ def generate_launch_description():
         nav2_params_arg,
         manual_composition,
         robot_state_publisher,
-        imu_tf,
-        laser_front_tf,
-        laser_back_tf,
     #  fake_map_odom_tf,   # <-- ADDED
     #  fake_odom_base_tf,  # <-- ADDED
         ydlidar_front_node,

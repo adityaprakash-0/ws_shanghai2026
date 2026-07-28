@@ -18,7 +18,7 @@ public:
         // --- Mecanum Tuning ---
         Kp_dist_ = 1.0; Kd_dist_ = 0.2; dist_tolerance_ = 0.02; min_move_speed_ = 0.13;
         Kp_angle_ = 0.08; Ki_angle_ = 0.0; Kd_angle_ = 0.0;
-        max_move_speed_ = 0.50;
+        max_move_speed_ = 0.20;
 
         active_ = false;
 
@@ -40,6 +40,7 @@ public:
         // Hardware reset clients (Updated to match your actual namespaces)
         imu_client_ = this->create_client<studica_control::srv::SetData>("/imu/get_imu_data");
         titan_client_ = this->create_client<studica_control::srv::SetData>("/titan0/titan_cmd");
+        light_client_ = this->create_client<studica_control::srv::SetData>("/light_tower/set");
 
         timer_ = this->create_wall_timer(50ms, std::bind(&PidMove::control_loop, this));
         
@@ -62,8 +63,22 @@ private:
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr done_pub_;
     
-    rclcpp::Client<studica_control::srv::SetData>::SharedPtr imu_client_, titan_client_;
+    rclcpp::Client<studica_control::srv::SetData>::SharedPtr imu_client_, titan_client_, light_client_;
     rclcpp::TimerBase::SharedPtr timer_, delay_timer_;
+
+    void set_light(const std::string & color)
+    {
+        if (!light_client_->service_is_ready()) {
+            RCLCPP_WARN_THROTTLE(
+                this->get_logger(), *this->get_clock(), 2000,
+                "light_tower service not ready");
+            return;
+        }
+        auto req = std::make_shared<studica_control::srv::SetData::Request>();
+        req->params = color;
+        light_client_->async_send_request(req);
+        RCLCPP_INFO(this->get_logger(), "Light tower → %s", color.c_str());
+    }
 
     void goal_callback(const geometry_msgs::msg::Point::SharedPtr msg) {
         std::string axis_str = (msg->y == 0.0) ? "X (Forward/Back)" : "Y (Strafing)";
@@ -79,6 +94,7 @@ private:
             auto req_imu = std::make_shared<studica_control::srv::SetData::Request>();
             req_imu->params = "reset";
             imu_client_->async_send_request(req_imu);
+            RCLCPP_INFO(this->get_logger(), "IMU reset requested");
         } else {
             RCLCPP_WARN(this->get_logger(), "IMU Reset service unavailable!");
         }
@@ -91,18 +107,30 @@ private:
                 req_enc->initparams.n_encoder = i;
                 titan_client_->async_send_request(req_enc);
             }
+            RCLCPP_INFO(this->get_logger(), "Encoder reset requested on m_0..m_3");
         } else {
             RCLCPP_WARN(this->get_logger(), "Titan Encoder Reset service unavailable!");
         }
 
         // 3. Wait 500ms for hardware to drop to 0.0 before we start doing math
-        if (delay_timer_) delay_timer_->cancel();
-        delay_timer_ = this->create_wall_timer(500ms, [this]() {
+        if (delay_timer_) {
             delay_timer_->cancel();
+            delay_timer_.reset();
+        }
+        delay_timer_ = this->create_wall_timer(500ms, [this]() {
+            if (delay_timer_) {
+                delay_timer_->cancel();
+                delay_timer_.reset();
+            }
             prev_error_dist_ = 0.0;
             prev_angle_error_ = 0.0;
             angle_integral_ = 0.0;
             active_ = true;
+            set_light("green");
+            RCLCPP_INFO(
+                this->get_logger(),
+                "PID ACTIVE — target=%.2f m  dist_x=%.3f  dist_y=%.3f  gyro_z=%.1f",
+                target_dist_, current_dist_x_, current_dist_y_, current_angle_);
         });
     }
 
@@ -114,10 +142,12 @@ private:
         double angle_error = target_angle_ - current_angle_;
 
         if (std::abs(error_dist) < dist_tolerance_) {
-            RCLCPP_INFO(this->get_logger(), "Move Complete!");
+            RCLCPP_INFO(this->get_logger(), "Move Complete! final dist_x=%.3f dist_y=%.3f",
+                        current_dist_x_, current_dist_y_);
             geometry_msgs::msg::Twist stop_msg;
             cmd_pub_->publish(stop_msg);
             active_ = false;
+            set_light("red");
 
             std_msgs::msg::Bool done_msg;
             done_msg.data = true;
@@ -153,6 +183,11 @@ private:
         twist.linear.y = linear_v_y; // Applies strafing if in mode 1
         twist.angular.z = angular_v;
         cmd_pub_->publish(twist);
+
+        RCLCPP_INFO_THROTTLE(
+            this->get_logger(), *this->get_clock(), 500,
+            "driving vx=%.2f vy=%.2f wz=%.2f | err=%.3f dist_x=%.3f dist_y=%.3f",
+            linear_v_x, linear_v_y, angular_v, error_dist, current_dist_x_, current_dist_y_);
 
         prev_error_dist_ = error_dist;
         prev_angle_error_ = angle_error;

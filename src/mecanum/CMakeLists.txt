@@ -34,11 +34,15 @@ ament_target_dependencies(pid_move rclcpp std_msgs geometry_msgs studica_control
 add_executable(pid_turn src/pid_turn.cpp)
 ament_target_dependencies(pid_turn rclcpp std_msgs geometry_msgs studica_control)
 
+add_executable(light_status src/light_status.cpp)
+ament_target_dependencies(light_status rclcpp geometry_msgs studica_control)
+
 # Install the executable so ROS 2 can find it using ros2 run
 install(TARGETS
   mecanum_node
   pid_move
   pid_turn
+  light_status
   DESTINATION lib/${PROJECT_NAME}
 )
 

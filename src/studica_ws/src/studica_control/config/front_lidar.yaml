@@ -1,28 +1,6 @@
-# ydlidar_front:
-#   ros__parameters:
-#     port: /dev/ydlidar_front     # Uses the permanent symlink
-#     frame_id: laser_front        # Matches the TF tree we set up earlier
-#     ignore_array: ""
-#     baudrate: 230400
-#     lidar_type: 1
-#     device_type: 0
-#     sample_rate: 3
-#     abnormal_check_count: 4
-#     fixed_resolution: false #true
-#     reversion: false
-#     inverted: true
-#     auto_reconnect: true
-#     isSingleChannel: true
-#     intensity_bit: 0
-#     intensity: false
-#     support_motor_dtr: true
-#     angle_max: 180.0
-#     angle_min: -180.0
-#     range_max: 8.0
-#     range_min: 0.1
-#     frequency: 10.0
-#     invalid_range_is_inf: true
-#     debug: false
+# YDLIDAR T-mini Plus (Studica T-Mini Lidar Kit) — front
+# Specs (datasheet): 0.05–12 m @80%, 4000 Hz ranging, 6–12 Hz scan (typ. 6 Hz → 0.54°)
+# Baud 230400, ToF (lidar_type 1). Tuned for mapping density over update rate.
 
 ydlidar_front:
   ros__parameters:
@@ -30,22 +8,22 @@ ydlidar_front:
     frame_id: laser_front
     ignore_array: ""
     baudrate: 230400
-    lidar_type: 1
-    device_type: 0
+    lidar_type: 1          # TYPE_TOF
+    device_type: 0         # serial
     intensity: true
     intensity_bit: 8
     isSingleChannel: false
-    frequency: 10.0 
-    sample_rate: 4
+    frequency: 6.0         # datasheet typical; best angle resolution (~0.54°)
+    sample_rate: 4         # 4 kHz ranging frequency
     abnormal_check_count: 4
-    fixed_resolution: true
+    fixed_resolution: true # uniform beams — better for slam_toolbox matching
     reversion: true
     inverted: true
     auto_reconnect: true
     support_motor_dtr: false
     angle_max: 180.0
     angle_min: -180.0
-    range_max: 12.0
-    range_min: 0.03
-    invalid_range_is_inf: false
-    debug: false         
+    range_max: 12.0        # max @ 80% reflectivity
+    range_min: 0.05        # datasheet blind-zone minimum
+    invalid_range_is_inf: true
+    debug: false

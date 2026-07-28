@@ -44,9 +44,10 @@ public:
     explicit Ultrasonic(const rclcpp::NodeOptions &options);
 
     // main constructor — connects to the sensor and sets up topics/services
+    // phase_offset_ms staggers pings across multiple HC-SR04s to reduce crosstalk
     Ultrasonic(std::shared_ptr<VMXPi> vmx, const std::string &name,
                VMXChannelIndex ping, VMXChannelIndex echo, const std::string &frame_id,
-               double publish_rate_hz = 20.0);
+               double publish_rate_hz = 20.0, int phase_offset_ms = 0);
 
     ~Ultrasonic();
 
@@ -56,10 +57,12 @@ private:
     VMXChannelIndex ping_;
     VMXChannelIndex echo_;
     std::string frame_id_;
+    double publish_rate_hz_{20.0};
 
     rclcpp::Service<studica_control::srv::SetData>::SharedPtr service_;
     rclcpp::Publisher<sensor_msgs::msg::Range>::SharedPtr publisher_;
     rclcpp::TimerBase::SharedPtr timer_;
+    rclcpp::TimerBase::SharedPtr start_timer_;
 
     // receives the raw service request and forwards it to cmd()
     void cmd_callback(std::shared_ptr<studica_control::srv::SetData::Request> request,
@@ -67,6 +70,8 @@ private:
 
     // parses the command string and returns the requested distance value
     void cmd(std::string params, std::shared_ptr<studica_control::srv::SetData::Response> response);
+
+    void start_periodic_timer();
 
     // triggers a ping, reads the result, and publishes a range message
     void publish_range();

@@ -57,29 +57,15 @@ def generate_launch_description():
         parameters=[{'robot_description': robot_desc}]
     )
 
-    # 3. Static Transforms (IMU and Dual LiDARs)
-    imu_tf = Node(
-        package='tf2_ros', executable='static_transform_publisher', name='tf_imu',
-        arguments=['0', '0', '0.20', '0', '0', '0', '1', 'base_link', 'imu_link']
-    )
+    # 3. Sensor frames from URDF (imu_link, laser_front ±0.21, laser_back yaw=π)
     
-    laser_front_tf = Node(
-        package='tf2_ros', executable='static_transform_publisher', name='tf_laser_front',
-        arguments=['0.172', '0', '0.15', '0', '0', '0', '1', 'base_link', 'laser_front']
-    )
-    
-    laser_back_tf = Node(
-        package='tf2_ros', executable='static_transform_publisher', name='tf_laser_back',
-        arguments=['-0.172', '0', '0.15', '3.14159', '0', '0', 'base_link', 'laser_back']
-    )
-
     # 4. Hardware LiDAR Drivers
     ydlidar_front_node = Node(
         package='ydlidar_ros2_driver', executable='ydlidar_ros2_driver_node', name='ydlidar_front',
         output='screen', parameters=[ydlidar_front_config],
         remappings=[('/scan', '/scan/front')]
     )
-
+    
     ydlidar_back_node = Node(
         package='ydlidar_ros2_driver', executable='ydlidar_ros2_driver_node', name='ydlidar_back',
         output='screen', parameters=[ydlidar_back_config],
@@ -165,9 +151,9 @@ def generate_launch_description():
     delayed_rf2o = TimerAction(period=12.0, actions=[rf2o_node])
     delayed_ekf = TimerAction(period=3.0, actions=[ekf_node])
 
-    # Wait 18 seconds total (8 seconds after EKF starts) so the TF tree is perfectly established
+    # Wait for EKF + scan_filtered before dumping Nav2 on the Pi
     delayed_nav2_cmd = TimerAction(
-        period=7.0, 
+        period=10.0,
         actions=[
             LogInfo(msg="[INIT] Hardware & EKF warm-up complete. Launching Nav2 Stack..."),
             nav2_bringup_cmd
@@ -182,8 +168,9 @@ def generate_launch_description():
     #         confidence_gate_node
     #     ]
     # )
+    # Costmaps need /scan_filtered before Nav2 activates — start relay early
     delayed_scan_relay = TimerAction(
-        period=15.0,
+        period=5.0,
         actions=[
             LogInfo(msg="[INIT] Gate disabled — relaying /scan -> /scan_filtered for costmaps"),
             scan_filtered_relay,
@@ -231,9 +218,6 @@ def generate_launch_description():
         nav2_params_arg,
         manual_composition,
         robot_state_publisher,
-        imu_tf,
-        laser_front_tf,
-        laser_back_tf,
     #  fake_map_odom_tf,   # <-- ADDED
     #  fake_odom_base_tf,  # <-- ADDED
         ydlidar_front_node,
@@ -243,8 +227,8 @@ def generate_launch_description():
         delayed_ekf,
         delayed_nav2_cmd,
         delayed_scan_relay,
-        shutdown_handler_front,
-        shutdown_handler_back,
+        # shutdown_handler_front,
+        # shutdown_handler_back,
     ])
 
 

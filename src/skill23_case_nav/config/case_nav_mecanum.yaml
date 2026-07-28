@@ -1,0 +1,55 @@
+# Case-nav software params — mecanum (differential drive)
+# Sensors: front+back lidar + left/right ultrasonics (no IR)
+/**:
+  ros__parameters:
+    robot: "mecanum"
+    map_frame: "map"
+    base_frame: "base_footprint"
+    odom_topic: "/odometry/filtered"
+    wheel_odom_topic: "/wheel/odom"
+    imu_topic: "/imu"
+    scan_topic: "/scan"
+    front_scan_topic: "/scan/front"
+    us_left_topic: "/ultrasonic_left/range"
+    us_right_topic: "/ultrasonic_right/range"
+    front_block_m: 0.20
+    wall_detect_m: 0.45
+    open_thresh_m: 0.55
+    debounce_count: 2
+    open_debounce_count: 2
+    enable_wall_centering: false
+    center_kp: 1.2
+    heading_kp: 1.2
+    heading_max_corr: 0.25
+    forward_speed: 0.15
+    turn_speed: 0.15
+    spin_speed: 0.15
+    yaw_tol_deg: 1.0
+    goal_xy_tol: 0.03
+    lidar_fov_deg: 90.0
+    drive_block_margin_m: 0.05
+    lidar_idle_wait_sec: 3.0
+    # End-of-step error correction (overshoot undo)
+    enable_step_correction: true
+    step_corr_xy_m: 0.02
+    step_corr_yaw_deg: 2.0
+    corr_speed: 0.08
+    corr_turn_speed: 0.20
+    step_pause_sec: 1.0
+    # Map res 0.03 → planner step 0.06 (4-connected Manhattan on static /map)
+    grid_cell_m: 0.06
+    occupied_thresh: 50
+    turn_penalty: 80.0
+    # Prefer corridor center over shortest (was 5 → hugged inner corners)
+    clearance_weight: 60.0
+    inflate_margin_m: 0.04
+    lidar_wake_sec: 2.0
+    lidar_stamp_max_range: 4.0
+    lidar_idle_sleep_sec: 3.0
+    max_recovery_attempts: 5
+    slip_wheel_vx_min: 0.08
+    slip_accel_max: 0.25
+    slip_hold_count: 5
+    http_port: 8082
+    robot_length: 0.4
+    robot_width: 0.4

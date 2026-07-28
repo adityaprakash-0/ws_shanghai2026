@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Case-Nav Dashboard | ADEV</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="tricolor"></div>
+  <header>
+    <div class="brand">
+      <div class="india-badge">INDIA</div>
+      <div>
+        <h1>Developed by ADEV</h1>
+        <div class="team">WorldSkills · <b>Team India</b></div>
+        <div class="sub">Case-Nav · no Nav2 · bridge :8082</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="mode-badge" id="modeBadge">IDLE</div>
+      <div class="conn-badge">
+        <span class="conn-dot" id="connDot"></span>
+        <span id="connText">OFFLINE</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="panel sidebar-left">
+      <div class="panel-title">Robot &amp; Connection</div>
+      <div class="panel-body">
+        <label class="field">Pi Bridge URL</label>
+        <input type="text" id="piUrl" placeholder="http://10.42.0.1:8082" />
+        <button class="btn btn-primary" id="btnConnect">Connect</button>
+        <p class="hint">Launch on Pi:<br>
+          <code style="color:var(--saffron)">ros2 launch skill23_case_nav case_nav.launch.py robot:=mecanum</code>
+        </p>
+
+        <label class="field">Map</label>
+        <select id="mapSelect"></select>
+        <button class="btn btn-ghost" id="btnLoadMap">Load Map from Pi</button>
+
+        <button class="btn btn-ghost" id="btnSetPoseOrigin">Set Pose (0, 0, 0)</button>
+
+        <div class="panel-title" style="margin:0.7rem -0.65rem 0.5rem;border-top:1px solid var(--panel-border)">Battery</div>
+        <div class="stat-card">
+          <div class="value" id="batteryPct">—</div>
+          <div class="label" id="batteryVolt">—</div>
+          <div class="battery-bar"><div class="fill" id="batteryFill" style="width:0%"></div></div>
+        </div>
+
+        <div style="margin-top:0.8rem">
+          <button class="btn btn-danger" id="estopBtn">EMERGENCY STOP</button>
+        </div>
+      </div>
+      <div class="footer-note">Front lidar ±45° · US L/R · lidar wake on recovery</div>
+    </aside>
+
+    <main class="map-area">
+      <div class="map-frame-label">CASE-NAV · LIVE MAP</div>
+      <div class="map-meta-info" id="mapMetaInfo">—</div>
+      <div class="map-toolbar">
+        <button type="button" id="modeGoal" class="active">+ Goal</button>
+        <button type="button" id="modePose">Set Pose</button>
+        <button type="button" id="btnClearGoals">Clear Goals</button>
+        <button type="button" id="btnFitMap">Fit Map</button>
+        <button type="button" id="btnCenterRobot">Center Robot</button>
+      </div>
+      <canvas id="mapCanvas"></canvas>
+      <div class="map-hint">White = free · Black = wall · Gray = unknown · Scroll zoom · Alt+drag pan · Green = lidar (FOV / full in recovery)</div>
+    </main>
+
+    <aside class="panel sidebar-right">
+      <div class="panel-title">Mission Control</div>
+      <div class="panel-body">
+        <label class="field">Last waypoint yaw (degrees)</label>
+        <div class="row">
+          <input type="number" id="wpYaw" value="0" step="5" style="margin-bottom:0" />
+          <button class="btn btn-ghost" id="btnSetYaw" style="width:auto;margin:0">Set</button>
+        </div>
+
+        <div class="panel-title" style="margin:0.7rem -0.65rem 0.5rem;border-top:1px solid var(--panel-border)">Goals</div>
+        <ul id="waypointList" class="wp-list"></ul>
+        <button class="btn btn-ghost" id="btnClearWp">Clear Waypoints</button>
+
+        <div class="panel-title" style="margin:0.7rem -0.65rem 0.5rem;border-top:1px solid var(--panel-border)">Sequences</div>
+        <div class="toggle-row" style="margin-top:0.35rem">
+          <span>Use saved sequences</span>
+          <div class="toggle" id="toggleSequences" title="When ON, pick a sequence before start"></div>
+        </div>
+        <div id="sequencePanel" class="sequence-panel hidden">
+          <p class="seq-hint">Click waypoint numbers to build: <strong id="seqChainPreview">—</strong></p>
+          <div id="sequenceBuilder" class="seq-builder"></div>
+          <div class="seq-actions">
+            <button type="button" class="btn btn-ghost" id="btnSeqUndo">← Undo</button>
+            <button type="button" class="btn btn-ghost" id="btnSeqClear">Clear</button>
+          </div>
+          <label class="field">Sequence name</label>
+          <input type="text" id="sequenceName" placeholder="e.g. Loop A" />
+          <button class="btn btn-ghost" id="btnSeqSave">💾 Save sequence</button>
+          <label class="field">Select saved sequence</label>
+          <select id="sequenceSelect"><option value="">— choose sequence —</option></select>
+          <button class="btn btn-ghost" id="btnSeqDelete">Delete selected</button>
+        </div>
+
+        <button class="btn btn-green" id="btnStart">▶ Start</button>
+        <button class="btn btn-ghost" id="btnStop">■ Stop</button>
+
+        <div class="panel-title" style="margin:0.7rem -0.65rem 0.5rem;border-top:1px solid var(--panel-border)">Steps remaining</div>
+        <ul id="stepList" class="wp-list step-list"></ul>
+
+        <div class="panel-title" style="margin:0.7rem -0.65rem 0.5rem;border-top:1px solid var(--panel-border)">Status</div>
+
+        <div class="stat-card">
+          <div class="label">Decision</div>
+          <div class="value" id="decisionReadout" style="color:var(--saffron);font-size:0.95rem">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Pose</div>
+          <div class="value" id="poseReadout">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Sensors</div>
+          <div class="value" id="sensorsReadout">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">FSM</div>
+          <div class="value" id="fsmReadout">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Planner</div>
+          <div class="value" id="planReadout">—</div>
+        </div>
+
+        <label class="field">Log</label>
+        <div id="log"></div>
+      </div>
+    </aside>
+  </div>
+
+  <script src="js/api.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

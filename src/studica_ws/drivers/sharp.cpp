@@ -22,12 +22,15 @@ Sharp::~Sharp()
 float Sharp::GetDistance()
 {
     float averageVoltage;
-    if (analog_input_->GetAverageVoltage(averageVoltage))
+    if (!analog_input_->GetAverageVoltage(averageVoltage))
     {
-        return pow(averageVoltage, -1.2045) * 27.726;
+        std::cerr << "Failed to retreive Average Voltage from AnalogInput." << std::endl;
+        return -1;
     }
-    std::cerr << "Failed to retreive Average Voltage from AnalogInput." << std::endl;
-    return -1;
+
+    // Studica official GP2Y0A21YK formula (WPILib / docs.wsr.studica.com):
+    //   distance_cm = pow(V, -1.2045) * 27.726
+    return pow(averageVoltage, -1.2045f) * 27.726f;
 }
 
 float Sharp::GetVoltage()

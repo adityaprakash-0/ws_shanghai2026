@@ -18,25 +18,25 @@ control_server:
           encoder_mode: "quadrature"
           dist_per_tick: 1.0
           invert_motor: false
-          invert_encoder: true
+          invert_encoder: false
           invert_rpm: false
         m_1:
           encoder_mode: "quadrature"
           dist_per_tick: 1.0
           invert_motor: true
-          invert_encoder: false
+          invert_encoder: true
           invert_rpm: false
         m_2:
           encoder_mode: "quadrature"
           dist_per_tick: 1.0
           invert_motor: false
-          invert_encoder: true
+          invert_encoder: false 
           invert_rpm: false
         m_3:
           encoder_mode: "quadrature"
           dist_per_tick: 1.0
           invert_motor: true
-          invert_encoder: false
+          invert_encoder: true
           invert_rpm: false
 
     # -------------------------------------------------------------------------

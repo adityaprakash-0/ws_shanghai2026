@@ -19,6 +19,8 @@ install(PROGRAMS
 
 install(DIRECTORY launch
   DESTINATION share/${PROJECT_NAME}
+  PATTERN "__pycache__" EXCLUDE
+  PATTERN "*.pyc" EXCLUDE
 )
 
 ament_export_dependencies(rosidl_default_runtime)

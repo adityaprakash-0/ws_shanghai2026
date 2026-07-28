@@ -20,10 +20,15 @@ def generate_launch_description():
                     'params_file:=/path/to/your/params.yaml',
     )
 
-    # 1. Core Hardware Driver (Runs as root)
+    # 1. Core Hardware Driver (Runs as root) — pass ROS env for DDS discovery
     manual_composition = ExecuteProcess(
         cmd=[
-            'sudo', '-E', exec_path,
+            'sudo', '-E', 'env',
+            f'ROS_DOMAIN_ID={os.environ.get("ROS_DOMAIN_ID", "0")}',
+            f'RMW_IMPLEMENTATION={os.environ.get("RMW_IMPLEMENTATION", "rmw_fastrtps_cpp")}',
+            f'AMENT_PREFIX_PATH={os.environ.get("AMENT_PREFIX_PATH", "")}',
+            f'LD_LIBRARY_PATH={os.environ.get("LD_LIBRARY_PATH", "")}',
+            exec_path,
             '--ros-args',
             '-r', '__node:=control_server',
             '--params-file', LaunchConfiguration('params_file'),
@@ -54,6 +59,14 @@ def generate_launch_description():
         output='screen'
     )
 
+    # Moving = green, stopped = red (temporary mecanum-only)
+    light_status_node = Node(
+        package='mecanum',
+        executable='light_status',
+        name='light_status',
+        output='screen'
+    )
+
     # 4. Task Orchestrator
     task_manager_node = Node(
         package='mypackage',
@@ -68,5 +81,6 @@ def generate_launch_description():
         mecanum_node,
         pid_move_node,
         pid_turn_node,
+        light_status_node,
        # task_manager_node
     ])

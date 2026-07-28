@@ -33,6 +33,7 @@ public:
 
         // Hardware reset client (Updated to match your actual namespaces)
         imu_client_ = this->create_client<studica_control::srv::SetData>("/imu/get_imu_data");
+        light_client_ = this->create_client<studica_control::srv::SetData>("/light_tower/set");
 
         timer_ = this->create_wall_timer(50ms, std::bind(&PidTurn::control_loop, this));
         
@@ -48,8 +49,19 @@ private:
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr done_pub_;
     
-    rclcpp::Client<studica_control::srv::SetData>::SharedPtr imu_client_;
+    rclcpp::Client<studica_control::srv::SetData>::SharedPtr imu_client_, light_client_;
     rclcpp::TimerBase::SharedPtr timer_, delay_timer_;
+
+    void set_light(const std::string & color)
+    {
+        if (!light_client_->service_is_ready()) {
+            return;
+        }
+        auto req = std::make_shared<studica_control::srv::SetData::Request>();
+        req->params = color;
+        light_client_->async_send_request(req);
+        RCLCPP_INFO(this->get_logger(), "Light tower → %s", color.c_str());
+    }
 
     double normalize_angle(double angle) {
         while (angle > 180.0) angle -= 360.0;
@@ -77,6 +89,7 @@ private:
             delay_timer_->cancel();
             prev_error_ = 0.0;
             active_ = true;
+            set_light("green");
         });
     }
 
@@ -90,6 +103,7 @@ private:
             geometry_msgs::msg::Twist stop_msg;
             cmd_pub_->publish(stop_msg);
             active_ = false;
+            set_light("red");
 
             std_msgs::msg::Bool done_msg;
             done_msg.data = true;

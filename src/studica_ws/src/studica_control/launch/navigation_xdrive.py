@@ -47,18 +47,7 @@ def generate_launch_description():
         parameters=[{'robot_description': robot_desc}],
     )
 
-    imu_tf = Node(
-        package='tf2_ros', executable='static_transform_publisher', name='tf_imu',
-        arguments=['0', '0', '0.20', '0', '0', '0', '1', 'base_link', 'imu_link'],
-    )
-    laser_front_tf = Node(
-        package='tf2_ros', executable='static_transform_publisher', name='tf_laser_front',
-        arguments=['0.172', '0', '0.15', '0', '0', '0', '1', 'base_link', 'laser_front'],
-    )
-    laser_back_tf = Node(
-        package='tf2_ros', executable='static_transform_publisher', name='tf_laser_back',
-        arguments=['-0.172', '0', '0.15', '3.14159', '0', '0', 'base_link', 'laser_back'],
-    )
+    # Sensor frames from URDF (imu_link, laser_front ±0.21, laser_back yaw=π)
 
     ydlidar_front_node = Node(
         package='ydlidar_ros2_driver', executable='ydlidar_ros2_driver_node', name='ydlidar_front',
@@ -156,7 +145,6 @@ def generate_launch_description():
     return LaunchDescription([
         params_arg, map_arg, nav2_params_arg,
         manual_composition, robot_state_publisher,
-        imu_tf, laser_front_tf, laser_back_tf,
         ydlidar_front_node, ydlidar_back_node, lidar_merger_node,
         xdrive_node, delayed_ekf, delayed_nav2_cmd, delayed_scan_relay,
         shutdown_handler_front, shutdown_handler_back,

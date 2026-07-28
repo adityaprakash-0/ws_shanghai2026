@@ -1,0 +1,6 @@
+SESSION 2026-07-28 14:36:32
+Test drive FREE DRIVE: PASS — 271s samples=5429 jumps=0 max_cov=0.004051 closing=62.6cm
+  jumps: 0.0
+  max_cov: 0.00405051325208101
+  closing_m: 0.6257494452432685
+  dyaw_deg: -5.370618662519028

@@ -1,3 +1,6 @@
+import os
+from glob import glob
+
 from setuptools import find_packages, setup
 
 package_name = 'mypackage'
@@ -10,6 +13,7 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        (os.path.join('share', package_name, 'launch'), glob('launch/*.py')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -23,6 +27,7 @@ setup(
             'task_manager_allterrain = mypackage.task_manager_allterrain:main',
             'custom_teleop_allterrain = mypackage.custom_teleop_allterrain:main',
             'task_manager_mecanum = mypackage.task_manager_mecanum:main',
+            'light_tower_play = mypackage.light_tower_play:main',
         ],
     },
 )

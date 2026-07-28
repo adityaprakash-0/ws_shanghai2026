@@ -18,25 +18,25 @@ control_server:
           encoder_mode: "quadrature"
           dist_per_tick: 1.0
           invert_motor: false
-          invert_encoder: true
+          invert_encoder: false
           invert_rpm: false
         m_1:
           encoder_mode: "quadrature"
           dist_per_tick: 1.0
           invert_motor: true
-          invert_encoder: false
+          invert_encoder: true
           invert_rpm: false
         m_2:
           encoder_mode: "quadrature"
           dist_per_tick: 1.0
           invert_motor: false
-          invert_encoder: true
+          invert_encoder: false
           invert_rpm: false
         m_3:
           encoder_mode: "quadrature"
           dist_per_tick: 1.0
           invert_motor: true
-          invert_encoder: false
+          invert_encoder: true
           invert_rpm: false
 
     # -------------------------------------------------------------------------
@@ -120,29 +120,30 @@ control_server:
         vref: 5.0
 
     # -------------------------------------------------------------------------
-    # Light Tower — 5-output indicator LED tower
+    # Light Tower — 5-output indicator LED tower (VMX FlexDIO 0–4)
+    # continuous=0, red=1, green=2, yellow=3, buzzer=4
     # -------------------------------------------------------------------------
     light_tower:
       enabled: false
-      sensors: ["status_tower"]
-      status_tower:
-        red_pin: 2
-        green_pin: 3
-        yellow_pin: 4
-        buzzer_pin: 5
-        enable_pin: 6
+      name: "light_tower"
+      pin_continuous: 0
+      pin_red: 1
+      pin_green: 2
+      pin_yellow: 3
+      pin_buzzer: 4
+      default_blink_hz: 1.0
 
     # -------------------------------------------------------------------------
     # Gamepad — disabled during autonomous Nav2 (fights /cmd_vel with Nav2)
     # -------------------------------------------------------------------------
     gamepad:
-      enabled: false
+      enabled: true
       axis_linear_x: 1
-      axis_linear_y: 0
+      axis_linear_y: -1
       axis_angular_z: 2
       button_turbo: 5
       linear_scale: 0.4
-      angular_scale: 0.4
+      angular_scale: 0.3
       deadzone: 0.05
       turbo_multiplier: 2.0
       publish_rate: 50

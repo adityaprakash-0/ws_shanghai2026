@@ -1,3 +1,4 @@
+# YDLIDAR T-mini Plus — front (nav). Same hardware as mapping; 10 Hz for faster obstacle updates.
 
 ydlidar_front:
   ros__parameters:
@@ -10,7 +11,7 @@ ydlidar_front:
     intensity: true
     intensity_bit: 8
     isSingleChannel: false
-    frequency: 10.0 
+    frequency: 10.0
     sample_rate: 4
     abnormal_check_count: 4
     fixed_resolution: true
@@ -20,7 +21,7 @@ ydlidar_front:
     support_motor_dtr: false
     angle_max: 180.0
     angle_min: -180.0
-    range_max: 8.0
-    range_min: 0.03
-    invalid_range_is_inf: false
-    debug: false         
+    range_max: 12.0
+    range_min: 0.05
+    invalid_range_is_inf: true
+    debug: false
