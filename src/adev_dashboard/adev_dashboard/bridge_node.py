@@ -64,6 +64,7 @@ ROBOT_DIMS = {
     'allterrain': {'length': 0.43, 'width': 0.40},
     'mecanum': {'length': 0.40, 'width': 0.40},
     'xdrive': {'length': 0.43, 'width': 0.40},
+    'grip': {'length': 0.43, 'width': 0.40},
 }
 
 NAV_MODE_LABELS = {
@@ -1314,6 +1315,70 @@ class AdevBridgeNode(Node):
       return
     on_sent_cb(handle, 'accepted')
 
+  def plan_path_sync(self, start: dict, goal: dict, timeout_sec: float = 12.0):
+    """One-shot Nav2 ComputePathToPose for dashboard path preview."""
+    import threading
+    if not self.plan_client.wait_for_server(timeout_sec=3.0):
+      return {'ok': False, 'error': 'compute_path_to_pose not ready', 'path': []}
+
+    plan_goal = ComputePathToPose.Goal()
+    plan_goal.planner_id = 'GridBased'
+    plan_goal.use_start = True
+
+    plan_goal.start = PoseStamped()
+    plan_goal.start.header.frame_id = 'map'
+    plan_goal.start.header.stamp = self.get_clock().now().to_msg()
+    plan_goal.start.pose.position.x = float(start.get('x', 0.0))
+    plan_goal.start.pose.position.y = float(start.get('y', 0.0))
+    _, _, sqz, sqw = yaw_to_quat(float(start.get('yaw', 0.0)))
+    plan_goal.start.pose.orientation.z = sqz
+    plan_goal.start.pose.orientation.w = sqw
+
+    plan_goal.goal = PoseStamped()
+    plan_goal.goal.header.frame_id = 'map'
+    plan_goal.goal.header.stamp = plan_goal.start.header.stamp
+    plan_goal.goal.pose.position.x = float(goal.get('x', 0.0))
+    plan_goal.goal.pose.position.y = float(goal.get('y', 0.0))
+    _, _, gqz, gqw = yaw_to_quat(float(goal.get('yaw', 0.0)))
+    plan_goal.goal.pose.orientation.z = gqz
+    plan_goal.goal.pose.orientation.w = gqw
+
+    done = threading.Event()
+    box = {'path': None, 'error': None}
+
+    def on_sent(handle, reason='ok'):
+      if handle is None or reason != 'accepted':
+        box['error'] = reason or 'rejected'
+        done.set()
+        return
+
+      def on_result(fut):
+        try:
+          result = fut.result().result
+          pts = [
+            {'x': round(p.pose.position.x, 3), 'y': round(p.pose.position.y, 3)}
+            for p in result.path.poses
+          ]
+          box['path'] = pts
+        except Exception as exc:
+          box['error'] = str(exc)
+        done.set()
+
+      fut = handle.get_result_async()
+      fut.add_done_callback(on_result)
+
+    self.send_plan_goal(plan_goal, on_sent)
+    if not done.wait(timeout_sec):
+      return {'ok': False, 'error': 'plan timeout', 'path': []}
+    if box['error']:
+      return {'ok': False, 'error': box['error'], 'path': []}
+    pts = box['path'] or []
+    if len(pts) < 2:
+      return {'ok': False, 'error': 'no path', 'path': []}
+    # Also publish into telemetry so live dashboards can show it if needed
+    self.telemetry.update(global_path=pts[::max(1, len(pts) // 100)] if len(pts) > 100 else pts)
+    return {'ok': True, 'path': pts, 'poses': len(pts)}
+
   def _update_path_telemetry(self, topic: str, msg: Path, key: str):
     pts = path_to_points(msg)
     n = len(msg.poses)
@@ -1768,6 +1833,29 @@ class AdevBridgeNode(Node):
                 enabled = bool(body.get('enabled', False))
                 node.set_simulation(enabled)
                 self._json_response(200, {'simulation': enabled})
+                return
+
+            if path == '/api/plan':
+                start = body.get('start') or {}
+                goal = body.get('goal') or {
+                    'x': body.get('x', 0), 'y': body.get('y', 0),
+                    'yaw': body.get('yaw', 0),
+                }
+                if 'x' in body and 'start' not in body:
+                    # allow flat {start_x,...} too
+                    start = {
+                        'x': body.get('start_x', start.get('x', 0)),
+                        'y': body.get('start_y', start.get('y', 0)),
+                        'yaw': body.get('start_yaw', 0),
+                    }
+                    goal = {
+                        'x': body.get('goal_x', goal.get('x', 0)),
+                        'y': body.get('goal_y', goal.get('y', 0)),
+                        'yaw': body.get('goal_yaw', 0),
+                    }
+                result = node.plan_path_sync(start, goal)
+                code = 200 if result.get('ok') else 400
+                self._json_response(code, result)
                 return
 
             if path == '/api/robot/info':

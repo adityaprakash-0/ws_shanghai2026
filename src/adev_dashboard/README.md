@@ -9,7 +9,7 @@ Two navigation modes — pick at launch time.
 | **nav2** | Dynamic obstacles / free-space | Theta\* planner + RPP |
 | **nav2_secret_mode** | Fixed corridors between walls | GraphPlanner + RPP |
 
-Both modes work on allterrain, mecanum, and xdrive.
+Both modes work on allterrain, mecanum, xdrive, and grip.
 
 ## Quick start
 

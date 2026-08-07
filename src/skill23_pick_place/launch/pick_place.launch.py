@@ -29,9 +29,9 @@ def _setup(context, *args, **kwargs):
         '1', 'true', 'yes', 'on')
     http_port = int(LaunchConfiguration('http_port').perform(context))
 
-    if robot not in ('allterrain', 'mecanum', 'xdrive'):
+    if robot not in ('allterrain', 'mecanum', 'xdrive', 'grip'):
         raise RuntimeError(
-            f"Unknown robot '{robot}'. Use: allterrain | mecanum | xdrive")
+            f"Unknown robot '{robot}'. Use: allterrain | mecanum | xdrive | grip")
 
     pp_share = get_package_share_directory('skill23_pick_place')
     studica_prefix = get_package_prefix('studica_control')
@@ -57,6 +57,7 @@ def _setup(context, *args, **kwargs):
         'allterrain': ('allterrain', 'allterrain_node', 'allterrain_node'),
         'mecanum': ('mecanum', 'mecanum_node', 'mecanum_node'),
         'xdrive': ('xdrive', 'xdrive_node', 'xdrive_node'),
+        'grip': ('grip', 'grip_node', 'grip_node'),
     }[robot]
     actions.append(Node(
         package=drive[0],
@@ -120,7 +121,7 @@ def generate_launch_description():
         SetEnvironmentVariable('FASTDDS_BUILTIN_TRANSPORTS', 'UDPv4'),
         DeclareLaunchArgument(
             'robot', default_value='mecanum',
-            description='Robot platform: allterrain | mecanum | xdrive'),
+            description='Robot platform: allterrain | mecanum | xdrive | grip'),
         DeclareLaunchArgument('http_port', default_value='8081'),
         DeclareLaunchArgument(
             'enable_vision', default_value='false',

@@ -1,0 +1,60 @@
+<?xml version="1.0"?>
+<robot name="grip_robot">
+
+  <!-- ============================================================
+       Source of truth for robot frames (grip).
+       Footprint box: length 0.44 m × width 0.363 m × height 0.21 m.
+       LiDAR mounts: front +0.21 m, back -0.21 m on X; back yaw = π.
+       lidar_merger reads these poses from TF (no duplicated offsets).
+       ============================================================ -->
+
+  <link name="base_footprint"/>
+
+  <link name="base_link">
+    <visual>
+      <geometry>
+        <box size="0.44 0.363 0.21"/>
+      </geometry>
+      <material name="blue">
+        <color rgba="0.0 0.0 0.8 1.0"/>
+      </material>
+    </visual>
+
+    <collision>
+      <geometry>
+        <box size="0.44 0.363 0.21"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="base_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 0.105" rpy="0 0 0"/>
+  </joint>
+
+  <!-- IMU (matches slam_tele_grip / navigation_grip) -->
+  <link name="imu_link"/>
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <origin xyz="0.12 0 0.045" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Front YDLIDAR T-mini Plus: facing forward -->
+  <link name="laser_front"/>
+  <joint name="laser_front_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="laser_front"/>
+    <origin xyz="0.21 0 0" rpy="0 0 0"/>
+  </joint>
+
+  <!-- Back YDLIDAR T-mini Plus: facing rearward (yaw = π) -->
+  <link name="laser_back"/>
+  <joint name="laser_back_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="laser_back"/>
+    <origin xyz="-0.21 0 0" rpy="0 0 3.141592653589793"/>
+  </joint>
+
+</robot>

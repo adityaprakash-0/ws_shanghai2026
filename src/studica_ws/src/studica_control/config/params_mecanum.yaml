@@ -17,8 +17,8 @@ control_server:
         m_0:
           encoder_mode: "quadrature"
           dist_per_tick: 1.0
-          invert_motor: false
-          invert_encoder: false
+          invert_motor: true
+          invert_encoder: true
           invert_rpm: false
         m_1:
           encoder_mode: "quadrature"
@@ -35,8 +35,8 @@ control_server:
         m_3:
           encoder_mode: "quadrature"
           dist_per_tick: 1.0
-          invert_motor: true
-          invert_encoder: true
+          invert_motor: false
+          invert_encoder: false
           invert_rpm: false
 
     # -------------------------------------------------------------------------
@@ -142,8 +142,8 @@ control_server:
       axis_linear_y: -1
       axis_angular_z: 2
       button_turbo: 5
-      linear_scale: 0.4
-      angular_scale: 0.3
+      linear_scale: 0.3
+      angular_scale: 0.2 
       deadzone: 0.05
       turbo_multiplier: 2.0
       publish_rate: 50

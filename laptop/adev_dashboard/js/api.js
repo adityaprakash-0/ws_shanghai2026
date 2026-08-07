@@ -89,6 +89,16 @@ const AdevApi = (() => {
     });
   }
 
+  async function planPath(start, goal) {
+    return request('/api/plan', {
+      method: 'POST',
+      body: JSON.stringify({
+        start: { x: start.x, y: start.y, yaw: start.yaw || 0 },
+        goal: { x: goal.x, y: goal.y, yaw: goal.yaw || 0 },
+      }),
+    });
+  }
+
   async function stopMission() {
     return request('/api/mission/stop', { method: 'POST', body: '{}' });
   }
@@ -167,7 +177,7 @@ const AdevApi = (() => {
   return {
     setBaseUrl, getBaseUrl, getDefaultUrl, status, telemetry, fetchMaps, fetchMap,
     estop, setWaypoints, setTask, startMission, stopMission, setInitialPose, setSimulation,
-    visionGate, visionFind,
+    planPath, visionGate, visionFind,
     connectStream, disconnectStream,
   };
 })();

@@ -114,7 +114,7 @@ class AlignCobraNode(Node):
                         tw.linear.x = 0.06
                         lat = -self._kp_lat * centroid
                         yaw = -self._kp_yaw * centroid
-                        if self._robot == 'allterrain':
+                        if self._robot in ('allterrain', 'grip'):
                             tw.linear.y = 0.0
                             tw.angular.z = max(-self._wmax, min(self._wmax, yaw))
                         else:

@@ -25,8 +25,11 @@ setup(
     entry_points={
         'console_scripts': [
             'task_manager_allterrain = mypackage.task_manager_allterrain:main',
+            'task_manager_grip = mypackage.task_manager_grip:main',
             'custom_teleop_allterrain = mypackage.custom_teleop_allterrain:main',
+            'hold_to_move_teleop = mypackage.hold_to_move_teleop:main',
             'task_manager_mecanum = mypackage.task_manager_mecanum:main',
+            'task_manager_xdrive = mypackage.task_manager_xdrive:main',
             'light_tower_play = mypackage.light_tower_play:main',
         ],
     },

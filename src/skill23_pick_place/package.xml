@@ -25,6 +25,7 @@
   <exec_depend>allterrain</exec_depend>
   <exec_depend>mecanum</exec_depend>
   <exec_depend>xdrive</exec_depend>
+  <exec_depend>grip</exec_depend>
 
   <export>
     <build_type>ament_python</build_type>

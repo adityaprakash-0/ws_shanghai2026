@@ -1,0 +1,136 @@
+# skill23_custom_nav + skill23_amcl + skill23_rpp parameters (allterrain)
+# Nav2-style: one section per node name
+# robot box from URDF: 0.43 x 0.4 x 0.15 m
+
+/**:
+  ros__parameters:
+    robot: "allterrain"
+    map_frame: "map"
+    base_frame: "base_footprint"
+    scan_topic: "/scan"
+    robot_length: 0.43
+    robot_width: 0.4
+    robot_height: 0.15
+    http_port: 8082
+
+amcl:
+  ros__parameters:
+    use_sim_time: false
+    # Wait for cn_world_model /custom_nav/world/ready before activating
+    wait_for_world_ready: true
+    world_ready_topic: "/custom_nav/world/ready"
+    # Seed at startup (override with dashboard /initialpose anytime)
+    set_initial_pose: true
+    initial_pose:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      yaw: 0.0
+    alpha1: 0.2
+    alpha2: 0.2
+    alpha3: 0.2
+    alpha4: 0.2
+    alpha5: 0.2
+    base_frame_id: base_footprint
+    global_frame_id: map
+    odom_frame_id: odom
+    robot_model_type: nav2_amcl::DifferentialMotionModel
+    tf_broadcast: true
+    min_particles: 500
+    max_particles: 2000
+    pf_err: 0.05
+    pf_z: 0.99
+    resample_interval: 1
+    recovery_alpha_fast: 0.0
+    recovery_alpha_slow: 0.0
+    laser_model_type: likelihood_field
+    scan_topic: scan
+    map_topic: map
+    max_beams: 60
+    laser_max_range: 8.0
+    laser_min_range: 0.12
+    laser_likelihood_max_dist: 2.0
+    z_hit: 0.85
+    z_rand: 0.15
+    z_max: 0.03
+    z_short: 0.02
+    sigma_hit: 0.18
+    lambda_short: 0.1
+    update_min_d: 0.05
+    update_min_a: 0.1
+    transform_tolerance: 1.0
+    do_beamskip: false
+    beam_skip_distance: 0.4
+    beam_skip_threshold: 0.35
+    beam_skip_error_threshold: 0.95
+    save_pose_rate: 0.5
+    first_map_only: true
+
+cn_world_model:
+  ros__parameters:
+    occupied_thresh: 50
+    map_frame: "map"
+
+cn_obstacle_detector:
+  ros__parameters:
+    local_grid_size: 6.0
+    local_grid_resolution: 0.05
+    inflation_cells: 1
+    map_frame: "map"
+    robot_length: 0.43
+    robot_width: 0.4
+
+# Simple front-buffer collision (near 20 cm / stop 12 cm) + clearances.
+cn_collision_checker:
+  ros__parameters:
+    robot_width: 0.4
+    robot_length: 0.43
+    safety_margin_m: 0.06
+    collision_zone_depth: 0.18
+    near_m: 0.20
+    stop_m: 0.12
+    clearance_probe_m: 0.80
+    block_frames: 1
+    clear_frames: 2
+
+# Backup → turn to open side → local EDT → replan. English detail logs.
+cn_recovery:
+  ros__parameters:
+    min_backup_m: 0.05
+    max_backup_m: 0.20
+    backup_rear_margin_m: 0.03
+    backup_linear_vel: -0.10
+    backup_timeout_sec: 5.0
+    spin_angle_rad: 1.5708
+    spin_angular_vel: 0.30
+    spin_timeout_sec: 8.0
+    recovery_wait_sec: 1.0
+    max_recovery_attempts: 5
+
+cn_planner:
+  ros__parameters:
+    occupied_thresh: 50
+    wall_cost_weight: 2.0
+    dynamic_cost_weight: 5.0
+    min_clearance_m: 0.08
+    plan_sleep_sec: 0.5
+    map_frame: "map"
+
+# cn_controller — closed-loop AMCL path executor (not RPP).
+# On grip: linear_vel / angular_vel are Titan DUTY (−1…1).
+cn_controller:
+  ros__parameters:
+    linear_vel: 0.4
+    angular_vel: 0.4
+    fine_angular_vel: 0.20
+    lookahead_dist: 0.30
+    heading_align_threshold: 0.35
+    heading_aligned_threshold: 0.12
+    heading_deadband: 0.05
+    control_rate_hz: 20.0
+    angular_sign: 1.0
+
+cn_goal_checker:
+  ros__parameters:
+    xy_goal_tolerance: 0.12
+    yaw_goal_tolerance: 0.15

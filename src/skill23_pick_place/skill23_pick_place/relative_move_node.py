@@ -106,7 +106,7 @@ class RelativeMoveNode(Node):
                 err = delta - by
                 done = abs(err) <= self._xy_tol
                 vx, vy, wz = 0.0, self._kp * err, 0.0
-                if self._robot == 'allterrain':
+                if self._robot in ('allterrain', 'grip'):
                     # Diff drive cannot strafe — rotate 90, drive, rotate back handled by caller
                     return False
             else:
@@ -149,10 +149,10 @@ class RelativeMoveNode(Node):
             dyaw = float(cmd.get('dyaw', cmd.get('yaw', 0.0)))
             if not self._axis_move('x', dx):
                 message = 'x failed'
-            elif self._robot != 'allterrain' and not self._axis_move('y', dy):
+            elif self._robot not in ('allterrain', 'grip') and not self._axis_move('y', dy):
                 message = 'y failed'
-            elif self._robot == 'allterrain' and abs(dy) > 1e-4:
-                message = 'allterrain cannot strafe (dy ignored)'
+            elif self._robot in ('allterrain', 'grip') and abs(dy) > 1e-4:
+                message = 'diff-drive cannot strafe (dy ignored)'
                 # still continue to yaw
                 if not self._axis_move('yaw', dyaw):
                     message = 'yaw failed'

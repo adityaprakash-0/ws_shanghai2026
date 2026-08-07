@@ -22,13 +22,18 @@ ROBOT_CONFIG = {
         'default_map': '~/skill23_ws/test_map10.yaml',
         'secret_nav2_yaml': 'nav2_secret_xdrive.yaml',
     },
+    'grip': {
+        'nav_launch': 'navigation_grip.py',
+        'default_map': '~/skill23_ws/test_map10.yaml',
+        'secret_nav2_yaml': 'nav2_secret_grip.yaml',
+    },
 }
 
 
 def get_robot_config(robot: str) -> dict:
     if robot not in ROBOT_CONFIG:
         raise RuntimeError(
-            f"Unknown robot '{robot}'. Use: allterrain | mecanum | xdrive")
+            f"Unknown robot '{robot}'. Use: allterrain | mecanum | xdrive | grip")
     return ROBOT_CONFIG[robot]
 
 

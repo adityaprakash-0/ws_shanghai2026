@@ -46,8 +46,11 @@ ament_target_dependencies(pid_turn rclcpp std_msgs geometry_msgs studica_control
 add_executable(lidar_merger_node src/lidar_merger.cpp)
 ament_target_dependencies(lidar_merger_node 
   rclcpp 
-  sensor_msgs 
+  sensor_msgs
+  geometry_msgs
   message_filters
+  tf2
+  tf2_ros
 )
 
 

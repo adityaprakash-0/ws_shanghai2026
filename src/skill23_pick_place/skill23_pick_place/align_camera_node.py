@@ -154,7 +154,7 @@ class AlignCameraNode(Node):
                     confirm = 0
                     corr = -self._kp * err
                     tw = Twist()
-                    if self._robot == 'allterrain':
+                    if self._robot in ('allterrain', 'grip'):
                         tw.angular.z = max(-self._wmax, min(self._wmax, corr * 2.0))
                     else:
                         tw.linear.y = max(-self._vmax, min(self._vmax, corr))

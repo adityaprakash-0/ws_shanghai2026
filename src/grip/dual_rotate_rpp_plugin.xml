@@ -1,0 +1,10 @@
+<class_libraries>
+  <library path="grip_dual_rotate_rpp_controller">
+    <class type="grip::DualRotateRppController" base_class_type="nav2_core::Controller">
+      <description>
+        Regulated Pure Pursuit with dual in-place rotate speeds (fast / slow by yaw error).
+        Grip-only controller plugin.
+      </description>
+    </class>
+  </library>
+</class_libraries>

@@ -56,7 +56,7 @@ SSH into the Pi (or use its terminal):
 ```bash
 cd ~/skill23_ws
 source /opt/ros/humble/setup.bash
-colcon build --packages-select adev_dashboard studica_control xdrive allterrain mecanum
+colcon build --packages-select adev_dashboard studica_control xdrive allterrain mecanum grip
 source install/setup.bash
 ```
 
@@ -141,7 +141,7 @@ http://localhost:3000
    - Click **Connect**
    - Status should show **CONNECTED** (green dot)
 
-5. Select the **same robot type** you launched on the Pi (allterrain / mecanum / xdrive).
+5. Select the **same robot type** you launched on the Pi (allterrain / mecanum / xdrive / grip).
 
 6. Click **Load Map from Pi** (or pick map from dropdown).
 
@@ -209,6 +209,7 @@ Default maps in `~/skill23_ws/`:
 | allterrain | `test_map10.yaml` |
 | mecanum | `test_map6.yaml` |
 | xdrive | `test_map10.yaml` |
+| grip | `test_map10.yaml` |
 
 ---
 

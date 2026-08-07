@@ -39,6 +39,7 @@
           <option value="allterrain">All-Terrain (Diff Drive)</option>
           <option value="mecanum">Mecanum (Omnidirectional)</option>
           <option value="xdrive">X-Drive (4WD)</option>
+          <option value="grip">Grip (Diff Drive)</option>
         </select>
         <p style="font-size:0.7rem;color:#8ba3c7;margin-bottom:0.8rem;">
           Launch matching stack on Pi:<br>
@@ -47,7 +48,17 @@
 
         <div class="toggle-row">
           <span>Simulation Mode</span>
-          <div class="toggle" id="toggleSim" title="Test mission without robot"></div>
+          <div class="toggle" id="toggleSim" title="Plan preview: pick start & end, show Nav2 path"></div>
+        </div>
+        <div id="simPlanPanel" class="sim-plan-panel hidden">
+          <p class="hint" style="margin-bottom:0.4rem">Path preview only (Nav2 planner). Click map for Start then End.</p>
+          <div class="row" style="gap:0.35rem;margin-bottom:0.4rem">
+            <button type="button" class="btn btn-ghost" id="btnSimStart" style="width:auto;margin:0;flex:1">Set Start</button>
+            <button type="button" class="btn btn-ghost" id="btnSimEnd" style="width:auto;margin:0;flex:1">Set End</button>
+          </div>
+          <div class="hint" id="simPointsReadout">Start: — · End: —</div>
+          <button class="btn btn-primary" id="btnSimPlanOk" style="margin-top:0.45rem">OK — Plan Path</button>
+          <button class="btn btn-ghost" id="btnSimPlanClear">Clear preview</button>
         </div>
 
         <label class="field">Map</label>
@@ -84,7 +95,8 @@
         <button type="button" id="btnCamToggle" title="Show/hide camera panel">📷 Camera</button>
       </div>
       <canvas id="mapCanvas"></canvas>
-      <div class="map-hint">White = free · Black = wall · Gray = unknown · Scroll zoom · Alt+drag pan</div>
+      <div class="map-hover-coords" id="mapHoverCoords">x=—&nbsp;&nbsp;y=—</div>
+      <div class="map-hint">White = free · Black = wall · Gray = unknown · Scroll zoom · Alt+drag pan · Shift+drag rotate · Red arrow = 0°</div>
     </main>
 
     <!-- RIGHT: Mission & Status -->

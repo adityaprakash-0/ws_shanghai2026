@@ -17,25 +17,25 @@ control_server:
         m_0:
           encoder_mode: "quadrature"
           dist_per_tick: 1.0
-          invert_motor: false
+          invert_motor: true
           invert_encoder: true
           invert_rpm: false
         m_1:
           encoder_mode: "quadrature"
           dist_per_tick: 1.0
           invert_motor: true
-          invert_encoder: false
+          invert_encoder: true
           invert_rpm: false
         m_2:
           encoder_mode: "quadrature"
           dist_per_tick: 1.0
           invert_motor: false
-          invert_encoder: true
+          invert_encoder: false
           invert_rpm: false
         m_3:
           encoder_mode: "quadrature"
           dist_per_tick: 1.0
-          invert_motor: true
+          invert_motor: false
           invert_encoder: false
           invert_rpm: false
 
@@ -135,13 +135,13 @@ control_server:
     # -------------------------------------------------------------------------
     # Gamepad — disabled during autonomous Nav2 (fights /cmd_vel with Nav2)
     gamepad:
-      enabled: false
+      enabled: true
       axis_linear_x: 1
-      axis_linear_y: -1
+      axis_linear_y: 0
       axis_angular_z: 2
       button_turbo: 5
-      linear_scale: 0.5
-      angular_scale: 0.5
+      linear_scale: 0.3
+      angular_scale: 0.3
       deadzone: 0.05
       turbo_multiplier: 2.0
       publish_rate: 50

@@ -11,6 +11,7 @@ const MapView = (() => {
   let scale = 1;
   let offsetX = 0;
   let offsetY = 0;
+  let viewRot = 0; // radians — view rotation about viewport center
   let pose = { x: 0, y: 0, yaw: 0 };
   let scan = [];
   let globalPath = [];
@@ -24,6 +25,8 @@ const MapView = (() => {
   let measureEnd = null;
   let onWaypointAdd = null;
   let onInitialPose = null;
+  let onSimPoint = null;
+  let onHoverCoords = null;
   let showGrid = true;
   let followRobot = true;
   let userPanned = false;
@@ -31,6 +34,9 @@ const MapView = (() => {
   let lastVpH = 0;
   let fitPending = false;
   let resizeObserver = null;
+  let simStart = null;
+  let simEnd = null;
+  let simPath = [];
 
   function worldToPixel(wx, wy) {
     if (!meta) return { px: 0, py: 0 };
@@ -55,9 +61,19 @@ const MapView = (() => {
 
   function screenToPixel(sx, sy) {
     const rect = canvas().getBoundingClientRect();
+    const { w, h } = viewportSize();
+    const cx = w / 2;
+    const cy = h / 2;
+    // Undo: viewport-center rotate → pan offset → scale
+    let x = sx - rect.left - cx;
+    let y = sy - rect.top - cy;
+    const c = Math.cos(-viewRot);
+    const s = Math.sin(-viewRot);
+    const xr = x * c - y * s;
+    const yr = x * s + y * c;
     return {
-      px: (sx - rect.left - offsetX) / scale,
-      py: (sy - rect.top - offsetY) / scale,
+      px: (xr + cx - offsetX) / scale,
+      py: (yr + cy - offsetY) / scale,
     };
   }
 
@@ -172,6 +188,7 @@ const MapView = (() => {
 
     offsetX = (vw - width * scale) / 2;
     offsetY = (vh - height * scale) / 2;
+    viewRot = 0;
   }
 
   function loadMap(mapInfo) {
@@ -357,6 +374,12 @@ const MapView = (() => {
     }
 
     g.save();
+    // Pan/zoom in screen space, then rotate the whole map about the viewport center
+    const cx = w / 2;
+    const cy = h / 2;
+    g.translate(cx, cy);
+    g.rotate(viewRot);
+    g.translate(-cx, -cy);
     g.translate(offsetX, offsetY);
     g.scale(scale, scale);
     g.imageSmoothingEnabled = false;
@@ -418,12 +441,79 @@ const MapView = (() => {
       g.setLineDash([]);
     }
 
+    // Simulation start / end markers (map frame)
+    if (simStart) {
+      const { px, py } = worldToPixel(simStart.x, simStart.y);
+      g.fillStyle = '#138808';
+      g.beginPath();
+      g.arc(px, py, 9 / scale, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = '#fff';
+      g.font = `${11 / scale}px sans-serif`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText('S', px, py);
+    }
+    if (simEnd) {
+      const { px, py } = worldToPixel(simEnd.x, simEnd.y);
+      g.fillStyle = '#e63946';
+      g.beginPath();
+      g.arc(px, py, 9 / scale, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = '#fff';
+      g.font = `${11 / scale}px sans-serif`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText('E', px, py);
+    }
+    if (simPath && simPath.length > 1) {
+      drawPathLine(g, simPath, 'rgba(255, 153, 51, 0.95)', 3.5);
+    }
+
     g.restore();
+
+    // Screen-space: 0° arrow (map +X) rotates with viewRot
+    drawZeroDegreeArrow(g, w, h);
+  }
+
+  function drawZeroDegreeArrow(g, w, h) {
+    const cx = 44;
+    const cy = Math.max(70, h - 56);
+    g.save();
+    g.translate(cx, cy);
+    g.fillStyle = 'rgba(255,255,255,0.94)';
+    g.strokeStyle = '#000080';
+    g.lineWidth = 2;
+    g.beginPath();
+    g.arc(0, 0, 26, 0, Math.PI * 2);
+    g.fill();
+    g.stroke();
+    // Canvas Y-down: viewRot matches map transform so +X follows the map
+    g.rotate(viewRot);
+    g.strokeStyle = '#e63946';
+    g.fillStyle = '#e63946';
+    g.lineWidth = 3;
+    g.beginPath();
+    g.moveTo(-12, 0);
+    g.lineTo(12, 0);
+    g.stroke();
+    g.beginPath();
+    g.moveTo(14, 0);
+    g.lineTo(5, -6);
+    g.lineTo(5, 6);
+    g.closePath();
+    g.fill();
+    g.restore();
+    g.fillStyle = '#000080';
+    g.font = 'bold 11px sans-serif';
+    g.textAlign = 'center';
+    g.fillText('0°', cx, cy + 40);
   }
 
   function bindEvents() {
     const c = canvas();
-    let dragging = false;
+    let dragging = false;   // Alt / middle / right = pan
+    let rotating = false;   // Shift = rotate
     let lastX = 0;
     let lastY = 0;
 
@@ -440,7 +530,17 @@ const MapView = (() => {
       resizeObserver.observe(parent);
     }
 
+    c.addEventListener('contextmenu', (e) => e.preventDefault());
+
     c.addEventListener('mousedown', (e) => {
+      if (e.shiftKey && e.button === 0) {
+        rotating = true;
+        userPanned = true;
+        followRobot = false;
+        lastX = e.clientX;
+        lastY = e.clientY;
+        return;
+      }
       if (e.button === 1 || e.button === 2 || e.altKey) {
         dragging = true;
         userPanned = true;
@@ -464,6 +564,18 @@ const MapView = (() => {
         return;
       }
 
+      if (mode === 'sim_start' || mode === 'sim_end') {
+        const pt = {
+          x: parseFloat(w.x.toFixed(3)),
+          y: parseFloat(w.y.toFixed(3)),
+        };
+        if (mode === 'sim_start') simStart = pt;
+        else simEnd = pt;
+        if (onSimPoint) onSimPoint(mode, pt, simStart, simEnd);
+        draw();
+        return;
+      }
+
       const yaw = waypoints.length ? (waypoints[waypoints.length - 1].yaw || 0) : 0;
       const ignoreYaw = document.getElementById('chkIgnoreYaw')?.checked || false;
       waypoints.push({
@@ -477,9 +589,24 @@ const MapView = (() => {
     });
 
     c.addEventListener('mousemove', (e) => {
-      if (dragging) {
-        offsetX += e.clientX - lastX;
-        offsetY += e.clientY - lastY;
+      if (rotating) {
+        const rect = c.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const a0 = Math.atan2(lastY - cy, lastX - cx);
+        const a1 = Math.atan2(e.clientY - cy, e.clientX - cx);
+        viewRot += a1 - a0;
+        lastX = e.clientX;
+        lastY = e.clientY;
+        draw();
+      } else if (dragging) {
+        const dx = e.clientX - lastX;
+        const dy = e.clientY - lastY;
+        // Offset is applied inside the rotation, so convert screen delta → offset space
+        const c = Math.cos(-viewRot);
+        const s = Math.sin(-viewRot);
+        offsetX += dx * c - dy * s;
+        offsetY += dx * s + dy * c;
         lastX = e.clientX;
         lastY = e.clientY;
         draw();
@@ -488,10 +615,19 @@ const MapView = (() => {
         measureEnd = { px, py };
         updateMeasureUI();
         draw();
+      } else if (onHoverCoords && meta) {
+        const { px, py } = screenToPixel(e.clientX, e.clientY);
+        const wpt = pixelToWorld(px, py);
+        onHoverCoords(wpt.x, wpt.y);
       }
     });
 
-    c.addEventListener('mouseup', () => { dragging = false; });
+    const endDrag = () => { dragging = false; rotating = false; };
+    c.addEventListener('mouseup', endDrag);
+    c.addEventListener('mouseleave', () => {
+      endDrag();
+      if (onHoverCoords) onHoverCoords(null, null);
+    });
 
     c.addEventListener('wheel', (e) => {
       e.preventDefault();
@@ -499,8 +635,16 @@ const MapView = (() => {
       followRobot = false;
       const factor = e.deltaY > 0 ? 0.9 : 1.1;
       const rect = c.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const my = e.clientY - rect.top;
+      const { w, h } = viewportSize();
+      const cx = w / 2;
+      const cy = h / 2;
+      // Cursor in screen space → undo rotation to reach offset space
+      const sx = e.clientX - rect.left - cx;
+      const sy = e.clientY - rect.top - cy;
+      const cos = Math.cos(-viewRot);
+      const sin = Math.sin(-viewRot);
+      const mx = sx * cos - sy * sin + cx;
+      const my = sx * sin + sy * cos + cy;
       offsetX = mx - (mx - offsetX) * factor;
       offsetY = my - (my - offsetY) * factor;
       scale *= factor;
@@ -541,10 +685,31 @@ const MapView = (() => {
 
   function getWaypoints() { return [...waypoints]; }
 
+  function setSimMarkers(start, end) {
+    simStart = start || null;
+    simEnd = end || null;
+    draw();
+  }
+
+  function setSimPath(pts) {
+    simPath = pts || [];
+    draw();
+  }
+
+  function clearSimPlan() {
+    simStart = null;
+    simEnd = null;
+    simPath = [];
+    draw();
+  }
+
   return {
     loadMap, setPose, setScan, setPaths, setRobotDims, setWaypoints, setMode, getMode,
     clearWaypoints, getWaypoints, bindEvents, draw, fitToView,
+    setSimMarkers, setSimPath, clearSimPlan,
     set onWaypointAdd(fn) { onWaypointAdd = fn; },
     set onInitialPose(fn) { onInitialPose = fn; },
+    set onSimPoint(fn) { onSimPoint = fn; },
+    set onHoverCoords(fn) { onHoverCoords = fn; },
   };
 })();

@@ -25,5 +25,5 @@ ydlidar_front:
     angle_min: -180.0
     range_max: 12.0        # max @ 80% reflectivity
     range_min: 0.05        # datasheet blind-zone minimum
-    invalid_range_is_inf: true
+    invalid_range_is_inf: false
     debug: false

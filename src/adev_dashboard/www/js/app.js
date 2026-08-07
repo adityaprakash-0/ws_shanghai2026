@@ -15,6 +15,7 @@
     allterrain: 'test_map10.yaml',
     mecanum: 'test_map6.yaml',
     xdrive: 'test_map10.yaml',
+    grip: 'test_map10.yaml',
   };
 
   const $ = (id) => document.getElementById(id);

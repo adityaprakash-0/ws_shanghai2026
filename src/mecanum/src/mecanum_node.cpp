@@ -17,17 +17,17 @@ using namespace std::chrono_literals;
 class MecanumNode : public rclcpp::Node {
 public:
     MecanumNode() : Node("mecanum_node") {
-        this->declare_parameter<double>("ticks_per_rev", 1221.6);
+        this->declare_parameter<double>("ticks_per_rev", 1221);
         this->declare_parameter<double>("wheel_radius", 0.05);
 
         ticks_per_rev_ = this->get_parameter("ticks_per_rev").as_double();
         wheel_radius_ = this->get_parameter("wheel_radius").as_double();
         meters_per_tick_ = (2.0 * M_PI * wheel_radius_) / ticks_per_rev_;
 
-        pub_fl_cmd_ = this->create_publisher<std_msgs::msg::Float64>("/titan0/m_0/cmd", 10);
-        pub_fr_cmd_ = this->create_publisher<std_msgs::msg::Float64>("/titan0/m_1/cmd", 10);
-        pub_rl_cmd_ = this->create_publisher<std_msgs::msg::Float64>("/titan0/m_2/cmd", 10);
-        pub_rr_cmd_ = this->create_publisher<std_msgs::msg::Float64>("/titan0/m_3/cmd", 10);
+        pub_fl_cmd_ = this->create_publisher<std_msgs::msg::Float64>("/titan0/m_2/cmd", 10);
+        pub_fr_cmd_ = this->create_publisher<std_msgs::msg::Float64>("/titan0/m_0/cmd", 10);
+        pub_rl_cmd_ = this->create_publisher<std_msgs::msg::Float64>("/titan0/m_3/cmd", 10);
+        pub_rr_cmd_ = this->create_publisher<std_msgs::msg::Float64>("/titan0/m_1/cmd", 10);
 
         odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("/wheel/odom", 10);
         wheel_dist_pub_ = this->create_publisher<std_msgs::msg::Float32MultiArray>("/wheel_distances", 10);
@@ -41,13 +41,13 @@ public:
             "/imu", 10, std::bind(&MecanumNode::imu_callback, this, std::placeholders::_1));
 
         sub_fl_enc_ = this->create_subscription<std_msgs::msg::Float64>(
-            "/titan0/m_0/encoder", 10, [this](const std_msgs::msg::Float64::SharedPtr msg) { ticks_fl_ = msg->data; });
+            "/titan0/m_2/encoder", 10, [this](const std_msgs::msg::Float64::SharedPtr msg) { ticks_fl_ = msg->data; });
         sub_fr_enc_ = this->create_subscription<std_msgs::msg::Float64>(
-            "/titan0/m_1/encoder", 10, [this](const std_msgs::msg::Float64::SharedPtr msg) { ticks_fr_ = msg->data; });
+            "/titan0/m_0/encoder", 10, [this](const std_msgs::msg::Float64::SharedPtr msg) { ticks_fr_ = msg->data; });
         sub_rl_enc_ = this->create_subscription<std_msgs::msg::Float64>(
-            "/titan0/m_2/encoder", 10, [this](const std_msgs::msg::Float64::SharedPtr msg) { ticks_rl_ = msg->data; });
+            "/titan0/m_3/encoder", 10, [this](const std_msgs::msg::Float64::SharedPtr msg) { ticks_rl_ = msg->data; });
         sub_rr_enc_ = this->create_subscription<std_msgs::msg::Float64>(
-            "/titan0/m_3/encoder", 10, [this](const std_msgs::msg::Float64::SharedPtr msg) { ticks_rr_ = msg->data; });
+            "/titan0/m_1/encoder", 10, [this](const std_msgs::msg::Float64::SharedPtr msg) { ticks_rr_ = msg->data; });
 
         last_time_ = this->now();
         odom_timer_ = this->create_wall_timer(20ms, std::bind(&MecanumNode::publish_odometry, this));

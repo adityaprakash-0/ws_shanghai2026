@@ -66,7 +66,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
             'robot', default_value='mecanum',
-            description='allterrain | mecanum | xdrive'),
+            description='allterrain | mecanum | xdrive | grip'),
         DeclareLaunchArgument('map', default_value=''),
         DeclareLaunchArgument(
             'graph', default_value='',

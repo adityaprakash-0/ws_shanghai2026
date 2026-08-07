@@ -16,11 +16,12 @@ def _launch_setup(context, *args, **kwargs):
         'allterrain': 'navigation_allterrain.py',
         'mecanum': 'navigation_mecanum.py',
         'xdrive': 'navigation_xdrive.py',
+        'grip': 'navigation_grip.py',
     }
 
     if robot not in nav_files:
         raise RuntimeError(
-            f"Unknown robot '{robot}'. Use: allterrain | mecanum | xdrive")
+            f"Unknown robot '{robot}'. Use: allterrain | mecanum | xdrive | grip")
 
     nav_launch_args = {}
     map_explicit = LaunchConfiguration('map_file').perform(context).strip()
@@ -78,7 +79,7 @@ def generate_launch_description():
         SetEnvironmentVariable('FASTDDS_BUILTIN_TRANSPORTS', 'UDPv4'),
         DeclareLaunchArgument(
             'robot', default_value='allterrain',
-            description='Robot platform: allterrain | mecanum | xdrive'),
+            description='Robot platform: allterrain | mecanum | xdrive | grip'),
         DeclareLaunchArgument(
             'map_file', default_value='',
             description='Optional map yaml override.'),

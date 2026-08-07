@@ -154,7 +154,7 @@ class GoToGoalNode(Node):
                     wz = math.copysign(self._min_ang_speed, wz)
 
                 # Diff-drive: drop lateral
-                if self._robot == 'allterrain':
+                if self._robot in ('allterrain', 'grip'):
                     vy = 0.0
 
                 # Prefer rotate-in-place when heading error large and close

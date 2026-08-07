@@ -74,7 +74,7 @@ def generate_launch_description():
         SetEnvironmentVariable('FASTDDS_BUILTIN_TRANSPORTS', 'UDPv4'),
         DeclareLaunchArgument(
             'robot', default_value='mecanum',
-            description='Robot platform: allterrain | mecanum | xdrive'),
+            description='Robot platform: allterrain | mecanum | xdrive | grip'),
         DeclareLaunchArgument(
             'map_file', default_value='',
             description='Optional map yaml override.'),

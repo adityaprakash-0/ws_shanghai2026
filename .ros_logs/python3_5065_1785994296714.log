@@ -1,0 +1,27 @@
+[INFO] [1785994297.134346395] [cn_planner]: [planner] idle — waiting for plan request
+[INFO] [1785994297.161003066] [cn_controller]: [controller] idle — disabled
+[INFO] [1785994297.229160329] [cn_obstacle_detector]: Local grid 3.00×3.00 m → 60×60 @ 0.050 m/cell | inflation=0.020 m (-99)
+[INFO] [1785994297.250998924] [cn_collision_checker]: [collision] idle — footprint 0.400×0.400 m on local_grid
+[INFO] [1785994297.279483850] [cn_recovery]: [recovery] idle — not active
+[INFO] [1785994297.389774117] [cn_planner]: [planner] idle — map 60x60
+[INFO] [1785994300.221585257] [cn_planner]: [planner] planning — goal (2.00,2.00)
+[INFO] [1785994300.289788112] [cn_planner]: [planner] done — plan 2 straight waypoints
+[INFO] [1785994300.292552567] [cn_planner]: plan: 2 straight waypoints
+[INFO] [1785994300.301941113] [cn_controller]: [controller] rotate_fast — new path (2 poses)
+[INFO] [1785994302.297513792] [cn_recovery]: [recovery] idle — armed — watching collisions
+[INFO] [1785994302.300503427] [cn_controller]: [controller] rotate_fast — enabled
+[INFO] [1785994302.308942235] [cn_controller]: [controller] follow — aligned — drive
+[INFO] [1785994302.315742247] [cn_controller]: [controller] rotate_fast — segment 1
+[INFO] [1785994308.574168363] [cn_controller]: [controller] rotate_fast — enabled
+[INFO] [1785994309.356893567] [cn_collision_checker]: [collision] blocked — footprint hit occ=0 infl=4
+[INFO] [1785994309.363996624] [cn_recovery]: [recovery] wait — hold + request local EDT (attempt 1)
+[INFO] [1785994309.441654225] [cn_obstacle_detector]: Local EDT snapshot frozen (recovery)
+[INFO] [1785994310.480824943] [cn_recovery]: [recovery] replan — replan #1 (static+local EDT)
+[INFO] [1785994310.486920267] [cn_planner]: [planner] planning — replan with static+local EDT
+[INFO] [1785994310.561416837] [cn_planner]: [planner] done — replan 2 straight waypoints
+[INFO] [1785994310.563617153] [cn_planner]: replan: 2 straight waypoints
+[INFO] [1785994310.637132396] [cn_recovery]: [recovery] idle — new path — recovery done
+[INFO] [1785994310.645313168] [cn_obstacle_detector]: Local EDT cleared
+[INFO] [1785994320.623285860] [cn_obstacle_detector]: Local EDT snapshot frozen (recovery)
+[INFO] [1785994321.648066674] [cn_obstacle_detector]: Local EDT snapshot frozen (recovery)
+[INFO] [1785994323.666840345] [cn_obstacle_detector]: Local EDT cleared

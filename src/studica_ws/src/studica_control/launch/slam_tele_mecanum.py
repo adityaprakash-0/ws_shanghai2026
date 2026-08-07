@@ -124,24 +124,24 @@ def generate_launch_description():
         parameters=[gate_params_file],
     )
 
-    delayed_gate = TimerAction(
-        period=7.0, 
-        actions=[
-            LogInfo(msg="[INIT] Map & Nav2 active. Launching Confidence Scan Gate..."),
-            confidence_gate_node
-        ]
-    )
+    # delayed_gate = TimerAction(
+    #     period=7.0, 
+    #     actions=[
+    #         LogInfo(msg="[INIT] Map & Nav2 active. Launching Confidence Scan Gate..."),
+    #         confidence_gate_node
+    #     ]
+    # )
 
 
 
-    delayed_ydf = TimerAction(period=2.0, actions=[ydlidar_front_node])
-    delayed_ydb = TimerAction(period=5.0, actions=[ydlidar_back_node])
+    # delayed_ydf = TimerAction(period=2.0, actions=[ydlidar_front_node])
+    # delayed_ydb = TimerAction(period=5.0, actions=[ydlidar_back_node])
 
    
     # --- Staggered Timers to prevent race conditions ---
-    delayed_rf2o = TimerAction(period=8.0, actions=[rf2o_node])
-    delayed_ekf = TimerAction(period=5.0, actions=[ekf_node])
-    delayed_slam = TimerAction(period=10.0, actions=[slam_node])
+    # delayed_rf2o = TimerAction(period=8.0, actions=[rf2o_node])
+    delayed_ekf = TimerAction(period=3.0, actions=[ekf_node])
+    delayed_slam = TimerAction(period=5.0, actions=[slam_node])
 
     return LaunchDescription([
         params_arg,

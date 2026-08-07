@@ -3,8 +3,8 @@
 
   <!-- ============================================================
        Source of truth for robot frames (mecanum).
-       LiDAR mounts: ±0.21 m on X, back yaw = π.
-       Keep launch static TFs and lidar_merger offsets identical.
+       LiDAR mounts: front +0.21 m, back -0.20 m on X; back yaw = π.
+       lidar_merger reads these poses from TF (no duplicated offsets).
        ============================================================ -->
 
   <link name="base_footprint"/>

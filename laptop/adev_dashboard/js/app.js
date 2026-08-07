@@ -2,6 +2,8 @@
 (() => {
   const state = {
     simulation: false,
+    simStart: null,
+    simEnd: null,
     estopActive: false,
     connected: false,
     robot: 'allterrain',
@@ -15,6 +17,7 @@
     allterrain: 'test_map10.yaml',
     mecanum: 'test_map6.yaml',
     xdrive: 'test_map10.yaml',
+    grip: 'test_map10.yaml',
   };
 
   const $ = (id) => document.getElementById(id);
@@ -153,10 +156,9 @@
       MapView.setRobotDims(t.robot_dims);
       MapView.setWaypoints(MapView.getWaypoints(), t.mission?.index ?? 0);
     } else {
+      // Simulation = plan preview only — keep sim path; still show live pose if any
       MapView.setPose(t.pose || { x: 0, y: 0, yaw: 0 });
-      MapView.setPaths(t.global_path, t.local_path, t.route_path);
       MapView.setRobotDims(t.robot_dims);
-      MapView.setWaypoints(MapView.getWaypoints(), t.mission?.index ?? 0);
     }
   }
 
@@ -364,26 +366,48 @@
 
   async function startSimulation() {
     state.simulation = true;
+    state.simStart = null;
+    state.simEnd = null;
     updateConnBadge(true, true);
-    setConnStatus('Simulation ON — planner path only, point follows line', true);
+    setConnStatus('Simulation ON — pick Start & End, then OK to plan (Nav2 path only)', true);
+    $('simPlanPanel')?.classList.remove('hidden');
+    MapView.clearSimPlan();
+    updateSimPointsReadout();
+    MapView.setMode('sim_start');
+    document.querySelectorAll('.map-toolbar button[data-mode]').forEach((b) => {
+      b.classList.toggle('active', b.dataset.mode === 'sim_start');
+    });
     try {
       if (!state.connected) await connect();
-      await AdevApi.setSimulation(true);
+      // Do NOT enable old path-follow sim — preview only via /api/plan
     } catch (e) {
-      state.simulation = false;
-      updateConnBadge(state.connected, false);
-      setConnStatus('Simulation failed: ' + e.message, false);
-      $('toggleSim').classList.remove('on');
-      return;
+      setConnStatus('Connect to Pi for Nav2 planning (map may still load locally)', false);
     }
     await loadDefaultMap();
   }
 
   async function stopSimulation() {
     state.simulation = false;
-    try { await AdevApi.setSimulation(false); } catch (_) { /* */ }
+    state.simStart = null;
+    state.simEnd = null;
+    $('simPlanPanel')?.classList.add('hidden');
+    MapView.clearSimPlan();
+    MapView.setMode('waypoint');
+    document.querySelectorAll('.map-toolbar button[data-mode]').forEach((b) => {
+      b.classList.toggle('active', b.dataset.mode === 'waypoint');
+    });
     updateConnBadge(state.connected, false);
-    setConnStatus('Simulation OFF — robot pose kept at last position', true);
+    setConnStatus('Simulation OFF', true);
+  }
+
+  function updateSimPointsReadout() {
+    const el = $('simPointsReadout');
+    if (!el) return;
+    const s = state.simStart;
+    const e = state.simEnd;
+    el.textContent =
+      `Start: ${s ? `(${s.x.toFixed(2)}, ${s.y.toFixed(2)})` : '—'}` +
+      ` · End: ${e ? `(${e.x.toFixed(2)}, ${e.y.toFixed(2)})` : '—'}`;
   }
 
   function bindUI() {
@@ -411,6 +435,63 @@
       $('toggleSim').classList.toggle('on', on);
       if (on) await startSimulation();
       else await stopSimulation();
+    };
+
+    $('btnSimStart')?.addEventListener('click', () => {
+      MapView.setMode('sim_start');
+      setConnStatus('Click map to set START', true);
+    });
+    $('btnSimEnd')?.addEventListener('click', () => {
+      MapView.setMode('sim_end');
+      setConnStatus('Click map to set END', true);
+    });
+    $('btnSimPlanClear')?.addEventListener('click', () => {
+      state.simStart = null;
+      state.simEnd = null;
+      MapView.clearSimPlan();
+      updateSimPointsReadout();
+    });
+    $('btnSimPlanOk')?.addEventListener('click', async () => {
+      if (!state.simStart || !state.simEnd) {
+        alert('Set both Start and End on the map first');
+        return;
+      }
+      try {
+        setConnStatus('Planning with Nav2…', true);
+        const res = await AdevApi.planPath(state.simStart, state.simEnd);
+        const pts = res.path || [];
+        if (!pts.length) throw new Error(res.error || 'empty path');
+        MapView.setSimPath(pts);
+        MapView.setSimMarkers(state.simStart, state.simEnd);
+        const pathEl = $('pathInfo');
+        if (pathEl) pathEl.textContent = `sim plan: ${pts.length} poses (Nav2)`;
+        setConnStatus(`Plan OK — ${pts.length} poses`, true);
+      } catch (e) {
+        setConnStatus('Plan failed: ' + e.message, false);
+        alert('Plan failed: ' + e.message);
+      }
+    });
+
+    MapView.onSimPoint = (mode, pt, start, end) => {
+      state.simStart = start;
+      state.simEnd = end;
+      updateSimPointsReadout();
+      if (mode === 'sim_start') {
+        MapView.setMode('sim_end');
+        setConnStatus('Start set — click map for END', true);
+      } else {
+        setConnStatus('End set — press OK — Plan Path', true);
+      }
+    };
+
+    MapView.onHoverCoords = (x, y) => {
+      const el = $('mapHoverCoords');
+      if (!el) return;
+      if (x == null || y == null) {
+        el.textContent = 'x=—  y=—';
+        return;
+      }
+      el.textContent = `x=${x.toFixed(3)}  y=${y.toFixed(3)}`;
     };
 
     $('btnEstop').onclick = async () => {

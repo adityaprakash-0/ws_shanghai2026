@@ -11,6 +11,7 @@ const MapView = (() => {
   let scale = 1;
   let offsetX = 0;
   let offsetY = 0;
+  let viewRot = 0; // radians — view rotation about viewport center
   let pose = { x: 0, y: 0, yaw: 0 };
   let scan = [];
   let globalPath = [];
@@ -55,9 +56,19 @@ const MapView = (() => {
 
   function screenToPixel(sx, sy) {
     const rect = canvas().getBoundingClientRect();
+    const { w, h } = viewportSize();
+    const cx = w / 2;
+    const cy = h / 2;
+    // Undo: viewport-center rotate → pan offset → scale
+    let x = sx - rect.left - cx;
+    let y = sy - rect.top - cy;
+    const c = Math.cos(-viewRot);
+    const s = Math.sin(-viewRot);
+    const xr = x * c - y * s;
+    const yr = x * s + y * c;
     return {
-      px: (sx - rect.left - offsetX) / scale,
-      py: (sy - rect.top - offsetY) / scale,
+      px: (xr + cx - offsetX) / scale,
+      py: (yr + cy - offsetY) / scale,
     };
   }
 
@@ -172,6 +183,7 @@ const MapView = (() => {
 
     offsetX = (vw - width * scale) / 2;
     offsetY = (vh - height * scale) / 2;
+    viewRot = 0;
   }
 
   function loadMap(mapInfo) {
@@ -357,6 +369,12 @@ const MapView = (() => {
     }
 
     g.save();
+    // Pan/zoom in screen space, then rotate the whole map about the viewport center
+    const cx = w / 2;
+    const cy = h / 2;
+    g.translate(cx, cy);
+    g.rotate(viewRot);
+    g.translate(-cx, -cy);
     g.translate(offsetX, offsetY);
     g.scale(scale, scale);
     g.imageSmoothingEnabled = false;
@@ -423,7 +441,8 @@ const MapView = (() => {
 
   function bindEvents() {
     const c = canvas();
-    let dragging = false;
+    let dragging = false;   // Alt / middle / right = pan
+    let rotating = false;   // Shift = rotate
     let lastX = 0;
     let lastY = 0;
 
@@ -440,7 +459,17 @@ const MapView = (() => {
       resizeObserver.observe(parent);
     }
 
+    c.addEventListener('contextmenu', (e) => e.preventDefault());
+
     c.addEventListener('mousedown', (e) => {
+      if (e.shiftKey && e.button === 0) {
+        rotating = true;
+        userPanned = true;
+        followRobot = false;
+        lastX = e.clientX;
+        lastY = e.clientY;
+        return;
+      }
       if (e.button === 1 || e.button === 2 || e.altKey) {
         dragging = true;
         userPanned = true;
@@ -477,9 +506,24 @@ const MapView = (() => {
     });
 
     c.addEventListener('mousemove', (e) => {
-      if (dragging) {
-        offsetX += e.clientX - lastX;
-        offsetY += e.clientY - lastY;
+      if (rotating) {
+        const rect = c.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
+        const a0 = Math.atan2(lastY - cy, lastX - cx);
+        const a1 = Math.atan2(e.clientY - cy, e.clientX - cx);
+        viewRot += a1 - a0;
+        lastX = e.clientX;
+        lastY = e.clientY;
+        draw();
+      } else if (dragging) {
+        const dx = e.clientX - lastX;
+        const dy = e.clientY - lastY;
+        // Offset is applied inside the rotation, so convert screen delta → offset space
+        const c = Math.cos(-viewRot);
+        const s = Math.sin(-viewRot);
+        offsetX += dx * c - dy * s;
+        offsetY += dx * s + dy * c;
         lastX = e.clientX;
         lastY = e.clientY;
         draw();
@@ -491,7 +535,9 @@ const MapView = (() => {
       }
     });
 
-    c.addEventListener('mouseup', () => { dragging = false; });
+    const endDrag = () => { dragging = false; rotating = false; };
+    c.addEventListener('mouseup', endDrag);
+    c.addEventListener('mouseleave', endDrag);
 
     c.addEventListener('wheel', (e) => {
       e.preventDefault();
@@ -499,8 +545,16 @@ const MapView = (() => {
       followRobot = false;
       const factor = e.deltaY > 0 ? 0.9 : 1.1;
       const rect = c.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const my = e.clientY - rect.top;
+      const { w, h } = viewportSize();
+      const cx = w / 2;
+      const cy = h / 2;
+      // Cursor in screen space → undo rotation to reach offset space
+      const sx = e.clientX - rect.left - cx;
+      const sy = e.clientY - rect.top - cy;
+      const cos = Math.cos(-viewRot);
+      const sin = Math.sin(-viewRot);
+      const mx = sx * cos - sy * sin + cx;
+      const my = sx * sin + sy * cos + cy;
       offsetX = mx - (mx - offsetX) * factor;
       offsetY = my - (my - offsetY) * factor;
       scale *= factor;

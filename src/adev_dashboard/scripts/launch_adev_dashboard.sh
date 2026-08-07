@@ -38,7 +38,7 @@ if [[ "${MODE}" == "secret_mode" ]]; then
 fi
 
 if [[ -z "${ROBOT}" ]]; then
-  read -r -p "Robot [allterrain/mecanum/xdrive] (default allterrain): " ROBOT
+  read -r -p "Robot [allterrain/mecanum/xdrive/grip] (default allterrain): " ROBOT
   ROBOT="${ROBOT:-allterrain}"
 fi
 
