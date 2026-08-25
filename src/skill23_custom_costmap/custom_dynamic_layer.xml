@@ -1,0 +1,11 @@
+<library path="custom_dynamic_layer">
+  <class
+    name="skill23_custom_costmap/CustomDynamicLayer"
+    type="skill23_custom_costmap::CustomDynamicLayer"
+    base_class_type="nav2_costmap_2d::Layer">
+    <description>
+      Runtime global-costmap overrides: add LiDAR-confirmed dynamic obstacles and
+      temporarily free verified-removed static walls without editing the .pgm.
+    </description>
+  </class>
+</library>

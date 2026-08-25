@@ -1,0 +1,89 @@
+
+# cmd [2026-08-17 16:51:16]: bash /home/vmx/skill23_ws/scripts/launch_gemini_e.sh enable_color:=true color_format:=MJPG color_qos:=default color_fps:=15 enable_depth:=false depth_registration:=false enable_ir:=false enable_ir_right:=false enable_point_cloud:=false enable_colored_point_cloud:=false enable_sync_output_accel_gyro:=false publish_tf:=false connection_delay:=500
+[INFO] [launch]: All log files can be found below /home/vmx/.ros/log/2026-08-17-16-51-23-402791-vmx-25760
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [component_container-1]: process started with pid [26013]
+[component_container-1] [INFO] [1786965685.472982335] [camera.camera_container]: Load Library: /home/vmx/skill23_ws/local_sysroot/opt/ros/humble/lib/liborbbec_camera.so
+[component_container-1] [INFO] [1786965688.027208500] [camera.camera_container]: Found class: rclcpp_components::NodeFactoryTemplate<orbbec_camera::OBCameraNodeDriver>
+[component_container-1] [INFO] [1786965688.027392775] [camera.camera_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<orbbec_camera::OBCameraNodeDriver>
+[component_container-1] [08/17 16:51:28.156576][info][26013][Context.cpp:68] Context created with config: /home/vmx/skill23_ws/local_sysroot/opt/ros/humble/share/orbbec_camera/config/OrbbecSDKConfig_v1.0.xml
+[component_container-1] [08/17 16:51:28.156736][info][26013][Context.cpp:73] Work directory=/home/vmx/skill23_ws, SDK version=v1.10.15-20241012-bb4e350
+[component_container-1] [08/17 16:51:28.156816][info][26013][LinuxPal.cpp:32] createObPal: create LinuxPal!
+[component_container-1] [08/17 16:51:28.237158][warning][26013][OpenNIDeviceInfo.cpp:186] New openni device matched.
+[component_container-1] [08/17 16:51:28.238249][info][26013][LinuxPal.cpp:166] Create PollingDeviceWatcher!
+[component_container-1] [08/17 16:51:28.239397][info][26013][DeviceManager.cpp:15] Current found device(s): (1)
+[component_container-1] [08/17 16:51:28.239441][info][26013][DeviceManager.cpp:24] 	- Name: Gemini E, PID: 0x065c, SN/ID: AY7493300B3, Connection: USB2.0
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/camera/camera' in container '/camera/camera_container'
+[component_container-1] [INFO] [1786965688.776444702] [camera.camera]: Connecting to the default device
+[component_container-1] [INFO] [1786965688.915064925] [camera.camera]: Select device cost 138 ms
+[component_container-1] [INFO] [1786965688.915268218] [camera.camera]: Try to connect device via USB2.0
+[component_container-1] [INFO] [1786965688.923578614] [camera.camera]: OBCameraNode: use_intra_process: OFF
+[component_container-1] [INFO] [1786965689.269999498] [camera.camera]: current time domain: system
+[component_container-1] [INFO] [1786965689.462856746] [camera.camera]: Setting LDP to ON
+[component_container-1] [INFO] [1786965689.469340932] [camera.camera]: Setting color mirror to OFF
+[component_container-1] [INFO] [1786965689.471798020] [camera.camera]: Setting depth soft filter to ON
+[component_container-1] [INFO] [1786965689.474378643] [camera.camera]: Setting color auto exposure to ON
+[component_container-1] [INFO] [1786965689.484636914] [camera.camera]: Setting IR auto exposure to ON
+[component_container-1] [INFO] [1786965689.492455003] [camera.camera]: Setting IR long exposure to ON
+[component_container-1] [INFO] [1786965689.499529476] [camera.camera]: default_soft_filter_max_diff: 16
+[component_container-1] [INFO] [1786965689.499783509] [camera.camera]: default_soft_filter_speckle_size: 480
+[component_container-1] [INFO] [1786965689.527302098] [camera.camera]:  stream color is enabled - width: 640, height: 360, fps: 15, Format: OB_FORMAT_MJPG
+[component_container-1] [INFO] [1786965689.741205544] [camera.camera]: toggling sensor color OFF
+[component_container-1] Received signal: 11
+[component_container-1] Log crash stack trace to Log/camera_crash_stack_trace_2026_08_17_16_51_29.log
+[ERROR] [component_container-1]: process has died [pid 26013, exit code -11, cmd '/opt/ros/humble/lib/rclcpp_components/component_container --ros-args -r __node:=camera_container -r __ns:=/camera'].
+
+# cmd [2026-08-17 16:52:31]: bash /home/vmx/skill23_ws/scripts/launch_gemini_e.sh enable_color:=true color_format:=MJPG color_qos:=default color_fps:=15 enable_depth:=false depth_registration:=false enable_ir:=false enable_ir_right:=false enable_point_cloud:=false enable_colored_point_cloud:=false enable_sync_output_accel_gyro:=false publish_tf:=false connection_delay:=500
+[INFO] [launch]: All log files can be found below /home/vmx/.ros/log/2026-08-17-16-52-37-557591-vmx-26919
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [component_container-1]: process started with pid [27155]
+[component_container-1] [INFO] [1786965759.176984053] [camera.camera_container]: Load Library: /home/vmx/skill23_ws/local_sysroot/opt/ros/humble/lib/liborbbec_camera.so
+[component_container-1] [INFO] [1786965760.888940674] [camera.camera_container]: Found class: rclcpp_components::NodeFactoryTemplate<orbbec_camera::OBCameraNodeDriver>
+[component_container-1] [INFO] [1786965760.896133507] [camera.camera_container]: Instantiate class: rclcpp_components::NodeFactoryTemplate<orbbec_camera::OBCameraNodeDriver>
+[component_container-1] [08/17 16:52:41.043194][info][27155][Context.cpp:68] Context created with config: /home/vmx/skill23_ws/local_sysroot/opt/ros/humble/share/orbbec_camera/config/OrbbecSDKConfig_v1.0.xml
+[component_container-1] [08/17 16:52:41.043311][info][27155][Context.cpp:73] Work directory=/home/vmx/skill23_ws, SDK version=v1.10.15-20241012-bb4e350
+[component_container-1] [08/17 16:52:41.043375][info][27155][LinuxPal.cpp:32] createObPal: create LinuxPal!
+[component_container-1] [08/17 16:52:41.119628][warning][27155][OpenNIDeviceInfo.cpp:186] New openni device matched.
+[component_container-1] [08/17 16:52:41.123449][info][27155][LinuxPal.cpp:166] Create PollingDeviceWatcher!
+[component_container-1] [08/17 16:52:41.125070][info][27155][DeviceManager.cpp:15] Current found device(s): (1)
+[component_container-1] [08/17 16:52:41.125118][info][27155][DeviceManager.cpp:24] 	- Name: Gemini E, PID: 0x065c, SN/ID: AY7493300B3, Connection: USB2.0
+[INFO] [launch_ros.actions.load_composable_nodes]: Loaded node '/camera/camera' in container '/camera/camera_container'
+[component_container-1] [INFO] [1786965761.662899576] [camera.camera]: Connecting to the default device
+[component_container-1] [INFO] [1786965761.793078393] [camera.camera]: Select device cost 130 ms
+[component_container-1] [INFO] [1786965761.793289871] [camera.camera]: Try to connect device via USB2.0
+[component_container-1] [INFO] [1786965761.793704919] [camera.camera]: OBCameraNode: use_intra_process: OFF
+[component_container-1] [INFO] [1786965762.075121784] [camera.camera]: current time domain: system
+[component_container-1] [INFO] [1786965762.104716491] [camera.camera]: Setting LDP to ON
+[component_container-1] [INFO] [1786965762.108854842] [camera.camera]: Setting color mirror to OFF
+[component_container-1] [INFO] [1786965762.109626272] [camera.camera]: Setting depth soft filter to ON
+[component_container-1] [INFO] [1786965762.109798917] [camera.camera]: Setting color auto exposure to ON
+[component_container-1] [INFO] [1786965762.110604329] [camera.camera]: Setting IR auto exposure to ON
+[component_container-1] [INFO] [1786965762.114529925] [camera.camera]: Setting IR long exposure to ON
+[component_container-1] [INFO] [1786965762.123180861] [camera.camera]: default_soft_filter_max_diff: 16
+[component_container-1] [INFO] [1786965762.123400450] [camera.camera]: default_soft_filter_speckle_size: 480
+[component_container-1] [INFO] [1786965762.127359638] [camera.camera]:  stream color is enabled - width: 640, height: 360, fps: 15, Format: OB_FORMAT_MJPG
+[component_container-1] [INFO] [1786965762.530389178] [camera.camera]: Publish diagnostics every 1 seconds
+[component_container-1] [INFO] [1786965762.555408931] [camera.camera]: Enable color stream
+[component_container-1] [INFO] [1786965762.555595575] [camera.camera]: Stream color width: 640 height: 360 fps: 15 format: MJPG
+[component_container-1] [INFO] [1786965762.967982207] [camera.camera]: Disable frame sync
+[component_container-1] [INFO] [1786965762.968196962] [camera.camera]: Setting LDP to ON
+[component_container-1] [INFO] [1786965762.973146613] [camera.camera]: Device Gemini E connected
+[component_container-1] [INFO] [1786965762.973307611] [camera.camera]: Serial number: AY7493300B3
+[component_container-1] [INFO] [1786965762.973360035] [camera.camera]: Firmware version: RD3481
+[component_container-1] [INFO] [1786965762.973399738] [camera.camera]: Hardware version: 
+[component_container-1] [INFO] [1786965762.973431201] [camera.camera]: device unique id: 1-1.3.1-6
+[component_container-1] [INFO] [1786965762.973475182] [camera.camera]: Current node pid: 27155
+[component_container-1] [INFO] [1786965762.973510866] [camera.camera]: usb connect type: USB2.0
+[component_container-1] [INFO] [1786965762.973545902] [camera.camera]: Start device cost 1810 ms
+[component_container-1] [INFO] [1786965762.973577309] [camera.camera]: Initialize device cost 1180 ms
+[WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
+[INFO] [component_container-1]: sending signal 'SIGINT' to process[component_container-1]
+[component_container-1] [INFO] [1786966081.642525473] [rclcpp]: signal_handler(signum=2)
+[component_container-1] [INFO] [1786966081.708136502] [camera.camera]: Color frame thread exit!
+[component_container-1] [WARN] [1786966081.757807489] [camera.camera]: Do destroy ~OBCameraNode
+[component_container-1] [WARN] [1786966081.757858840] [camera.camera]: Stop tf thread
+[component_container-1] [WARN] [1786966081.757876358] [camera.camera]: Stop color frame thread
+[component_container-1] [WARN] [1786966081.757896506] [camera.camera]: stop streams
+[component_container-1] [WARN] [1786966081.983601788] [camera.camera]: Destroy ~OBCameraNode DONE
+[component_container-1] [INFO] [1786966082.593695016] [rclcpp]: signal_handler(signum=2)
+[INFO] [component_container-1]: process has finished cleanly [pid 27155]

@@ -11,7 +11,7 @@ ydlidar_front:
     intensity: true
     intensity_bit: 8
     isSingleChannel: false
-    frequency: 10.0
+    frequency: 7.0
     sample_rate: 4
     abnormal_check_count: 4
     fixed_resolution: true

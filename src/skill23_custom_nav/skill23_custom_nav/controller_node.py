@@ -498,28 +498,27 @@ class ControllerNode(Node):
             return self.path_pts[0]
 
         closest, seg_i, t = self._closest_on_remaining_path(x, y)
-        # If progress jumped and closest is far, re-anchor to nearest forward wp.
+        # Far off the path (progress jumped, or the robot was pushed): steer at
+        # whichever real path point is nearer. Aiming at a point interpolated
+        # along the robot→waypoint ray would sit off the path, so the robot
+        # would cut a chord across whatever lies between it and the path.
         if self._dist((x, y), closest) > 0.60:
-            idx = self.nearest_idx
-            look_target = self.path_pts[min(idx + 1, n - 1)]
-            d = self._dist((x, y), look_target)
-            if d < 1e-3:
-                return look_target
-            step = min(self.lookahead_dist, d)
-            return (
-                x + step * (look_target[0] - x) / d,
-                y + step * (look_target[1] - y) / d,
-            )
+            forward = self.path_pts[min(self.nearest_idx + 1, n - 1)]
+            if self._dist((x, y), forward) < self._dist((x, y), closest):
+                return forward
+            return closest
 
+        # Use configured lookahead as-is (no 0.20 floor) so short values
+        # actually track the path tightly instead of cutting corners.
         look, _ = self._walk_path_forward(
-            seg_i, t, max(self.lookahead_dist, 0.20))
+            seg_i, t, max(self.lookahead_dist, 0.05))
 
-        # Hard cap: never aim more than ~2× lookahead away (stops wall chords).
-        max_d = max(0.45, 2.0 * self.lookahead_dist)
-        ld = self._dist((x, y), look)
-        if ld > max_d:
-            s = max_d / ld
-            look = (x + s * (look[0] - x), y + s * (look[1] - y))
+        # Never aim more than ~2x lookahead away, and keep the carrot on the
+        # polyline while doing it: fall back to the closest path point instead
+        # of pulling the carrot off the path toward the robot.
+        max_d = max(0.15, 2.0 * self.lookahead_dist)
+        if self._dist((x, y), look) > max_d:
+            return closest
         return look
 
     def _heading_err_to(self, target: Point2) -> float:

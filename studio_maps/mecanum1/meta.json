@@ -1,0 +1,11 @@
+{
+  "robot": "mecanum",
+  "mode": "arena",
+  "created_at": 1787582490.6329923,
+  "name": "mecanum1",
+  "updated_at": 1787582490.728417,
+  "resolution": 0.03,
+  "max_laser_range": 10.0,
+  "min_laser_range": 0.05,
+  "phase": "mapping"
+}

@@ -1,0 +1,18 @@
+[INFO] [1786797403.789359506] [cn_goal_checker]: [goal_checker] idle — no goal
+[INFO] [1786797403.907001855] [cn_mission]: [mission] idle — waiting for start
+[INFO] [1786797404.053150906] [cn_goal_checker]: [goal_checker] not_reached — waiting
+[INFO] [1786797405.548591605] [cn_mission]: [mission] idle — 2 waypoint(s) loaded
+[INFO] [1786797405.558997070] [cn_mission]: Loaded 2 waypoint(s)
+[INFO] [1786797406.076590953] [cn_mission]: [mission] running — starting wp 1/2
+[INFO] [1786797406.080666326] [cn_mission]: [mission] wait_goal — wp 1/2 (0.00,0.00)
+[INFO] [1786797406.125147041] [cn_mission]: Goal sent: wp 1/2 (0.00,0.00) id=1786797406077011131
+[INFO] [1786797406.145006598] [cn_goal_checker]: [goal_checker] tracking — new goal id=1786797406077011131
+[INFO] [1786797406.182657007] [cn_goal_checker]: [goal_checker] goal_reached — d=0.000m yaw_err=0.00
+[INFO] [1786797406.299353244] [cn_mission]: [mission] wait_action — wp 1 action=wait
+[INFO] [1786797406.301874903] [cn_mission]: Waypoint action start: wait
+[INFO] [1786797406.817518914] [cn_mission]: Waypoint action ok: wait done
+[INFO] [1786797406.821406456] [cn_mission]: [mission] running — next wp 2
+[INFO] [1786797406.849818918] [cn_mission]: [mission] wait_goal — wp 2/2 (2.00,0.00)
+[INFO] [1786797406.853614314] [cn_goal_checker]: [goal_checker] tracking — new goal id=1786797406821955743
+[INFO] [1786797406.858179567] [cn_mission]: Goal sent: wp 2/2 (2.00,0.00) id=1786797406821955743
+[INFO] [1786797406.889615790] [cn_goal_checker]: [goal_checker] not_reached — d=2.000m

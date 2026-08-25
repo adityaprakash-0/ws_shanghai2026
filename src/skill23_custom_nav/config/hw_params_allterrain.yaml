@@ -3,14 +3,14 @@ control_server:
 
     titan:
       enabled: true
-      sensors: ["titan0"]
+      sensors: ["titan0", "titan1"]  # titan1: OMS rotate m_0 + lift m_2
       titan0:
         can_id: 42
         motor_freq: 15600
         encoder_rate_hz: 20
         motor_update_rate_hz: 50
         limit_switches: false
-        enable_freshness: false
+        enable_freshness: true
         m_0:
           encoder_mode: "quadrature"
           dist_per_tick: 1.0
@@ -24,6 +24,38 @@ control_server:
           invert_encoder: false
           invert_rpm: false
         m_2:
+          encoder_mode: "quadrature"
+          dist_per_tick: 1.0
+          invert_motor: false
+          invert_encoder: true
+          invert_rpm: false
+        m_3:
+          encoder_mode: "quadrature"
+          dist_per_tick: 1.0
+          invert_motor: true
+          invert_encoder: false
+          invert_rpm: false
+      titan1:
+        can_id: 43
+        motor_freq: 15600
+        # OMS: m_0 rotate, m_2 lift. m_1/m_3 unused.
+        encoder_rate_hz: 20
+        motor_update_rate_hz: 50
+        limit_switches: true
+        enable_freshness: true
+        m_0:  # OMS rotation
+          encoder_mode: "quadrature"
+          dist_per_tick: 1.0
+          invert_motor: false
+          invert_encoder: true
+          invert_rpm: false
+        m_1:
+          encoder_mode: "quadrature"
+          dist_per_tick: 1.0
+          invert_motor: true
+          invert_encoder: false
+          invert_rpm: false
+        m_2:  # OMS lift
           encoder_mode: "quadrature"
           dist_per_tick: 1.0
           invert_motor: false
@@ -59,14 +91,23 @@ control_server:
 
     servo:
       enabled: false
-      sensors: ["arm_servo"]
-      arm_servo:
+      sensors: ["linear_servo", "vertical_servo", "rotation_servo", "gripper_servo"]
+      linear_servo:       # pin 12, continuous speed −100…100
+        port: 12
+        type: "continuous"
+      vertical_servo:     # pin 13, standard degrees −150…150
+        port: 13
+        type: "standard"
+      rotation_servo:     # pin 14, standard degrees −150…150
         port: 14
+        type: "standard"
+      gripper_servo:      # pin 15, standard degrees −150…150
+        port: 15
         type: "standard"
 
     # Left/right US for walls/open; front obstacle from front lidar (Sharp disabled).
     ultrasonic:
-      enabled: true
+      enabled: false
       # Lower rate + stagger: both sensors were pinging together → left heard right (fake 1–2 m)
       publish_rate_hz: 10.0
       stagger_ms: 50

@@ -1,17 +1,22 @@
 # =============================================================================
-# EKF — X-Drive (holonomic, ROS axes: +X fwd, +Y left, +yaw CCW)
+# EKF — X-Drive (ROS axes: +X fwd, +Y left, +yaw CCW)
 # =============================================================================
-# Sources (do NOT fuse wheel yaw/vyaw — same IMU as heading source):
-#   /wheel/odom → x, y, vx, vy   (calibrated X-drive encoders, ~±2 cm / m)
-#   /imu        → yaw, vyaw       (sensor_msgs/Imu has no linear vx/vy)
+# Tuned from skill23_test reports 2026-08-23:
+#   ODOM: fwd scale 0.998 | strafe L 1.021 | strafe R 1.006  (~1–2 % error)
+#   IMU:  static drift 0.06 deg/min | rot scale ~1.0 (±90° trials)
+#         ax/ay too noisy in tests → NOT fused (yaw + vyaw only)
 #
-# Wheel msg covariances (xdrive_node): pose x/y ≈ (0.02 m)^2 = 4e-4
-# IMU (imu_component): yaw ≈ 0.02 rad^2 | wz ≈ 0.001 (rad/s)^2
+# Measurement R is in the sensor messages (xdrive_node + imu_component).
+# Process Q below sets how fast the filter uncertainty grows between updates.
+#
+# Sources (wheel yaw OFF — IMU owns heading):
+#   /wheel/odom → x, y, vx, vy
+#   /imu        → yaw, vyaw
 # =============================================================================
 
 ekf_filter_node:
   ros__parameters:
-    frequency: 20.0
+    frequency: 15.0
     sensor_timeout: 0.5
     two_d_mode: true
     transform_time_offset: 0.0
@@ -27,19 +32,13 @@ ekf_filter_node:
     publish_acceleration: false
 
     # -------------------------------------------------------------------------
-    # ODOM0: holonomic encoders — pose + twist in x/y (ROS body / odom)
-    # yaw / vyaw OFF (IMU owns heading)
+    # ODOM0: encoders — x, y, vx, vy (yaw OFF)
     # -------------------------------------------------------------------------
     odom0: /wheel/odom
     odom0_queue_size: 20
     odom0_nodelay: true
     odom0_differential: false
     odom0_relative: false
-    #                x     y     z
-    #                roll  pitch yaw
-    #                vx    vy    vz
-    #                vroll vpitch vyaw
-    #                ax    ay    az
     odom0_config: [true,  true,  false,
                    false, false, false,
                    true,  true,  false,
@@ -47,7 +46,7 @@ ekf_filter_node:
                    false, false, false]
 
     # -------------------------------------------------------------------------
-    # IMU0: yaw + vyaw only
+    # IMU0: yaw, vyaw only (ax/ay OFF — noisy in calibration)
     # -------------------------------------------------------------------------
     imu0: /imu
     imu0_queue_size: 50
@@ -61,36 +60,34 @@ ekf_filter_node:
                   false, false, true,
                   false, false, false]
 
-    # Initial P — start confident in planar pose; unused axes 1e6
-    # x/y ~ (1 cm)^2 at t0
+    # Initial P — fused axes confident; unused → 1e6
     initial_estimate_covariance:
-      [1e-4, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-       0.0,  1e-4, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      [3.5e-4, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+       0.0,  3.5e-4, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
        0.0,  0.0,  1e6,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
        0.0,  0.0,  0.0,  1e6,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
        0.0,  0.0,  0.0,  0.0,  1e6,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-       0.0,  0.0,  0.0,  0.0,  0.0,  1e-3, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+       0.0,  0.0,  0.0,  0.0,  0.0,  8e-3, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
        0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-3, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
        0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-3, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
        0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e6,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
        0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e6,  0.0,  0.0,  0.0,  0.0,  0.0,
-       0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e6,  0.0,  0.0,  0.0,  0.0,
+       0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-3, 0.0,  0.0,  0.0,  0.0,
        0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e-3, 0.0,  0.0,  0.0,
        0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e6,  0.0,  0.0,
        0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e6,  0.0,
        0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e6]
 
-    # Process Q — tuned for ~±2 cm wheel odom (not the loose 0.05 slip model)
-    # x/y: (0.02 m)^2 ≈ 4e-4 per step budget; vx/vy modest; yaw from IMU
+    # Process Q — x/y 3.5e-4 | yaw 0.003 | vx 0.008 | vy 0.012 | vyaw 0.001
     process_noise_covariance:
-      [4e-4, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-       0.0,  4e-4, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+      [3.5e-4, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+       0.0,  3.5e-4, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
        0.0,  0.0,  1e6,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
        0.0,  0.0,  0.0,  1e6,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
        0.0,  0.0,  0.0,  0.0,  1e6,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-       0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-       0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
-       0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.01, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+       0.0,  0.0,  0.0,  0.0,  0.0,  0.003, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+       0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.008, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
+       0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.012, 0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
        0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e6,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,
        0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e6,  0.0,  0.0,  0.0,  0.0,  0.0,
        0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  0.0,  1e6,  0.0,  0.0,  0.0,  0.0,

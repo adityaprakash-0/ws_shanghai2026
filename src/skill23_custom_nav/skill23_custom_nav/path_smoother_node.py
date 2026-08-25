@@ -2,7 +2,7 @@
 """Path smoother + style mux for skill23_custom_nav.
 
 Subscribes planner output on /custom_nav/planner_path, publishes:
-  /custom_nav/smoothed_path  — always the outward-smoothed path
+  /custom_nav/smoothed_path  — lightly smoothed (follows planner closely)
   /custom_nav/path           — selected style (normal | smoothed)
 
 Style from param default or /custom_nav/path_style (std_msgs/String).
@@ -31,11 +31,12 @@ class PathSmootherNode(Node):
         super().__init__('cn_path_smoother')
         self.declare_parameter('path_style', 'smoothed')  # normal | smoothed
         self.declare_parameter('occupied_thresh', 50)
-        self.declare_parameter('min_turn_rad', 0.25)
+        self.declare_parameter('min_turn_rad', 0.12)
         self.declare_parameter('fillet_radius_m', 0.18)
         self.declare_parameter('sample_step_m', 0.04)
-        self.declare_parameter('min_clearance_m', 0.14)
-        self.declare_parameter('max_offset_m', 0.08)
+        self.declare_parameter('min_clearance_m', 0.18)
+        self.declare_parameter('max_offset_m', 0.0)
+        self.declare_parameter('simplify_dev_m', 0.03)
         self.declare_parameter('map_frame', 'map')
 
         style = str(self.get_parameter('path_style').value).strip().lower()
@@ -48,6 +49,7 @@ class PathSmootherNode(Node):
         self.sample_step = float(self.get_parameter('sample_step_m').value)
         self.min_clear = float(self.get_parameter('min_clearance_m').value)
         self.max_offset = float(self.get_parameter('max_offset_m').value)
+        self.simplify_dev = float(self.get_parameter('simplify_dev_m').value)
         self.map_frame = str(self.get_parameter('map_frame').value)
 
         self.map_msg: Optional[OccupancyGrid] = None
@@ -154,6 +156,7 @@ class PathSmootherNode(Node):
             sample_step_m=self.sample_step,
             min_clearance_m=self.min_clear,
             max_offset_m=self.max_offset,
+            simplify_dev_m=self.simplify_dev,
         )
         return self._path_from_poses(smoothed, planner.header.stamp)
 

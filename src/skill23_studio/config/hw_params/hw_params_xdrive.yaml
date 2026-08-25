@@ -1,0 +1,196 @@
+control_server:
+  ros__parameters:
+
+    titan:
+      enabled: true
+      sensors: ["titan0", "titan1"]  # titan1: OMS rotate m_0 + lift m_2
+      titan0:
+        can_id: 42
+        motor_freq: 15600
+        encoder_rate_hz: 20
+        motor_update_rate_hz: 50
+        limit_switches: false
+        enable_freshness: true
+        m_0:
+          encoder_mode: "quadrature"
+          dist_per_tick: 1.0
+          invert_motor: true
+          invert_encoder: true
+          invert_rpm: false
+        m_1:
+          encoder_mode: "quadrature"
+          dist_per_tick: 1.0
+          invert_motor: true
+          invert_encoder: true
+          invert_rpm: false
+        m_2:
+          encoder_mode: "quadrature"
+          dist_per_tick: 1.0
+          invert_motor: false
+          invert_encoder: false
+          invert_rpm: false
+        m_3:
+          encoder_mode: "quadrature"
+          dist_per_tick: 1.0
+          invert_motor: false
+          invert_encoder: false
+          invert_rpm: false
+      titan1:
+        can_id: 43
+        motor_freq: 15600
+        # OMS on titan1: m_0 rotate, m_2 lift. Limit switches still on this unit.
+        encoder_rate_hz: 20
+        motor_update_rate_hz: 50
+        limit_switches: true
+        enable_freshness: true
+        m_0:  # OMS rotation
+          encoder_mode: "quadrature"
+          dist_per_tick: 1.0
+          invert_motor: true
+          invert_encoder: true
+          invert_rpm: false
+        m_1:
+          encoder_mode: "quadrature"
+          dist_per_tick: 1.0
+          invert_motor: true
+          invert_encoder: true
+          invert_rpm: false
+        m_2:  # OMS lift
+          encoder_mode: "quadrature"
+          dist_per_tick: 1.0
+          invert_motor: false
+          invert_encoder: false
+          invert_rpm: false
+        m_3:
+          encoder_mode: "quadrature"
+          dist_per_tick: 1.0
+          invert_motor: false
+          invert_encoder: false
+          invert_rpm: false
+
+    imu:
+      enabled: true
+      name: "imu"
+      topic: "imu"
+      frame_id: "imu_link"
+
+    encoder:
+      enabled: false
+      sensors: ["external_encoder"]
+      external_encoder:
+        port_a: 0
+        port_b: 1
+        topic: "external_encoder"
+
+    duty_cycle:
+      enabled: false
+      sensors: ["absolute_encoder"]
+      absolute_encoder:
+        port: 12
+        topic: "duty_cycle_encoder"
+
+    servo:
+      enabled: false
+      sensors: ["linear_servo", "vertical_servo", "rotation_servo", "gripper_servo"]
+      linear_servo:       # pin 12, continuous speed −100…100
+        port: 12
+        type: "continuous"
+      vertical_servo:     # pin 13, standard degrees −150…150
+        port: 13
+        type: "standard"
+      rotation_servo:     # pin 14, standard degrees −150…150
+        port: 14
+        type: "standard"
+      gripper_servo:      # pin 15, standard degrees −150…150
+        port: 15
+        type: "standard"
+
+    # Left/right US for walls/open; front obstacle from front lidar (Sharp disabled).
+    ultrasonic:
+      enabled: false
+      # Lower rate + stagger: both sensors were pinging together → left heard right (fake 1–2 m)
+      publish_rate_hz: 10.0
+      stagger_ms: 50
+      sensors: ["ultrasonic_left", "ultrasonic_right"]
+      ultrasonic_left:
+        ping: 8
+        echo: 9
+        frame_id: "ultrasonic_left_link"
+      ultrasonic_right:
+        ping: 10
+        echo: 11
+        frame_id: "ultrasonic_right_link"
+      # US-align front sensors (add to sensors list above to enable)
+      # front_left_sonar:
+      #   ping: 12
+      #   echo: 13
+      #   frame_id: "front_left_sonar_link"
+      # front_right_sonar:
+      #   ping: 14
+      #   echo: 15
+      #   frame_id: "front_right_sonar_link"
+
+    sharp:
+      enabled: false
+
+    dio:
+      enabled: false
+      sensors: ["limit_switch"]
+      limit_switch:
+        pin: 16
+        type: "input"
+
+    cobra:
+      enabled: false
+      sensors: ["line_follower"]
+      line_follower:
+        vref: 5.0
+
+    light_tower:
+      enabled: false
+      sensors: ["status_tower"]
+      status_tower:
+        red_pin: 2
+        green_pin: 3
+        yellow_pin: 4
+        buzzer_pin: 5
+        enable_pin: 6
+
+    colore:
+      enabled: false
+      sensors: ["colore0"]
+      colore0:
+        transport: "usb"
+        can_id: 0
+        serial_port: "/dev/ttyACM0"
+        publish_rate_hz: 10
+        publish_outputs: ["info"]
+        brightness: 50
+        measmode: "off"
+        measmode_z_mm: -1.0
+        # omit match_references (Humble crashes on YAML [])
+        match_threshold: 0.05
+
+    parsec:
+      enabled: false
+      sensors: ["parsec0"]
+      parsec0:
+        transport: "usb"
+        can_id: 0
+        serial_port: "/dev/ttyACM0"
+        frame_id: "parsec0"
+        publish_rate_hz: 15
+        publish_outputs: ["grid"]
+
+    gamepad:
+      enabled: true
+      axis_linear_x: 1
+      axis_linear_y: -1
+      axis_angular_z: 2
+      button_turbo: 5
+      linear_scale: 0.2
+      angular_scale: 0.2
+      deadzone: 0.10
+      turbo_multiplier: 2.0
+      publish_rate: 50
+      cmd_vel_topic: "cmd_vel"

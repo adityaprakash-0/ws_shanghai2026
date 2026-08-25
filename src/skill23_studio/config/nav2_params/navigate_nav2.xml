@@ -1,0 +1,69 @@
+<!--
+  Studio Nav2 — NavigateToPose
+
+  Planning recovery (PlanWithRecovery — unchanged):
+    1) GridBased (0–252)
+    2) clear costmaps → GridBased
+    3) clear costmaps → GridBasedNarrow
+    → all fail = that plan attempt fails
+
+  Collision recovery (FollowPath failure only — each collision starts fresh):
+    Escape cascade (first success wins):
+      BackUp 0.15 m → else DriveOnHeading 0.10 m → else Spin +45° → else Spin −45°
+    then Wait → PlanWithRecovery
+    If that full attempt fails, retry the same cascade from BackUp (up to 4 times).
+    Only after 4 consecutive failed recovery attempts → Goal failed.
+
+  After any successful escape + replan, FollowPath resumes. A later collision
+  resets to BackUp again (independent of which escape worked last time).
+-->
+<root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="PlanWithRecovery">
+    <Fallback name="PlanAttempts">
+      <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
+      <Sequence name="ClearThenFreePlan">
+        <ClearEntireCostmap name="ClearLocalCostmap-Free" service_name="local_costmap/clear_entirely_local_costmap"/>
+        <ClearEntireCostmap name="ClearGlobalCostmap-Free" service_name="global_costmap/clear_entirely_global_costmap"/>
+        <Wait wait_duration="1"/>
+        <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
+      </Sequence>
+      <Sequence name="ClearThenNarrowPlan">
+        <ClearEntireCostmap name="ClearLocalCostmap-Narrow" service_name="local_costmap/clear_entirely_local_costmap"/>
+        <ClearEntireCostmap name="ClearGlobalCostmap-Narrow" service_name="global_costmap/clear_entirely_global_costmap"/>
+        <Wait wait_duration="1"/>
+        <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBasedNarrow"/>
+      </Sequence>
+    </Fallback>
+  </BehaviorTree>
+
+  <!-- One recovery attempt: escape cascade → wait → replan -->
+  <BehaviorTree ID="OneCollisionRecovery">
+    <Sequence name="OneRecoveryAttempt">
+      <Fallback name="EscapeMotions">
+        <BackUp backup_dist="0.15" backup_speed="0.10" time_allowance="15.0"/>
+        <DriveOnHeading dist_to_travel="0.10" speed="0.10" time_allowance="15.0"/>
+        <Fallback name="SpinEitherWay">
+          <Spin spin_dist="0.785398" time_allowance="15.0"/>
+          <Spin spin_dist="-0.785398" time_allowance="15.0"/>
+        </Fallback>
+      </Fallback>
+      <Wait wait_duration="2"/>
+      <SubTree ID="PlanWithRecovery" __shared_blackboard="true"/>
+    </Sequence>
+  </BehaviorTree>
+
+  <BehaviorTree ID="MainTree">
+    <Sequence name="NavigateRoot">
+      <SubTree ID="PlanWithRecovery" __shared_blackboard="true"/>
+      <RecoveryNode number_of_retries="6" name="FollowCollisionRecovery">
+        <FollowPath path="{path}" controller_id="FollowPath"/>
+        <Fallback name="CollisionRecoveryAttempts">
+          <SubTree ID="OneCollisionRecovery" __shared_blackboard="true"/>
+          <SubTree ID="OneCollisionRecovery" __shared_blackboard="true"/>
+          <SubTree ID="OneCollisionRecovery" __shared_blackboard="true"/>
+          <SubTree ID="OneCollisionRecovery" __shared_blackboard="true"/>
+        </Fallback>
+      </RecoveryNode>
+    </Sequence>
+  </BehaviorTree>
+</root>

@@ -1,0 +1,58 @@
+<!--
+  Studio Nav2 — NavigateThroughPoses
+  Same collision recovery as navigate_nav2.xml (planning path unchanged).
+-->
+<root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="PlanWithRecovery">
+    <Fallback name="PlanAttempts">
+      <Sequence name="PlanFree">
+        <RemovePassedGoals input_goals="{goals}" output_goals="{goals}" radius="0.25"/>
+        <ComputePathThroughPoses goals="{goals}" path="{path}" planner_id="GridBased"/>
+      </Sequence>
+      <Sequence name="ClearThenFreePlan">
+        <ClearEntireCostmap name="ClearLocalCostmap-Free" service_name="local_costmap/clear_entirely_local_costmap"/>
+        <ClearEntireCostmap name="ClearGlobalCostmap-Free" service_name="global_costmap/clear_entirely_global_costmap"/>
+        <Wait wait_duration="1"/>
+        <RemovePassedGoals input_goals="{goals}" output_goals="{goals}" radius="0.25"/>
+        <ComputePathThroughPoses goals="{goals}" path="{path}" planner_id="GridBased"/>
+      </Sequence>
+      <Sequence name="ClearThenNarrowPlan">
+        <ClearEntireCostmap name="ClearLocalCostmap-Narrow" service_name="local_costmap/clear_entirely_local_costmap"/>
+        <ClearEntireCostmap name="ClearGlobalCostmap-Narrow" service_name="global_costmap/clear_entirely_global_costmap"/>
+        <Wait wait_duration="1"/>
+        <RemovePassedGoals input_goals="{goals}" output_goals="{goals}" radius="0.25"/>
+        <ComputePathThroughPoses goals="{goals}" path="{path}" planner_id="GridBasedNarrow"/>
+      </Sequence>
+    </Fallback>
+  </BehaviorTree>
+
+  <BehaviorTree ID="OneCollisionRecovery">
+    <Sequence name="OneRecoveryAttempt">
+      <Fallback name="EscapeMotions">
+        <BackUp backup_dist="0.15" backup_speed="0.10" time_allowance="15.0"/>
+        <DriveOnHeading dist_to_travel="0.10" speed="0.10" time_allowance="15.0"/>
+        <Fallback name="SpinEitherWay">
+          <Spin spin_dist="0.785398" time_allowance="15.0"/>
+          <Spin spin_dist="-0.785398" time_allowance="15.0"/>
+        </Fallback>
+      </Fallback>
+      <Wait wait_duration="2"/>
+      <SubTree ID="PlanWithRecovery" __shared_blackboard="true"/>
+    </Sequence>
+  </BehaviorTree>
+
+  <BehaviorTree ID="MainTree">
+    <Sequence name="NavigateRoot">
+      <SubTree ID="PlanWithRecovery" __shared_blackboard="true"/>
+      <RecoveryNode number_of_retries="6" name="FollowCollisionRecovery">
+        <FollowPath path="{path}" controller_id="FollowPath"/>
+        <Fallback name="CollisionRecoveryAttempts">
+          <SubTree ID="OneCollisionRecovery" __shared_blackboard="true"/>
+          <SubTree ID="OneCollisionRecovery" __shared_blackboard="true"/>
+          <SubTree ID="OneCollisionRecovery" __shared_blackboard="true"/>
+          <SubTree ID="OneCollisionRecovery" __shared_blackboard="true"/>
+        </Fallback>
+      </RecoveryNode>
+    </Sequence>
+  </BehaviorTree>
+</root>

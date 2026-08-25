@@ -1,158 +1,120 @@
 import os
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess, DeclareLaunchArgument, LogInfo
+from launch.actions import ExecuteProcess, DeclareLaunchArgument, TimerAction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
-from launch.actions import TimerAction
 from ament_index_python.packages import get_package_share_directory, get_package_prefix
+
 
 def generate_launch_description():
 
-    # Package Directories
     studica_pkg_prefix = get_package_prefix('studica_control')
-    studica_pkg_share  = get_package_share_directory('studica_control')
+    studica_pkg_share = get_package_share_directory('studica_control')
+    studio_pkg_share = get_package_share_directory('skill23_studio')
     mecanum_pkg_share = get_package_share_directory('mecanum')
-    allterrain_pkg_share = get_package_share_directory('allterrain')
-    ydlidar_dir = get_package_share_directory('ydlidar_ros2_driver')
-    gate_params_file = os.path.join(allterrain_pkg_share, 'config', 'confidence_scan_gate.yaml')
 
-
-    # File Paths
     exec_path = os.path.join(studica_pkg_prefix, 'lib', 'studica_control', 'manual_composition')
-    default_params = os.path.join(studica_pkg_share, 'config', 'params_mecanum.yaml')
+    default_params = os.path.join(
+        studio_pkg_share, 'config', 'hw_params', 'hw_params_mecanum.yaml')
     urdf_file = os.path.join(mecanum_pkg_share, 'urdf', 'mecanum_robot.urdf')
     ekf_config_file = os.path.join(mecanum_pkg_share, 'config', 'ekf_mecanum.yaml')
     slam_config_file = os.path.join(studica_pkg_share, 'config', 'slam_params.yaml')
-    
+
     ydlidar_front_config = os.path.join(studica_pkg_share, 'config', 'front_lidar.yaml')
     ydlidar_back_config = os.path.join(studica_pkg_share, 'config', 'back_lidar.yaml')
 
-    with open(urdf_file, 'r') as infp:
+    with open(urdf_file, 'r', encoding='utf-8') as infp:
         robot_desc = infp.read()
 
-    # used to pass command-line argument
     params_arg = DeclareLaunchArgument('params_file', default_value=default_params)
+    slam_params_arg = DeclareLaunchArgument(
+        'slam_params_file', default_value=slam_config_file,
+        description='slam_toolbox params YAML (override resolution etc.)')
 
     # 1. Core Hardware Driver (Runs as root)
     manual_composition = ExecuteProcess(
-        cmd=['sudo', '-E', exec_path, '--ros-args', '-r', '__node:=control_server', '--params-file', LaunchConfiguration('params_file')],
+        cmd=[
+            'sudo', '-E', exec_path,
+            '--ros-args', '-r', '__node:=control_server',
+            '--params-file', LaunchConfiguration('params_file'),
+        ],
         output='screen',
     )
 
-    # 2. Robot State Publisher (Reads URDF)
+    # 2. Robot State Publisher (URDF: imu + laser_front/back)
     robot_state_publisher = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
         name='robot_state_publisher',
         output='screen',
-        parameters=[{'robot_description': robot_desc}]
+        parameters=[{'robot_description': robot_desc}],
     )
 
-    # 3. Sensor frames (imu_link, laser_front, laser_back) come from URDF
-    #    via robot_state_publisher — single source of truth (±0.21 m, back yaw=π).
-    #    Do NOT also publish static TFs for those frames (would conflict).
-
-    # 4. Hardware LiDAR Drivers
+    # 3. Dual LiDAR drivers
     ydlidar_front_node = Node(
-        package='ydlidar_ros2_driver', executable='ydlidar_ros2_driver_node', name='ydlidar_front',
-        output='screen', parameters=[ydlidar_front_config],
-        remappings=[('/scan', '/scan/front')]
+        package='ydlidar_ros2_driver',
+        executable='ydlidar_ros2_driver_node',
+        name='ydlidar_front',
+        output='screen',
+        parameters=[ydlidar_front_config],
+        remappings=[('/scan', '/scan/front')],
     )
 
     ydlidar_back_node = Node(
-        package='ydlidar_ros2_driver', executable='ydlidar_ros2_driver_node', name='ydlidar_back',
-        output='screen', parameters=[ydlidar_back_config],
-        remappings=[('/scan', '/scan/back')]
+        package='ydlidar_ros2_driver',
+        executable='ydlidar_ros2_driver_node',
+        name='ydlidar_back',
+        output='screen',
+        parameters=[ydlidar_back_config],
+        remappings=[('/scan', '/scan/back')],
     )
 
-    # 5. The New C++ LiDAR Merger
+    # 4. Shared LiDAR merger → /scan
     lidar_merger_node = Node(
         package='allterrain',
         executable='lidar_merger_node',
         name='lidar_merger_node',
-        output='screen'
-    )
-
-    # 6. RF2O Laser Odometry
-    rf2o_node = Node(
-        package='rf2o_laser_odometry',
-        executable='rf2o_laser_odometry_node',
-        name='rf2o_laser_odometry',
         output='screen',
-        parameters=[{
-            'laser_scan_topic': '/scan',        
-            'odom_topic': '/laser/odom',        # Changed to custom topic
-            'publish_tf': False,                # Disabled so EKF can take over TF
-            'base_frame_id': 'base_footprint',
-            'odom_frame_id': 'odom',
-            'init_pose_from_topic': '',
-            'freq': 7.0                        
-        }]
     )
 
-    # 7. EKF Odometry Filter
+    # 5. EKF (wheel XY + IMU yaw)
     ekf_node = Node(
         package='robot_localization',
         executable='ekf_node',
         name='ekf_filter_node',
         output='screen',
-        parameters=[ekf_config_file]
+        parameters=[ekf_config_file],
     )
 
-    # 8. Kinematics (Hardware Encoders)
+    # 6. Mecanum kinematics
     mecanum_node = Node(
         package='mecanum',
         executable='mecanum_node',
         name='mecanum_node',
-        output='screen'
+        output='screen',
     )
 
-    # 9. SLAM Toolbox (Mapping Engine)
+    # 7. SLAM Toolbox (mapping) — sync: every scan in order; async: may drop if CPU busy
     slam_node = Node(
         package='slam_toolbox',
-        executable='async_slam_toolbox_node',
+        executable='sync_slam_toolbox_node',
         name='slam_toolbox',
         output='screen',
-        parameters=[slam_config_file]
+        parameters=[LaunchConfiguration('slam_params_file')],
     )
 
-    confidence_gate_node = Node(
-        package='allterrain',
-        executable='confidence_scan_gate',
-        name='confidence_scan_gate_node',
-        output='screen',
-        parameters=[gate_params_file],
-    )
-
-    # delayed_gate = TimerAction(
-    #     period=7.0, 
-    #     actions=[
-    #         LogInfo(msg="[INIT] Map & Nav2 active. Launching Confidence Scan Gate..."),
-    #         confidence_gate_node
-    #     ]
-    # )
-
-
-
-    # delayed_ydf = TimerAction(period=2.0, actions=[ydlidar_front_node])
-    # delayed_ydb = TimerAction(period=5.0, actions=[ydlidar_back_node])
-
-   
-    # --- Staggered Timers to prevent race conditions ---
-    # delayed_rf2o = TimerAction(period=8.0, actions=[rf2o_node])
     delayed_ekf = TimerAction(period=3.0, actions=[ekf_node])
     delayed_slam = TimerAction(period=5.0, actions=[slam_node])
 
     return LaunchDescription([
         params_arg,
+        slam_params_arg,
         manual_composition,
         robot_state_publisher,
         ydlidar_front_node,
         ydlidar_back_node,
         mecanum_node,
         lidar_merger_node,
-       # delayed_rf2o,         # optional laser odom — keep OFF unless added to EKF as odom1
-        delayed_ekf,          # T+5s: wheel XY + IMU yaw → /odometry/filtered
-       # delayed_gate,
-        delayed_slam          # T+10s: SLAM Toolbox on /scan + odom TF
+        delayed_ekf,
+        delayed_slam,
     ])

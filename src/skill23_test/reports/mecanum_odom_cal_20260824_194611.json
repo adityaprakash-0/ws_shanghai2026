@@ -1,0 +1,179 @@
+{
+  "robot": "mecanum",
+  "generated": "2026-08-24T19:46:11",
+  "settings": {
+    "linear_duty": 0.25,
+    "strafe_duty": 0.25,
+    "move_duration_s_per_m": 5.0,
+    "cmd_vel_is_duty_not_mps": true
+  },
+  "summary": {
+    "forward_scale_real_over_odom": 1.0269671570271222,
+    "strafe_left_scale_real_over_odom": 1.0195299559140412,
+    "strafe_right_scale_real_over_odom": 1.0146753407500377,
+    "strafe_combined_scale_real_over_odom": 1.0171026483320396
+  },
+  "trials": [
+    {
+      "motion": "forward",
+      "commanded_m": 0.5,
+      "duty": 0.25,
+      "move_duration_s_per_m": 5.0,
+      "duration_s": 2.5,
+      "odom_forward_m": 0.43196638569106877,
+      "odom_lateral_m": 0.008476495196146077,
+      "odom_total_m": 0.4320495450035973,
+      "imu_yaw_delta_deg": 0.600000014528632,
+      "wheel_odom_start": {
+        "x": 0.0,
+        "y": 0.0,
+        "yaw_deg": 0.009999999776482582
+      },
+      "wheel_odom_end": {
+        "x": 0.43196489968438334,
+        "y": 0.008551887421856252,
+        "yaw_deg": 0.6100000143051147
+      },
+      "real_measured_m": 0.45,
+      "scale_real_over_odom": 1.0417477259951158
+    },
+    {
+      "motion": "forward",
+      "commanded_m": 1.0,
+      "duty": 0.25,
+      "move_duration_s_per_m": 5.0,
+      "duration_s": 5.0,
+      "odom_forward_m": 0.9140531900969093,
+      "odom_lateral_m": 0.01948943104226873,
+      "odom_total_m": 0.914260943193292,
+      "imu_yaw_delta_deg": 1.7800000309944155,
+      "wheel_odom_start": {
+        "x": 0.43189966154111903,
+        "y": 0.008615284451446877,
+        "yaw_deg": 0.43999999761581443
+      },
+      "wheel_odom_end": {
+        "x": 1.3457762325010654,
+        "y": 0.03512349637111624,
+        "yaw_deg": 2.2200000286102295
+      },
+      "real_measured_m": 0.925,
+      "scale_real_over_odom": 1.0119761191380232
+    },
+    {
+      "motion": "forward",
+      "commanded_m": 2.0,
+      "duty": 0.25,
+      "move_duration_s_per_m": 5.0,
+      "duration_s": 10.0,
+      "odom_forward_m": 1.8497287635583348,
+      "odom_lateral_m": 0.05602950067020655,
+      "odom_total_m": 1.850577154209032,
+      "imu_yaw_delta_deg": 3.1899999976158138,
+      "wheel_odom_start": {
+        "x": 1.344216273348393,
+        "y": 0.0365242002889355,
+        "yaw_deg": 0.5899999737739571
+      },
+      "wheel_odom_end": {
+        "x": 3.1932700172939206,
+        "y": 0.11159786865159459,
+        "yaw_deg": 3.779999971389769
+      },
+      "real_measured_m": 1.9,
+      "scale_real_over_odom": 1.027177625948227
+    },
+    {
+      "motion": "strafe_left",
+      "commanded_m": 0.5,
+      "duty": 0.25,
+      "move_duration_s_per_m": 5.0,
+      "duration_s": 2.5,
+      "odom_forward_m": 0.013202883843500334,
+      "odom_lateral_m": 0.42363037886091637,
+      "odom_total_m": 0.4238360697671076,
+      "imu_yaw_delta_deg": 1.4099999666213987,
+      "wheel_odom_start": {
+        "x": 3.193209858997262,
+        "y": 0.11152963245855413,
+        "yaw_deg": -0.7799999713897693
+      },
+      "wheel_odom_end": {
+        "x": 3.2121784621132767,
+        "y": 0.534941023580068,
+        "yaw_deg": 0.6299999952316295
+      },
+      "real_measured_m": 0.441,
+      "scale_real_over_odom": 1.0410018308549736
+    },
+    {
+      "motion": "strafe_left",
+      "commanded_m": 1.0,
+      "duty": 0.25,
+      "move_duration_s_per_m": 5.0,
+      "duration_s": 5.0,
+      "odom_forward_m": 0.007425016925568122,
+      "odom_lateral_m": 0.861673299775799,
+      "odom_total_m": 0.8617052897730516,
+      "imu_yaw_delta_deg": 2.72000002861023,
+      "wheel_odom_start": {
+        "x": 3.2121127719845166,
+        "y": 0.5348780950040396,
+        "yaw_deg": -1.200000047683715
+      },
+      "wheel_odom_end": {
+        "x": 3.2375816852441863,
+        "y": 1.3962069177426208,
+        "yaw_deg": 1.5199999809265148
+      },
+      "real_measured_m": 0.86,
+      "scale_real_over_odom": 0.9980580809731086
+    },
+    {
+      "motion": "strafe_right",
+      "commanded_m": 0.5,
+      "duty": 0.25,
+      "move_duration_s_per_m": 5.0,
+      "duration_s": 2.5,
+      "odom_forward_m": -0.01171035227700641,
+      "odom_lateral_m": -0.42978891020551196,
+      "odom_total_m": 0.42994841514546045,
+      "imu_yaw_delta_deg": -0.5299999713897704,
+      "wheel_odom_start": {
+        "x": 3.2376339932733593,
+        "y": 1.3961278259888221,
+        "yaw_deg": -2.079999923706055
+      },
+      "wheel_odom_end": {
+        "x": 3.2103322224377275,
+        "y": 0.9670471191336527,
+        "yaw_deg": -2.609999895095826
+      },
+      "real_measured_m": 0.445,
+      "scale_real_over_odom": 1.0353920015926297
+    },
+    {
+      "motion": "strafe_right",
+      "commanded_m": 1.0,
+      "duty": 0.25,
+      "move_duration_s_per_m": 5.0,
+      "duration_s": 5.0,
+      "odom_forward_m": -0.018714691648365124,
+      "odom_lateral_m": -0.8601967237507445,
+      "odom_total_m": 0.8604002808199264,
+      "imu_yaw_delta_deg": -0.009999990463255651,
+      "wheel_odom_start": {
+        "x": 3.210209202733413,
+        "y": 0.9671811600755792,
+        "yaw_deg": -2.470000028610229
+      },
+      "wheel_odom_end": {
+        "x": 3.154440618324328,
+        "y": 0.10859015835938665,
+        "yaw_deg": -2.4800000190734863
+      },
+      "real_measured_m": 0.855,
+      "scale_real_over_odom": 0.9939586799074459
+    }
+  ]
+}

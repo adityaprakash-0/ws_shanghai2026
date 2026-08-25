@@ -4,6 +4,7 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/float64.hpp"
+#include "std_msgs/msg/bool.hpp"
 #include "geometry_msgs/msg/twist.hpp"
 #include "sensor_msgs/msg/imu.hpp"
 #include "nav_msgs/msg/odometry.hpp"
@@ -37,6 +38,11 @@ public:
         cmd_vel_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
             "/cmd_vel", 10, std::bind(&MecanumNode::cmd_vel_callback, this, std::placeholders::_1));
 
+        sim_sub_ = this->create_subscription<std_msgs::msg::Bool>(
+            "/adev/simulation", 10, [this](const std_msgs::msg::Bool::SharedPtr msg) {
+                simulation_mode_ = msg->data;
+            });
+
         imu_sub_ = this->create_subscription<sensor_msgs::msg::Imu>(
             "/imu", 10, std::bind(&MecanumNode::imu_callback, this, std::placeholders::_1));
 
@@ -50,9 +56,10 @@ public:
             "/titan0/m_1/encoder", 10, [this](const std_msgs::msg::Float64::SharedPtr msg) { ticks_rr_ = msg->data; });
 
         last_time_ = this->now();
-        odom_timer_ = this->create_wall_timer(20ms, std::bind(&MecanumNode::publish_odometry, this));
+        // ~20 Hz — matches encoder update rate so vx/vy is not zero between tick updates
+        odom_timer_ = this->create_wall_timer(50ms, std::bind(&MecanumNode::publish_odometry, this));
 
-        RCLCPP_INFO(this->get_logger(), "Mecanum node started. EKF Mode & X/Y PID separation active.");
+        RCLCPP_INFO(this->get_logger(), "Mecanum node started. EKF mode (r=0.05, ticks=1221).");
     }
 
 private:
@@ -72,11 +79,16 @@ private:
     rclcpp::Publisher<std_msgs::msg::Float32>::SharedPtr robot_dist_y_pub_;
 
     rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
+    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sim_sub_;
     rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
     rclcpp::Subscription<std_msgs::msg::Float64>::SharedPtr sub_fl_enc_, sub_fr_enc_, sub_rl_enc_, sub_rr_enc_;
     rclcpp::TimerBase::SharedPtr odom_timer_;
+    bool simulation_mode_ = false;
 
     void cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr msg) {
+        if (simulation_mode_) {
+            return;
+        }
         double x_vel = msg->linear.x;
         double y_vel = msg->linear.y;
         double angular = msg->angular.z;
@@ -108,6 +120,9 @@ private:
     }
 
     void publish_odometry() {
+        if (simulation_mode_) {
+            return;
+        }
         rclcpp::Time current_time = this->now();
         double dt = (current_time - last_time_).seconds();
         if (dt <= 0.0) return;
@@ -178,26 +193,24 @@ private:
         odom.twist.twist.linear.y = v_y;
         odom.twist.twist.angular.z = v_th;
 
-        // pose cov 6x6 row-major: x,y,z,roll,pitch,yaw
-        // twist cov: vx,vy,vz,vroll,vpitch,vyaw
-        // Unused axes → 1e6 so EKF / consumers ignore them.
+        // Covariances — ~±2 cm → σ≈0.02 m → var≈4e-4 (same as grip)
         for (int i = 0; i < 36; ++i) {
             odom.pose.covariance[i] = 0.0;
             odom.twist.covariance[i] = 0.0;
         }
-        odom.pose.covariance[0]  = 0.05;   // x  (m^2) — wheel slip
-        odom.pose.covariance[7]  = 0.05;   // y  (m^2) — strafe slip
-        odom.pose.covariance[14] = 1e6;    // z
-        odom.pose.covariance[21] = 1e6;    // roll
-        odom.pose.covariance[28] = 1e6;    // pitch
-        odom.pose.covariance[35] = 0.02;   // yaw (rad^2) — from IMU delta
+        odom.pose.covariance[0] = 4e-4;   // x
+        odom.pose.covariance[7] = 4e-4;   // y
+        odom.pose.covariance[14] = 1e6;   // z unused
+        odom.pose.covariance[21] = 1e6;   // roll unused
+        odom.pose.covariance[28] = 1e6;   // pitch unused
+        odom.pose.covariance[35] = 0.02;  // yaw (not fused; IMU owns heading)
 
-        odom.twist.covariance[0]  = 0.1;   // vx
-        odom.twist.covariance[7]  = 0.1;   // vy
-        odom.twist.covariance[14] = 1e6;   // vz
-        odom.twist.covariance[21] = 1e6;   // vroll
-        odom.twist.covariance[28] = 1e6;   // vpitch
-        odom.twist.covariance[35] = 0.001; // vyaw — IMU Δyaw/dt, matches gyro noise
+        odom.twist.covariance[0] = 0.0025;  // vx
+        odom.twist.covariance[7] = 0.0025;  // vy (mecanum)
+        odom.twist.covariance[14] = 1e6;
+        odom.twist.covariance[21] = 1e6;
+        odom.twist.covariance[28] = 1e6;
+        odom.twist.covariance[35] = 0.001;  // vyaw (not fused)
 
         odom_pub_->publish(odom);
 

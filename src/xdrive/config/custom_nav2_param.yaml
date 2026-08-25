@@ -80,20 +80,21 @@ cn_obstacle_detector:
     robot_length: 0.43
     robot_width: 0.4
 
-# Simple front-buffer collision (near 20 cm / stop 12 cm) + clearances.
+# Angular-sector collision: front 0°±5° triggers stop; publishes FL/FR/L/R/rear.
 cn_collision_checker:
   ros__parameters:
     robot_width: 0.4
     robot_length: 0.43
     safety_margin_m: 0.06
-    collision_zone_depth: 0.18
     near_m: 0.20
     stop_m: 0.12
     clearance_probe_m: 0.80
+    window_deg: 5.0
+    ray_step_deg: 2.5
     block_frames: 1
     clear_frames: 2
 
-# Backup → turn to open side → local EDT → replan. English detail logs.
+# Backup by rear min → spin by FL/FR then L/R decision table → EDT → replan.
 cn_recovery:
   ros__parameters:
     min_backup_m: 0.05
@@ -101,18 +102,42 @@ cn_recovery:
     backup_rear_margin_m: 0.03
     backup_linear_vel: -0.10
     backup_timeout_sec: 5.0
-    spin_angle_rad: 1.5708
+    open_m: 0.20
+    spin_fl_fr_rad: 0.7854
+    spin_side_rad: 1.5708
     spin_angular_vel: 0.30
     spin_timeout_sec: 8.0
     recovery_wait_sec: 1.0
     max_recovery_attempts: 5
+    block_trigger_sec: 0.5
+    fail_reset_clear_sec: 3.0
+    still_blocked_confirm_sec: 0.4
+
+# Follow planner closely; tiny local fillets only (do not cut corner clearance).
+cn_path_smoother:
+  ros__parameters:
+    path_style: "smoothed"
+    min_turn_rad: 0.12
+    fillet_radius_m: 0.18
+    sample_step_m: 0.04
+    min_clearance_m: 0.18
+    max_offset_m: 0.0
+    simplify_dev_m: 0.03
+    max_dev_m: 0.10
+    clearance_keep: 0.85
+    clearance_ceiling_m: 0.30
+    relax_iterations: 80
+    relax_weight: 0.40
+    relax_turn_ref_rad: 0.10
 
 cn_planner:
   ros__parameters:
     occupied_thresh: 50
-    wall_cost_weight: 2.0
+    wall_cost_weight: 12.0
     dynamic_cost_weight: 5.0
-    min_clearance_m: 0.08
+    min_clearance_m: 0.18
+    ridge_snap_radius_m: 0.10
+    corner_clearance_m: 0.30
     plan_sleep_sec: 0.5
     map_frame: "map"
 
@@ -123,14 +148,24 @@ cn_controller:
     linear_vel: 0.3
     angular_vel: 0.4
     fine_angular_vel: 0.20
-    lookahead_dist: 0.30
-    heading_align_threshold: 0.35
-    heading_aligned_threshold: 0.12
-    heading_deadband: 0.05
+    min_angular_vel: 0.20
+    min_steer_vel: 0.06
+    yaw_slow_err: 0.35
+    yaw_slow_vel: 0.12
+    final_yaw_tol: 0.05
+    yaw_pulse_off_ticks: 1
+    lookahead_dist: 0.10
+    heading_align_threshold: 0.25
+    # Must stay wider than the turn completed in one /amcl_pose period,
+    # otherwise the align state can never see itself arrive and hunts.
+    heading_aligned_threshold: 0.15
+    heading_deadband: 0.04
     control_rate_hz: 20.0
     angular_sign: 1.0
 
 cn_goal_checker:
   ros__parameters:
     xy_goal_tolerance: 0.12
-    yaw_goal_tolerance: 0.15
+    yaw_goal_tolerance: 0.08
+    yaw_relaxed_tolerance: 0.20
+    yaw_settle_timeout_sec: 8.0

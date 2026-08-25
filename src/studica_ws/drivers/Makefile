@@ -12,8 +12,11 @@ ifeq "$(GCCVERSIONGE7)" "1"
 CXXFLAGS += -latomic
 endif
 
-INCLUDE_INSTALL_PATH = /usr/local/include/studica_drivers
-LIB_INSTALL_PATH = /usr/local/lib/studica_drivers/
+# Workspace-local install (no sudo). Override with:
+#   make install PREFIX=/some/sysroot
+PREFIX ?= $(HOME)/skill23_ws/local_sysroot
+INCLUDE_INSTALL_PATH = $(PREFIX)/include/studica_drivers
+LIB_INSTALL_PATH = $(PREFIX)/lib
 
 all: $(LIBRARY)
 
@@ -23,13 +26,12 @@ $(LIBRARY): $(OBJS)
 %.o: %.cpp
 	$(CXX) -MMD -MP -c -o $@ $< $(CXXFLAGS)
 
-# Install headers and library
+# Install headers and library into local_sysroot
 install: $(LIBRARY)
-	sudo mkdir -p $(INCLUDE_INSTALL_PATH)
-	sudo cp -r $(wildcard *.hpp) $(INCLUDE_INSTALL_PATH)/
-	sudo mkdir -p $(LIB_INSTALL_PATH)
-	sudo cp $(LIBRARY) $(LIB_INSTALL_PATH)
-	sudo ldconfig
+	mkdir -p $(INCLUDE_INSTALL_PATH)
+	cp -f $(wildcard *.hpp) $(INCLUDE_INSTALL_PATH)/
+	mkdir -p $(LIB_INSTALL_PATH)
+	cp -f $(LIBRARY) $(LIB_INSTALL_PATH)/
 
 clean:
 	rm -f $(OBJS) $(LIBRARY) $(DEPS)

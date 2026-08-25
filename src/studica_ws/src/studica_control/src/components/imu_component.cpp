@@ -23,8 +23,8 @@ namespace studica_control {
 
 // Reads IMU parameters from params.yaml and creates the IMU node
 std::shared_ptr<rclcpp::Node> Imu::initialize(rclcpp::Node *control, std::shared_ptr<VMXPi> vmx) {
-    control->declare_parameter<std::string>("imu.name");
-    control->declare_parameter<std::string>("imu.topic");
+    control->declare_parameter<std::string>("imu.name", "imu");
+    control->declare_parameter<std::string>("imu.topic", "imu");
     control->declare_parameter<std::string>("imu.frame_id", "imu_link");
 
     std::string name     = control->get_parameter("imu.name").as_string();
@@ -58,7 +58,7 @@ Imu::Imu(std::shared_ptr<VMXPi> vmx, const std::string &name, const std::string 
     pub_gyro_z_ = this->create_publisher<std_msgs::msg::Float32>("/gyro_z", 10);
 
     timer_ = this->create_wall_timer(
-        std::chrono::milliseconds(50),
+        std::chrono::milliseconds(100),
         std::bind(&Imu::publish_data, this));
 
     RCLCPP_INFO(this->get_logger(), "IMU component ready.");
@@ -170,24 +170,22 @@ void Imu::publish_data() {
 
     // Row-major 3x3 covariances (xx,xy,xz, yx,yy,yz, zx,zy,zz).
     //the three values are roll, pitch , yaw ; so roll = x , pitch = y, yaw = z
-    // From NavX specs + drive-test still noise (4x inflated):
-    //   yaw ~0.25–0.5 deg/min drift, mag ±2° → yaw var ~0.02 rad^2
-    //   wz still σ≈0.0076 rad/s → var ~0.001
-    //   ax/ay still σ≈0.085 m/s^2 → var ~0.12
+    // Calibrated skill23_test xdrive 2026-08-23: static drift 0.06 deg/min, rot scale ~1.0
+    //   yaw σ≈0.09 rad (0.008 rad²) | wz σ≈0.0006 still → keep 0.001
+    //   ax still σ=0.173 → 0.03 | ay still σ=0.102 → 0.01
     // 1e6 on unused axes = "do not trust" for 2D EKF (not REP-145 -1).
-    // Do NOT use -1 here: that means "measurement absent"; we publish values.
     msg.orientation_covariance = {
         1e6, 0.0, 0.0,
         0.0, 1e6, 0.0,
-        0.0, 0.0, 0.02};   // roll/pitch unused; yaw used
+        0.0, 0.0, 0.008};  // roll/pitch unused; yaw used
     msg.angular_velocity_covariance = {
         1e6, 0.0, 0.0,
         0.0, 1e6, 0.0,
         0.0, 0.0, 0.001};  // wx/wy unused; wz (vyaw)
     msg.linear_acceleration_covariance = {
-        0.12, 0.0, 0.0,
-        0.0, 0.12, 0.0,
-        0.0, 0.0, 0.5};    // ax/ay from still noise; az mostly gravity
+        0.03, 0.0, 0.0,
+        0.0, 0.01, 0.0,
+        0.0, 0.0, 0.5};    // ax/ay from still test; az mostly gravity
 
     publisher_->publish(msg);
 }

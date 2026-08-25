@@ -262,7 +262,8 @@ public:
             "/titan0/m_1/encoder", 10, [this](const std_msgs::msg::Float64::SharedPtr msg) { ticks_rr_ = msg->data; });
 
         last_time_ = this->now();
-        odom_timer_ = this->create_wall_timer(20ms, std::bind(&GripNode::publish_odometry, this));
+        // ~20 Hz — matches encoder update rate so vx is not zero between tick updates
+        odom_timer_ = this->create_wall_timer(50ms, std::bind(&GripNode::publish_odometry, this));
 
         RCLCPP_INFO(this->get_logger(), "Grip node started. Diff-drive EKF mode (r=0.05, ticks=1221.6).");
     }

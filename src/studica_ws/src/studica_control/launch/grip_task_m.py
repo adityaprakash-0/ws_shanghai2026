@@ -66,8 +66,8 @@ def generate_launch_description():
     return LaunchDescription([
         params_arg,
         manual_composition,
-        grip_node,
-        pid_move_node,
-        pid_turn_node,
+      #  grip_node,
+       # pid_move_node,
+       # pid_turn_node,
         # task_manager_node
     ])

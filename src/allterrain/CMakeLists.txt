@@ -15,7 +15,7 @@ find_package(nav_msgs REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(studica_control REQUIRED)
-find_package(message_filters REQUIRED) 
+find_package(message_filters REQUIRED)
 
 
 if(BUILD_TESTING)
@@ -44,8 +44,8 @@ add_executable(pid_turn src/pid_turn.cpp)
 ament_target_dependencies(pid_turn rclcpp std_msgs geometry_msgs studica_control)
 
 add_executable(lidar_merger_node src/lidar_merger.cpp)
-ament_target_dependencies(lidar_merger_node 
-  rclcpp 
+ament_target_dependencies(lidar_merger_node
+  rclcpp
   sensor_msgs
   geometry_msgs
   message_filters
@@ -78,7 +78,7 @@ install(TARGETS
 )
 
 # --- ADDED: Install non-code directories (Launch, Config, URDF) ---
-install(DIRECTORY 
+install(DIRECTORY
   config
   urdf
   DESTINATION share/${PROJECT_NAME}

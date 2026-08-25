@@ -223,17 +223,17 @@ using namespace std::chrono_literals;
 class AllTerrainNode : public rclcpp::Node {
 public:
     AllTerrainNode() : Node("allterrain_node") {
-        this->declare_parameter<double>("ticks_per_rev", 1464.0);
-        this->declare_parameter<double>("wheel_radius", 0.06);
+        this->declare_parameter<double>("ticks_per_rev", 1221.0);
+        this->declare_parameter<double>("wheel_radius", 0.0625);
         
         ticks_per_rev_ = this->get_parameter("ticks_per_rev").as_double();
         wheel_radius_ = this->get_parameter("wheel_radius").as_double();
         meters_per_tick_ = (2.0 * M_PI * wheel_radius_) / ticks_per_rev_;
 
-        pub_fl_cmd_ = this->create_publisher<std_msgs::msg::Float64>("/titan0/m_0/cmd", 10);
-        pub_fr_cmd_ = this->create_publisher<std_msgs::msg::Float64>("/titan0/m_1/cmd", 10);
-        pub_rl_cmd_ = this->create_publisher<std_msgs::msg::Float64>("/titan0/m_2/cmd", 10);
-        pub_rr_cmd_ = this->create_publisher<std_msgs::msg::Float64>("/titan0/m_3/cmd", 10);
+        pub_fl_cmd_ = this->create_publisher<std_msgs::msg::Float64>("/titan0/m_2/cmd", 10);
+        pub_fr_cmd_ = this->create_publisher<std_msgs::msg::Float64>("/titan0/m_0/cmd", 10);
+        pub_rl_cmd_ = this->create_publisher<std_msgs::msg::Float64>("/titan0/m_3/cmd", 10);
+        pub_rr_cmd_ = this->create_publisher<std_msgs::msg::Float64>("/titan0/m_1/cmd", 10);
 
         // --- UPDATED: Publish to /wheel/odom for the EKF to consume ---
         odom_pub_ = this->create_publisher<nav_msgs::msg::Odometry>("/wheel/odom", 10);
@@ -253,18 +253,20 @@ public:
             "/imu", 10, std::bind(&AllTerrainNode::imu_callback, this, std::placeholders::_1));
 
         sub_fl_enc_ = this->create_subscription<std_msgs::msg::Float64>(
-            "/titan0/m_0/encoder", 10, [this](const std_msgs::msg::Float64::SharedPtr msg) { ticks_fl_ = msg->data; });
+            "/titan0/m_2/encoder", 10, [this](const std_msgs::msg::Float64::SharedPtr msg) { ticks_fl_ = msg->data; });
         sub_fr_enc_ = this->create_subscription<std_msgs::msg::Float64>(
-            "/titan0/m_1/encoder", 10, [this](const std_msgs::msg::Float64::SharedPtr msg) { ticks_fr_ = msg->data; });
+            "/titan0/m_0/encoder", 10, [this](const std_msgs::msg::Float64::SharedPtr msg) { ticks_fr_ = msg->data; });
         sub_rl_enc_ = this->create_subscription<std_msgs::msg::Float64>(
-            "/titan0/m_2/encoder", 10, [this](const std_msgs::msg::Float64::SharedPtr msg) { ticks_rl_ = msg->data; });
+            "/titan0/m_3/encoder", 10, [this](const std_msgs::msg::Float64::SharedPtr msg) { ticks_rl_ = msg->data; });
         sub_rr_enc_ = this->create_subscription<std_msgs::msg::Float64>(
-            "/titan0/m_3/encoder", 10, [this](const std_msgs::msg::Float64::SharedPtr msg) { ticks_rr_ = msg->data; });
+            "/titan0/m_1/encoder", 10, [this](const std_msgs::msg::Float64::SharedPtr msg) { ticks_rr_ = msg->data; });
 
         last_time_ = this->now();
-        odom_timer_ = this->create_wall_timer(20ms, std::bind(&AllTerrainNode::publish_odometry, this));
+        // ~20 Hz — matches encoder update rate so vx is not zero between tick updates
+        odom_timer_ = this->create_wall_timer(50ms, std::bind(&AllTerrainNode::publish_odometry, this));
 
-        RCLCPP_INFO(this->get_logger(), "AllTerrain node started. EKF Mode Active.");
+        RCLCPP_INFO(this->get_logger(), "AllTerrain node started. Diff-drive EKF mode (r=%.4f, ticks=%.0f).",
+                    wheel_radius_, ticks_per_rev_);
     }
 
 private:
@@ -376,9 +378,24 @@ private:
         odom.twist.twist.linear.x = v_x;
         odom.twist.twist.angular.z = v_th;
 
-        // Covariances
-        odom.pose.covariance[0] = 0.01; odom.pose.covariance[7] = 0.01; odom.pose.covariance[35] = 0.01;
-        odom.twist.covariance[0] = 0.01; odom.twist.covariance[7] = 0.01; odom.twist.covariance[35] = 0.01;
+        // Covariances — ~±2 cm distance accuracy → σ≈0.02 m → var≈4e-4 (same as grip)
+        for (size_t i = 0; i < 36; ++i) {
+            odom.pose.covariance[i] = 0.0;
+            odom.twist.covariance[i] = 0.0;
+        }
+        odom.pose.covariance[0] = 4e-4;   // x
+        odom.pose.covariance[7] = 4e-4;   // y
+        odom.pose.covariance[14] = 1e6;   // z unused
+        odom.pose.covariance[21] = 1e6;   // roll unused
+        odom.pose.covariance[28] = 1e6;   // pitch unused
+        odom.pose.covariance[35] = 0.02;  // yaw (not fused; IMU owns heading)
+
+        odom.twist.covariance[0] = 0.0025;  // vx  (σ≈0.05 m/s)
+        odom.twist.covariance[7] = 1e6;     // vy unused (diff-drive)
+        odom.twist.covariance[14] = 1e6;
+        odom.twist.covariance[21] = 1e6;
+        odom.twist.covariance[28] = 1e6;
+        odom.twist.covariance[35] = 0.001;  // vyaw (not fused)
 
         odom_pub_->publish(odom);
 

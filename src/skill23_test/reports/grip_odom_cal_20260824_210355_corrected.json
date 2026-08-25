@@ -1,0 +1,87 @@
+{
+  "robot": "grip",
+  "generated": "2026-08-24T21:03:55 (2 m tape corrected to 1.75 m)",
+  "settings": {
+    "linear_duty": 0.25,
+    "strafe_duty": 0.25,
+    "move_duration_s_per_m": 5.0,
+    "cmd_vel_is_duty_not_mps": true
+  },
+  "summary": {
+    "forward_scale_real_over_odom": 0.9848364995283095,
+    "strafe_left_scale_real_over_odom": null,
+    "strafe_right_scale_real_over_odom": null,
+    "strafe_combined_scale_real_over_odom": null
+  },
+  "trials": [
+    {
+      "motion": "forward",
+      "commanded_m": 0.5,
+      "duty": 0.25,
+      "move_duration_s_per_m": 5.0,
+      "duration_s": 2.5,
+      "odom_forward_m": 0.4067217081208594,
+      "odom_lateral_m": 0.00015890250469993844,
+      "odom_total_m": 0.40672173916174625,
+      "imu_yaw_delta_deg": 0.05999999865889549,
+      "wheel_odom_start": {
+        "x": 0.0,
+        "y": 0.0,
+        "yaw_deg": -0.039999999105930335
+      },
+      "wheel_odom_end": {
+        "x": 0.4067217199401184,
+        "y": -0.0001250428224534883,
+        "yaw_deg": 0.019999999552965164
+      },
+      "real_measured_m": 0.395,
+      "scale_real_over_odom": 0.9711800282925243
+    },
+    {
+      "motion": "forward",
+      "commanded_m": 1.0,
+      "duty": 0.25,
+      "move_duration_s_per_m": 5.0,
+      "duration_s": 5.0,
+      "odom_forward_m": 0.8824631215210217,
+      "odom_lateral_m": 0.0002332792536172878,
+      "odom_total_m": 0.8824631523547233,
+      "imu_yaw_delta_deg": 0.0899999998509884,
+      "wheel_odom_start": {
+        "x": 0.407107648397222,
+        "y": -0.00012740035856180634,
+        "yaw_deg": -0.03999999910593043
+      },
+      "wheel_odom_end": {
+        "x": 1.289570717726976,
+        "y": -0.0005101965778970262,
+        "yaw_deg": 0.03999999910593024
+      },
+      "real_measured_m": 0.88,
+      "scale_real_over_odom": 0.9972088108149197
+    },
+    {
+      "motion": "forward",
+      "commanded_m": 2.0,
+      "duty": 0.25,
+      "move_duration_s_per_m": 5.0,
+      "duration_s": 10.0,
+      "odom_forward_m": 1.7746307038403104,
+      "odom_lateral_m": 0.00483573646219981,
+      "odom_total_m": 1.7746372923388845,
+      "imu_yaw_delta_deg": 0.3399999924004078,
+      "wheel_odom_start": {
+        "x": 1.2898923324086768,
+        "y": -0.0005084452314610389,
+        "yaw_deg": -0.019999999552965036
+      },
+      "wheel_odom_end": {
+        "x": 3.0645246161226964,
+        "y": 0.0037078279867749464,
+        "yaw_deg": 0.3199999928474428
+      },
+      "real_measured_m": 1.75,
+      "scale_real_over_odom": 0.9861206594774848
+    }
+  ]
+}

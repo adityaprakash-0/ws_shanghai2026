@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>skill23_test</name>
+  <version>1.0.0</version>
+  <description>Interactive wheel odometry / IMU calibration tests for Skill23 robots.</description>
+  <maintainer email="adityaprakash.main@gmail.com">ADEV</maintainer>
+  <license>MIT</license>
+
+  <depend>rclpy</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>sensor_msgs</depend>
+
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>robot_localization</exec_depend>
+  <exec_depend>studica_control</exec_depend>
+  <exec_depend>skill23_studio</exec_depend>
+  <exec_depend>grip</exec_depend>
+  <exec_depend>mecanum</exec_depend>
+  <exec_depend>xdrive</exec_depend>
+  <exec_depend>allterrain</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

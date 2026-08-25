@@ -1,0 +1,1 @@
+"""WorldSkills Studio backend package."""

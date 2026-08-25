@@ -1,0 +1,11 @@
+<library path="clearance_planner_plugin">
+  <class
+    name="skill23_clearance_planner/ClearancePlanner"
+    type="skill23_clearance_planner::ClearancePlanner"
+    base_class_type="nav2_core::GlobalPlanner">
+    <description>
+      4-connected A* planner with inflation-weighted costs, optional unknown traversal,
+      optional 253-cell fallback, and collinear waypoint simplification.
+    </description>
+  </class>
+</library>

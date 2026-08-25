@@ -5,12 +5,14 @@
 #include "rclcpp/rclcpp.hpp"
 
 #include "studica_control/cobra_component.hpp"
+#include "studica_control/colore_component.hpp"
 #include "studica_control/dc_encoder_component.hpp"
 #include "studica_control/dio_component.hpp"
 #include "studica_control/encoder_component.hpp"
 #include "studica_control/gamepad_component.hpp"
 #include "studica_control/imu_component.hpp"
 #include "studica_control/light_tower_component.hpp"
+#include "studica_control/parsec_component.hpp"
 #include "studica_control/power_component.hpp"
 #include "studica_control/servo_component.hpp"
 #include "studica_control/sharp_component.hpp"
@@ -21,24 +23,30 @@
 class ControlServer : public rclcpp::Node {
 public:
     ControlServer() : Node("control_server") {
-        vmx_ = std::make_shared<VMXPi>(true, 50);
+        // realtime=false keeps the HAL off SCHED_FIFO; AHRS at 20 Hz is enough
+        // for the EKF and cuts the SPI busy-poll rate that was burning ~1 core.
+        vmx_ = std::make_shared<VMXPi>(false, 20);
         vmx_ready_ = vmx_ && vmx_->IsOpen();
 
         if (!vmx_ready_) {
             RCLCPP_FATAL(this->get_logger(), "Unable to initialize VMX-pi hardware; pigpio may be unavailable or in use.");
         }
 
-        executor_ = std::make_shared<rclcpp::executors::MultiThreadedExecutor>();
+        // Titan + IMU + power are quiet enough that one thread avoids SPI
+        // contention from concurrent wait_for_comm_ready waiters.
+        executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
     }
 
     bool initialize() {
         this->declare_parameter<bool>("cobra.enabled", false);
+        this->declare_parameter<bool>("colore.enabled", false);
         this->declare_parameter<bool>("duty_cycle.enabled", false);
         this->declare_parameter<bool>("dio.enabled", false);
         this->declare_parameter<bool>("encoder.enabled", false);
         this->declare_parameter<bool>("light_tower.enabled", false);
         this->declare_parameter<bool>("gamepad.enabled", false);
         this->declare_parameter<bool>("imu.enabled", false);
+        this->declare_parameter<bool>("parsec.enabled", false);
         this->declare_parameter<bool>("servo.enabled", false);
         this->declare_parameter<bool>("sharp.enabled", false);
         this->declare_parameter<bool>("titan.enabled", false);
@@ -54,12 +62,14 @@ public:
         component_nodes.push_back(power_node);
 
         bool cobra_enabled = this->get_parameter("cobra.enabled").as_bool();
+        bool colore_enabled = this->get_parameter("colore.enabled").as_bool();
         bool duty_cycle_enabled = this->get_parameter("duty_cycle.enabled").as_bool();
         bool dio_enabled          = this->get_parameter("dio.enabled").as_bool();
         bool encoder_enabled      = this->get_parameter("encoder.enabled").as_bool();
         bool light_tower_enabled  = this->get_parameter("light_tower.enabled").as_bool();
         bool gamepad_enabled = this->get_parameter("gamepad.enabled").as_bool();
         bool imu_enabled = this->get_parameter("imu.enabled").as_bool();
+        bool parsec_enabled = this->get_parameter("parsec.enabled").as_bool();
         bool servo_enabled = this->get_parameter("servo.enabled").as_bool();
         bool sharp_enabled = this->get_parameter("sharp.enabled").as_bool();
         bool titan_enabled = this->get_parameter("titan.enabled").as_bool();
@@ -68,6 +78,16 @@ public:
         if (cobra_enabled) {
             auto cobra_nodes = studica_control::Cobra::initialize(this, vmx_);
             component_nodes.insert(component_nodes.end(), cobra_nodes.begin(), cobra_nodes.end());
+        }
+
+        if (colore_enabled) {
+            auto colore_nodes = studica_control::Colore::initialize(this, vmx_);
+            component_nodes.insert(component_nodes.end(), colore_nodes.begin(), colore_nodes.end());
+        }
+
+        if (parsec_enabled) {
+            auto parsec_nodes = studica_control::Parsec::initialize(this, vmx_);
+            component_nodes.insert(component_nodes.end(), parsec_nodes.begin(), parsec_nodes.end());
         }
 
         if (duty_cycle_enabled) {
@@ -134,7 +154,7 @@ public:
 
 private:
     std::shared_ptr<VMXPi> vmx_;
-    std::shared_ptr<rclcpp::executors::MultiThreadedExecutor> executor_;
+    std::shared_ptr<rclcpp::executors::SingleThreadedExecutor> executor_;
     std::vector<std::shared_ptr<rclcpp::Node>> component_nodes;
     bool vmx_ready_ = false;
 };
@@ -143,9 +163,15 @@ int main(int argc, char *argv[]) {
     setvbuf(stdout, NULL, _IONBF, BUFSIZ);
     rclcpp::init(argc, argv);
 
-    auto control_server = std::make_shared<ControlServer>();
-    if (control_server->initialize()) {
-        control_server->run();
+    try {
+        auto control_server = std::make_shared<ControlServer>();
+        if (control_server->initialize()) {
+            control_server->run();
+        }
+    } catch (const std::exception &e) {
+        fprintf(stderr, "control_server aborted: %s\n", e.what());
+        rclcpp::shutdown();
+        return 1;
     }
 
     rclcpp::shutdown();

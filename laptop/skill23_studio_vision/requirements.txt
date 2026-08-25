@@ -1,0 +1,6 @@
+numpy
+opencv-python
+# optional — install only what you launch
+# ultralytics
+# pytesseract
+# pyzbar

@@ -1,0 +1,5 @@
+[INFO] [1786795365.929431579] [studio_startup_gate]: Waiting for stage=prerequisites: ['odom', 'scan', 'world']
+[INFO] [1786795365.933872106] [studio_startup_gate]: Stage prerequisites: ready world; missing=['odom', 'scan']
+[INFO] [1786795365.938566554] [studio_startup_gate]: Stage prerequisites: ready odom; missing=['scan']
+[INFO] [1786795365.942122505] [studio_startup_gate]: Stage prerequisites: ready scan; missing=[]
+[INFO] [1786795365.944787343] [studio_startup_gate]: Stage prerequisites READY

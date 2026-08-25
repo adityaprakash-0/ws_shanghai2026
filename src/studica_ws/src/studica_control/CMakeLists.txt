@@ -34,8 +34,12 @@ rosidl_generate_interfaces(${PROJECT_NAME} # <- SRV files (srv, msg, action)
   "msg/DutyCycleEncoderMsg.msg"
   "msg/EncoderMsg.msg"
   "msg/InitializeParams.msg"
+  "msg/ColoreColorMsg.msg"
+  "msg/ColoreMatch.msg"
+  "msg/ParsecZoneMsg.msg"
   "srv/ControlImu.srv"
   "srv/SetData.srv"
+  DEPENDENCIES std_msgs
 )
 
 rosidl_get_typesupport_target(cpp_typesupport_target "${PROJECT_NAME}" "rosidl_typesupport_cpp")
@@ -49,12 +53,14 @@ include_directories( # <- #include <"">
  
 set(studica_control_HDRS
   include/studica_control/cobra_component.hpp
+  include/studica_control/colore_component.hpp
   include/studica_control/dc_encoder_component.hpp
   include/studica_control/dio_component.hpp
   include/studica_control/encoder_component.hpp
   include/studica_control/gamepad_component.hpp
   include/studica_control/imu_component.hpp
   include/studica_control/light_tower_component.hpp
+  include/studica_control/parsec_component.hpp
   include/studica_control/power_component.hpp
   include/studica_control/servo_component.hpp
   include/studica_control/sharp_component.hpp
@@ -77,6 +83,16 @@ add_library(cobra_component SHARED src/components/cobra_component.cpp)
 ament_target_dependencies(cobra_component ${dependencies})
 target_link_libraries(cobra_component "${cpp_typesupport_target}")
 rclcpp_components_register_nodes(cobra_component "studica_control::cobra")
+
+add_library(colore_component SHARED src/components/colore_component.cpp)
+ament_target_dependencies(colore_component ${dependencies})
+target_link_libraries(colore_component "${cpp_typesupport_target}")
+rclcpp_components_register_nodes(colore_component "studica_control::Colore")
+
+add_library(parsec_component SHARED src/components/parsec_component.cpp)
+ament_target_dependencies(parsec_component ${dependencies})
+target_link_libraries(parsec_component "${cpp_typesupport_target}")
+rclcpp_components_register_nodes(parsec_component "studica_control::Parsec")
 
 add_library(dc_encoder_component SHARED src/components/dc_encoder_component.cpp)
 ament_target_dependencies(dc_encoder_component ${dependencies})
@@ -132,6 +148,22 @@ add_library(ultrasonic_component SHARED src/components/ultrasonic_component.cpp)
 ament_target_dependencies(ultrasonic_component ${dependencies})
 target_link_libraries(ultrasonic_component "${cpp_typesupport_target}")
 rclcpp_components_register_nodes(ultrasonic_component "studica_control::Ultrasonic")
+
+# VMX HAL fixes, applied by symbol interposition (the HAL is closed source
+# but calls these symbols through the PLT; this library is linked before the
+# HAL so the dynamic linker resolves them here):
+#  - gpio_delay_shim.c: gpioDelay busy-spins for <100us requests; replaced
+#    with a real kernel sleep (SPI comm-ready polls no longer burn CPU).
+#  - hal_pacing_fix.cpp: RegisterIORpi::Run computes its AHRS loop delay as
+#    1/rate_hz instead of 1000/rate_hz -> wait_for(0ms) -> the AHRS thread
+#    re-read the IMU register bank over SPI flat out (~90% of a core).
+# --no-as-needed on the executable keeps the DT_NEEDED entry even though
+# manual_composition itself never calls these symbols.
+add_library(gpio_delay_shim SHARED
+  src/gpio_delay_shim.c
+  src/hal_pacing_fix.cpp
+)
+target_link_libraries(gpio_delay_shim ${CMAKE_DL_LIBS})
 
 add_library(smart_center_planner SHARED src/smart_center_planner.cpp)
 ament_target_dependencies(smart_center_planner
@@ -191,13 +223,16 @@ install(FILES
 
 
 install(TARGETS
+  gpio_delay_shim
   cobra_component
+  colore_component
   dc_encoder_component
   dio_component
   encoder_component
   gamepad_component
   imu_component
   light_tower_component
+  parsec_component
   power_component
   servo_component
   sharp_component
@@ -214,13 +249,18 @@ install(TARGETS
 
 add_executable(manual_composition src/manual_composition.cpp)
 target_link_libraries(manual_composition
+  -Wl,--no-as-needed
+  gpio_delay_shim
+  -Wl,--as-needed
   cobra_component
+  colore_component
   dc_encoder_component
   dio_component
   encoder_component
   gamepad_component
   imu_component
   light_tower_component
+  parsec_component
   power_component
   servo_component
   sharp_component
@@ -263,12 +303,14 @@ install(DIRECTORY
 ament_export_include_directories(include)
 ament_export_libraries(
   cobra_component
+  colore_component
   dc_encoder_component
   dio_component
   encoder_component
   gamepad_component
   imu_component
   light_tower_component
+  parsec_component
   power_component
   servo_component
   sharp_component

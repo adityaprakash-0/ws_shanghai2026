@@ -6,7 +6,7 @@
   <description>
     Hardware abstraction layer for Studica Robotics VMX sensors and actuators.
     Provides configurable ROS2 components for Titan motor controllers, IMU, encoders,
-    servos, ultrasonic/IR range sensors, digital I/O, and gamepad input.
+    servos, ultrasonic/IR range sensors, digital I/O, gamepad, Colore, and Parsec.
   </description>
 
   <maintainer email="info_ca@studica.com">Studica Robotics</maintainer>

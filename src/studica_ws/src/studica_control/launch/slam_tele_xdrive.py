@@ -10,12 +10,12 @@ def generate_launch_description():
 
     studica_pkg_prefix = get_package_prefix('studica_control')
     studica_pkg_share = get_package_share_directory('studica_control')
+    studio_pkg_share = get_package_share_directory('skill23_studio')
     xdrive_pkg_share = get_package_share_directory('xdrive')
-    allterrain_pkg_share = get_package_share_directory('allterrain')
-    gate_params_file = os.path.join(allterrain_pkg_share, 'config', 'confidence_scan_gate.yaml')
 
     exec_path = os.path.join(studica_pkg_prefix, 'lib', 'studica_control', 'manual_composition')
-    default_params = os.path.join(studica_pkg_share, 'config', 'params_xdrive.yaml')
+    default_params = os.path.join(
+        studio_pkg_share, 'config','hw_params', 'hw_params_xdrive.yaml')
     urdf_file = os.path.join(xdrive_pkg_share, 'urdf', 'xdrive_robot.urdf')
     ekf_config_file = os.path.join(xdrive_pkg_share, 'config', 'ekf_xdrive.yaml')
     slam_config_file = os.path.join(studica_pkg_share, 'config', 'slam_params.yaml')
@@ -27,6 +27,9 @@ def generate_launch_description():
         robot_desc = infp.read()
 
     params_arg = DeclareLaunchArgument('params_file', default_value=default_params)
+    slam_params_arg = DeclareLaunchArgument(
+        'slam_params_file', default_value=slam_config_file,
+        description='slam_toolbox params YAML (override resolution etc.)')
 
     # 1. Core Hardware Driver (Runs as root)
     manual_composition = ExecuteProcess(
@@ -91,29 +94,21 @@ def generate_launch_description():
         output='screen',
     )
 
-    # 7. SLAM Toolbox (mapping)
+    # 7. SLAM Toolbox (mapping) — sync: every scan in order; async: may drop if CPU busy
     slam_node = Node(
         package='slam_toolbox',
-        executable='async_slam_toolbox_node',
+        executable='sync_slam_toolbox_node',
         name='slam_toolbox',
         output='screen',
-        parameters=[slam_config_file],
+        parameters=[LaunchConfiguration('slam_params_file')],
     )
-
-    # Optional gate (same as mecanum — leave off by default)
-    # confidence_gate_node = Node(
-    #     package='allterrain',
-    #     executable='confidence_scan_gate',
-    #     name='confidence_scan_gate_node',
-    #     output='screen',
-    #     parameters=[gate_params_file],
-    # )
 
     delayed_ekf = TimerAction(period=3.0, actions=[ekf_node])
     delayed_slam = TimerAction(period=5.0, actions=[slam_node])
 
     return LaunchDescription([
         params_arg,
+        slam_params_arg,
         manual_composition,
         robot_state_publisher,
         ydlidar_front_node,

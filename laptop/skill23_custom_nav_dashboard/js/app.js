@@ -447,10 +447,14 @@
       const cl = collision.clearance || {};
       if (cl.front != null) {
         parts.push(
-          `F${Number(cl.front).toFixed(2)}`
-          + ` R${Number(cl.rear != null ? cl.rear : 0).toFixed(2)}`
-          + ` L${Number(cl.left != null ? cl.left : 0).toFixed(2)}`
-          + ` Ri${Number(cl.right != null ? cl.right : 0).toFixed(2)}`);
+          `F0=${Number(cl.front).toFixed(2)}`
+          + ` FL=${Number(cl.front_left != null ? cl.front_left : 0).toFixed(2)}`
+          + ` FR=${Number(cl.front_right != null ? cl.front_right : 0).toFixed(2)}`
+          + ` L=${Number(cl.left != null ? cl.left : 0).toFixed(2)}`
+          + ` Ri=${Number(cl.right != null ? cl.right : 0).toFixed(2)}`
+          + ` RL=${Number(cl.rear_left != null ? cl.rear_left : 0).toFixed(2)}`
+          + ` RR=${Number(cl.rear_right != null ? cl.rear_right : 0).toFixed(2)}`
+          + ` R=${Number(cl.rear != null ? cl.rear : 0).toFixed(2)}`);
       }
       cExtra = parts.length ? `  ·  ${parts.join(' · ')}` : '';
     } else if (collision.min_range_m != null) {
@@ -478,10 +482,14 @@
         const cl = collision.clearance || {};
         log(
           `COLLISION: ${collision.reason || cState}`
-          + ` · F${Number(cl.front || 0).toFixed(2)}`
-          + ` R${Number(cl.rear || 0).toFixed(2)}`
-          + ` L${Number(cl.left || 0).toFixed(2)}`
-          + ` Ri${Number(cl.right || 0).toFixed(2)}`);
+          + ` · F0=${Number(cl.front || 0).toFixed(2)}`
+          + ` FL=${Number(cl.front_left || 0).toFixed(2)}`
+          + ` FR=${Number(cl.front_right || 0).toFixed(2)}`
+          + ` L=${Number(cl.left || 0).toFixed(2)}`
+          + ` Ri=${Number(cl.right || 0).toFixed(2)}`
+          + ` RL=${Number(cl.rear_left || 0).toFixed(2)}`
+          + ` RR=${Number(cl.rear_right || 0).toFixed(2)}`
+          + ` R=${Number(cl.rear || 0).toFixed(2)}`);
       } else if (prevBlocked) {
         log(`COLLISION clear: ${collision.reason || 'front clear'}`);
       } else if (collision.state === 'near') {

@@ -1,0 +1,16 @@
+[INFO] [1786797556.745222970] [cn_mission]: [mission] idle — waiting for start
+[INFO] [1786797558.380498095] [cn_mission]: [mission] idle — 2 waypoint(s) loaded
+[INFO] [1786797558.392694285] [cn_mission]: Loaded 2 waypoint(s)
+[INFO] [1786797558.892497568] [cn_mission]: [mission] running — starting wp 1/2
+[INFO] [1786797558.922463022] [cn_mission]: [mission] wait_goal — wp 1/2 (0.00,0.00)
+[INFO] [1786797558.925801930] [cn_mission]: Goal sent: wp 1/2 (0.00,0.00) id=1786797558893113520
+[INFO] [1786797559.478947433] [cn_mission]: [mission] wait_action — wp 1 action=wait
+[INFO] [1786797559.485852116] [cn_mission]: Waypoint action start: wait
+[INFO] [1786797560.009433285] [cn_mission]: Waypoint action ok: wait done
+[INFO] [1786797560.024734227] [cn_mission]: [mission] running — next wp 2
+[INFO] [1786797560.056284427] [cn_mission]: [mission] wait_goal — wp 2/2 (2.00,0.00)
+[INFO] [1786797560.060252891] [cn_mission]: Goal sent: wp 2/2 (2.00,0.00) id=1786797560026445011
+[INFO] [1786797560.273664629] [cn_mission]: [mission] wait_action — wp 2 action=wait
+[INFO] [1786797560.293092124] [cn_mission]: Waypoint action start: wait
+[INFO] [1786797560.804489957] [cn_mission]: Waypoint action ok: wait done
+[INFO] [1786797560.825369111] [cn_mission]: [mission] done — all goals reached

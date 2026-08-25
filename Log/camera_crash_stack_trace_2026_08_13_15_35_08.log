@@ -1,0 +1,16 @@
+Received signal: 11
+Stack trace (most recent call last) in thread 29078:
+#13   Object "[0xffffffffffffffff]", at 0xffffffffffffffff, in 
+#12   Object "/lib/aarch64-linux-gnu/libc.so.6", at 0xffffa4979edb, in 
+#11   Object "/lib/aarch64-linux-gnu/libc.so.6", at 0xffffa49103c7, in 
+#10   Object "/lib/aarch64-linux-gnu/libstdc++.so.6", at 0xffffa4b429cb, in 
+#9    Object "/home/vmx/skill23_ws/local_sysroot/opt/ros/humble/lib/libOrbbecSDK.so.1.10", at 0xffff9cd4b78f, in std::thread::_State_impl<std::thread::_Invoker<std::tuple<std::function<void (std::vector<std::shared_ptr<libobsensor::DeviceInfo>, std::allocator<std::shared_ptr<libobsensor::DeviceInfo> > >, std::vector<std::shared_ptr<libobsensor::DeviceInfo>, std::allocator<std::shared_ptr<libobsensor::DeviceInfo> > >)>, std::vector<std::shared_ptr<libobsensor::DeviceInfo>, std::allocator<std::shared_ptr<libobsensor::DeviceInfo> > >, std::vector<std::shared_ptr<libobsensor::DeviceInfo>, std::allocator<std::shared_ptr<libobsensor::DeviceInfo> > > > > >::_M_run()
+#8    Object "/home/vmx/skill23_ws/local_sysroot/opt/ros/humble/lib/libOrbbecSDK.so.1.10", at 0xffff9cb6ee23, in 
+#7    Object "/home/vmx/skill23_ws/local_sysroot/opt/ros/humble/lib/libOrbbecSDK.so.1.10", at 0xffff9cb6e9eb, in 
+#6    Object "/home/vmx/skill23_ws/local_sysroot/opt/ros/humble/lib/libOrbbecSDK.so.1.10", at 0xffff9cf0317f, in 
+#5    Object "/home/vmx/skill23_ws/local_sysroot/opt/ros/humble/lib/liborbbec_camera.so", at 0xffff9e7427c3, in 
+#4    Object "/home/vmx/skill23_ws/local_sysroot/opt/ros/humble/lib/liborbbec_camera.so", at 0xffff9e74573b, in orbbec_camera::OBCameraNodeDriver::startDevice(std::shared_ptr<ob::DeviceList> const&)
+#3    Object "/home/vmx/skill23_ws/local_sysroot/opt/ros/humble/lib/liborbbec_camera.so", at 0xffff9e742ba7, in orbbec_camera::OBCameraNodeDriver::initializeDevice(std::shared_ptr<ob::Device> const&)
+#2    Object "/home/vmx/skill23_ws/local_sysroot/opt/ros/humble/lib/libOrbbecSDK.so.1.10", at 0xffff9cf065ac, in ob::DeviceInfo::serialNumber()
+#1    Object "linux-vdso.so.1", at 0xffffa4f777db, in 
+#0    Object "/home/vmx/skill23_ws/local_sysroot/opt/ros/humble/lib/liborbbec_camera.so", at 0xffff9e7352ef, in signalHandler(int)

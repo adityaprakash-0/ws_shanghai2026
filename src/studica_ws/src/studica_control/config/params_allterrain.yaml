@@ -13,7 +13,7 @@ control_server:
         encoder_rate_hz: 20
         motor_update_rate_hz: 50
         limit_switches: false
-        enable_freshness: false
+        enable_freshness: true
         m_0:
           encoder_mode: "quadrature"
           dist_per_tick: 1.0
@@ -131,6 +131,38 @@ control_server:
         yellow_pin: 4
         buzzer_pin: 5
         enable_pin: 6
+
+    # -------------------------------------------------------------------------
+    # Colore — Studica color sensor (CAN or USB)
+    # -------------------------------------------------------------------------
+    colore:
+      enabled: false
+      sensors: ["colore0"]
+      colore0:
+        transport: "usb"
+        can_id: 0
+        serial_port: "/dev/ttyACM0"
+        publish_rate_hz: 10
+        publish_outputs: ["info"]
+        brightness: 50
+        measmode: "off"
+        measmode_z_mm: -1.0
+        # omit match_references (Humble crashes on YAML [])
+        match_threshold: 0.05
+
+    # -------------------------------------------------------------------------
+    # Parsec — Studica multi-zone ToF (CAN or USB)
+    # -------------------------------------------------------------------------
+    parsec:
+      enabled: false
+      sensors: ["parsec0"]
+      parsec0:
+        transport: "usb"
+        can_id: 0
+        serial_port: "/dev/ttyACM0"
+        frame_id: "parsec0"
+        publish_rate_hz: 15
+        publish_outputs: ["grid"]
 
     # -------------------------------------------------------------------------
     # Gamepad — disabled during autonomous Nav2 (fights /cmd_vel with Nav2)

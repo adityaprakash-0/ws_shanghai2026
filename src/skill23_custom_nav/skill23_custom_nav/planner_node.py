@@ -3,9 +3,10 @@
 
 Triggers:
   /custom_nav/plan_request   → plan on static EDT
-  /custom_nav/replan         → plan on static ∩ temporary local EDT
+  /custom_nav/replan         → request local EDT, fuse with static, same pipeline
+                               (EDT ridge + corner_clearance_m)
 
-Output: /custom_nav/path
+Output remapped to /custom_nav/planner_path by launch (smoother muxes /path).
 """
 
 from __future__ import annotations
@@ -29,16 +30,23 @@ class PlannerNode(Node):
     def __init__(self) -> None:
         super().__init__('cn_planner')
         self.declare_parameter('occupied_thresh', 50)
-        self.declare_parameter('wall_cost_weight', 4.0)
+        self.declare_parameter('wall_cost_weight', 12.0)
         self.declare_parameter('min_clearance_m', 0.08)
         self.declare_parameter('map_frame', 'map')
         self.declare_parameter('los_sample_step_m', 0.05)
+        self.declare_parameter('corner_clearance_m', 0.20)
+        self.declare_parameter('ridge_snap_radius_m', 0.10)
+        self.declare_parameter('replan_edt_wait_sec', 2.5)
 
         self.occupied_thresh = int(self.get_parameter('occupied_thresh').value)
         self.clearance_weight = float(self.get_parameter('wall_cost_weight').value)
         self.min_clearance_m = float(self.get_parameter('min_clearance_m').value)
         self.map_frame = str(self.get_parameter('map_frame').value)
         self.los_step = float(self.get_parameter('los_sample_step_m').value)
+        self.corner_clearance = float(self.get_parameter('corner_clearance_m').value)
+        self.ridge_snap_radius_m = float(
+            self.get_parameter('ridge_snap_radius_m').value)
+        self.replan_edt_wait = float(self.get_parameter('replan_edt_wait_sec').value)
 
         self.map_msg: Optional[OccupancyGrid] = None
         self.occupancy: Optional[np.ndarray] = None
@@ -49,6 +57,8 @@ class PlannerNode(Node):
         self.local_edt_msg: Optional[OccupancyGrid] = None
         self.local_edt_active = False
         self.use_local = False
+        self._replan_pending = False
+        self._replan_wait_started = 0.0
 
         self.status = NodeStatusPub(self, 'planner')
 
@@ -59,6 +69,9 @@ class PlannerNode(Node):
         )
 
         self.path_pub = self.create_publisher(Path, '/custom_nav/path', 10)
+        self.edt_req_pub = self.create_publisher(
+            Bool, '/custom_nav/local_edt/request', 10)
+
         self.create_subscription(OccupancyGrid, '/map', self._on_map, latched)
         self.create_subscription(
             OccupancyGrid, '/custom_nav/static_edt', self._on_static_edt, latched)
@@ -71,7 +84,13 @@ class PlannerNode(Node):
         self.create_subscription(
             PoseStamped, '/custom_nav/plan_request', self._on_plan_req, 10)
         self.create_subscription(Empty, '/custom_nav/replan', self._on_replan, 10)
+        self.create_timer(0.2, self._replan_wait_tick)
         self.status.set('idle', 'waiting for plan request')
+
+    def _request_local_edt(self, enable: bool) -> None:
+        msg = Bool()
+        msg.data = bool(enable)
+        self.edt_req_pub.publish(msg)
 
     def _refresh_static_edt(self) -> None:
         if self.static_edt_msg is None:
@@ -97,11 +116,21 @@ class PlannerNode(Node):
             self.local_edt_msg = None
             return
         self.local_edt_msg = msg
+        # Local layer arrived — finish pending replan with static∩local.
+        if self._replan_pending and self.use_local and self.local_edt_active:
+            self._replan_pending = False
+            self.status.set('planning', 'replan: static+local EDT ready')
+            self._plan_once()
 
     def _on_local_active(self, msg: Bool) -> None:
         self.local_edt_active = bool(msg.data)
         if not self.local_edt_active:
             self.local_edt_msg = None
+            return
+        if self._replan_pending and self.use_local and self.local_edt_msg is not None:
+            self._replan_pending = False
+            self.status.set('planning', 'replan: static+local EDT ready')
+            self._plan_once()
 
     def _on_pose(self, msg: PoseWithCovarianceStamped) -> None:
         ps = pose_cov_to_stamped(msg)
@@ -112,6 +141,8 @@ class PlannerNode(Node):
     def _on_plan_req(self, msg: PoseStamped) -> None:
         self.pending_goal = msg
         self.use_local = False
+        self._replan_pending = False
+        self._request_local_edt(False)
         self.status.set(
             'planning',
             f'goal ({msg.pose.position.x:.2f},{msg.pose.position.y:.2f})')
@@ -122,8 +153,34 @@ class PlannerNode(Node):
             self.status.set('failed', 'replan with no goal')
             return
         self.use_local = True
-        self.status.set('planning', 'replan with static+local EDT')
-        self._plan_once()
+        self._request_local_edt(True)
+        # Same pipeline as normal plan once local layer is fused.
+        if self._local_input() is not None:
+            self._replan_pending = False
+            self.status.set('planning', 'replan with static+local EDT')
+            self._plan_once()
+            return
+        self._replan_pending = True
+        self._replan_wait_started = self.get_clock().now().nanoseconds * 1e-9
+        self.status.set('planning', 'replan: requesting local EDT…')
+        self.get_logger().info('replan: waiting for local EDT to fuse with static')
+
+    def _replan_wait_tick(self) -> None:
+        if not self._replan_pending:
+            return
+        now = self.get_clock().now().nanoseconds * 1e-9
+        if self._local_input() is not None:
+            self._replan_pending = False
+            self.status.set('planning', 'replan with static+local EDT')
+            self._plan_once()
+            return
+        if now - self._replan_wait_started >= self.replan_edt_wait:
+            # Timeout: still replan (static only) so recovery can continue.
+            self._replan_pending = False
+            self.get_logger().warn(
+                'replan: local EDT timeout — planning on static EDT only')
+            self.status.set('planning', 'replan: local EDT timeout → static only')
+            self._plan_once()
 
     def _local_input(self) -> Optional[LocalEdtInput]:
         if not self.use_local or not self.local_edt_active:
@@ -154,6 +211,7 @@ class PlannerNode(Node):
             self.status.set('failed', 'missing pose or goal')
             return
 
+        local = self._local_input() if self.use_local else None
         info = self.map_msg.info
         qg = self.pending_goal.pose.orientation
         poses = plan_path(
@@ -167,11 +225,13 @@ class PlannerNode(Node):
             info.origin.position.x,
             info.origin.position.y,
             float(info.resolution),
-            local=self._local_input(),
+            local=local,
             occupied_threshold=self.occupied_thresh,
             clearance_weight=self.clearance_weight,
             min_clearance_m=self.min_clearance_m,
             los_sample_step_m=self.los_step,
+            corner_clearance_m=self.corner_clearance,
+            ridge_snap_radius_m=self.ridge_snap_radius_m,
         )
         if poses is None:
             self.status.set('failed', 'no path found')
@@ -190,9 +250,18 @@ class PlannerNode(Node):
             path.poses.append(ps)
 
         self.path_pub.publish(path)
-        mode = 'replan' if self.use_local else 'plan'
-        self.status.set('done', f'{mode} {len(path.poses)} edt-straight waypoints')
-        self.get_logger().info(f'{mode}: {len(path.poses)} edt-straight waypoints')
+        if self.use_local and local is not None:
+            mode = 'replan(static+local)'
+        elif self.use_local:
+            mode = 'replan(static-only)'
+        else:
+            mode = 'plan'
+        self.status.set(
+            'done',
+            f'{mode} {len(path.poses)} pts corner={self.corner_clearance:.2f}m')
+        self.get_logger().info(
+            f'{mode}: {len(path.poses)} waypoints '
+            f'(EDT ridge + corner_clearance={self.corner_clearance:.2f}m)')
 
 
 def main(args=None) -> None:

@@ -1,0 +1,60 @@
+# Shared AMCL configuration for every Skill23 Studio robot.
+# Tuned for a Raspberry Pi under custom-nav load: fewer particles and a
+# larger transform tolerance so brief EKF lag does not drop every scan.
+amcl:
+  ros__parameters:
+    use_sim_time: false
+    wait_for_world_ready: true
+    world_ready_topic: "/custom_nav/world/ready"
+    set_initial_pose: true
+    initial_pose:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+      yaw: 0.0
+    # Odometry here is the EKF (±2 cm/m encoders + IMU heading), far better
+    # than the raw-wheel default of 0.2 — inject less noise per update so the
+    # cloud can actually tighten. alpha5 is unused by the differential model.
+    alpha1: 0.1
+    alpha2: 0.05
+    alpha3: 0.1
+    alpha4: 0.05
+    alpha5: 0.1
+    base_frame_id: base_footprint
+    global_frame_id: map
+    odom_frame_id: odom
+    robot_model_type: nav2_amcl::DifferentialMotionModel
+    tf_broadcast: true
+    min_particles: 500
+    max_particles: 2000
+    pf_err: 0.05
+    pf_z: 0.99
+    # Resample every 2nd update: with updates every 5 cm and recovery
+    # injection disabled, resampling each cycle depletes particle diversity.
+    resample_interval: 2
+    recovery_alpha_fast: 0.0
+    recovery_alpha_slow: 0.0
+    laser_model_type: likelihood_field
+    scan_topic: scan
+    map_topic: map
+    max_beams: 40
+    laser_max_range: 8.0
+    laser_min_range: 0.05
+    laser_likelihood_max_dist: 2.0
+    z_hit: 0.85
+    z_rand: 0.15
+    z_max: 0.03
+    z_short: 0.02
+    # 0.15 sharpens convergence on the 3 cm map while still absorbing the
+    # ±3-5 cm smear of uncompensated scans; do not go lower than ~0.12.
+    sigma_hit: 0.15
+    lambda_short: 0.1
+    update_min_d: 0.05
+    update_min_a: 0.1
+    transform_tolerance: 1.5
+    do_beamskip: false
+    beam_skip_distance: 0.4
+    beam_skip_threshold: 0.35
+    beam_skip_error_threshold: 0.95
+    save_pose_rate: 0.5
+    first_map_only: true

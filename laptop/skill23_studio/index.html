@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Skill23 Studio · WorldSkills India</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Sora:wght@400;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css?v=20260823a" />
+</head>
+<body>
+  <div class="tricolor"></div>
+  <div class="atmos" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="ashoka" title="WorldSkills India">WS</div>
+      <div>
+        <div class="brand-name">Skill23 Studio</div>
+        <div class="brand-sub">WorldSkills India · Mapping &amp; Deployment</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span class="phase-pill" id="phasePill">Home</span>
+      <span class="conn" id="connBadge"><i></i><span id="connText">Offline</span></span>
+    </div>
+  </header>
+
+  <main id="app">
+    <!-- HOME -->
+    <section class="view active" id="view-home">
+      <div class="hero">
+        <p class="eyebrow">WorldSkills India</p>
+        <h1 class="hero-title">Skill23 Studio</h1>
+        <p class="hero-lead">Create maps, refine the arena, set waypoints, deploy.</p>
+        <div class="hero-actions">
+          <button class="btn btn-primary" data-go="create">Create New Map</button>
+          <button class="btn btn-ghost" data-go="import">Import Map</button>
+        </div>
+      </div>
+      <div class="connect-card">
+        <label>Pi Bridge URL</label>
+        <div class="row">
+          <input type="text" id="piUrl" placeholder="http://10.42.0.1:8083" />
+          <button class="btn btn-saffron" id="btnConnect">Connect</button>
+        </div>
+        <p class="hint">On Pi: <code>ros2 launch skill23_studio studio.launch.py</code> · port 8083</p>
+      </div>
+      <div class="recent" id="recentMaps">
+        <h2>Recent projects</h2>
+        <div class="recent-list" id="recentList"></div>
+      </div>
+    </section>
+
+    <!-- CREATE WIZARD -->
+    <section class="view" id="view-create">
+      <div class="wizard">
+        <h2>Create Map</h2>
+        <label>Map name</label>
+        <input type="text" id="mapName" placeholder="arena_day1" />
+        <label>Robot</label>
+        <div class="chip-row" id="robotChips">
+          <button type="button" class="chip active" data-robot="grip">grip</button>
+          <button type="button" class="chip" data-robot="allterrain">allterrain</button>
+          <button type="button" class="chip" data-robot="mecanum">mecanum</button>
+          <button type="button" class="chip" data-robot="xdrive">xdrive</button>
+        </div>
+        <label>Map resolution (m/cell)</label>
+        <select id="mapResolution">
+          <option value="0.02">0.02 — fine</option>
+          <option value="0.03" selected>0.03 — default (slam_toolbox)</option>
+          <option value="0.05">0.05 — lighter on Pi</option>
+          <option value="0.10">0.10 — coarse</option>
+        </select>
+        <label>Max laser range (m)</label>
+        <input type="number" id="mapMaxRange" value="10" min="1" max="30" step="0.5" />
+        <label>Min laser range (m)</label>
+        <input type="number" id="mapMinRange" value="0.05" min="0" max="1" step="0.01" />
+        <p class="hint">These feed slam_toolbox when mapping. Place the robot in the arena, lidars clear, then start.</p>
+        <div class="row">
+          <button class="btn btn-ghost" data-go="home">Back</button>
+          <button class="btn btn-primary" id="btnStartMapping">Start Mapping</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- IMPORT -->
+    <section class="view" id="view-import">
+      <div class="wizard">
+        <h2>Import Map</h2>
+        <label>Project name</label>
+        <input type="text" id="importName" placeholder="imported_map" />
+        <label>YAML path on Pi</label>
+        <input type="text" id="importYaml" placeholder="/home/vmx/skill23_ws/maps/foo.yaml" />
+        <label>PGM path (optional)</label>
+        <input type="text" id="importPgm" placeholder="auto from yaml image:" />
+        <label>Robot</label>
+        <select id="importRobot">
+          <option value="grip">grip</option>
+          <option value="allterrain">allterrain</option>
+          <option value="mecanum">mecanum</option>
+          <option value="xdrive">xdrive</option>
+        </select>
+        <div class="row">
+          <button class="btn btn-ghost" data-go="home">Back</button>
+          <button class="btn btn-primary" id="btnDoImport">Import</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODE PICK -->
+    <section class="view" id="view-mode">
+      <div class="wizard">
+        <h2>Continue with this map</h2>
+        <p class="hint" id="modeMapLabel"></p>
+        <div class="mode-grid">
+          <button class="mode-tile" id="btnModeArena">
+            <strong>Arena (live)</strong>
+            <span>Stop mapping is done — starts AMCL on this map: pose, lidar, teleop, waypoints</span>
+          </button>
+          <button class="mode-tile" id="btnModeOffline">
+            <strong>Offline</strong>
+            <span>Edit map &amp; place waypoints without robot</span>
+          </button>
+        </div>
+        <button class="btn btn-ghost" data-go="home">Home</button>
+      </div>
+    </section>
+
+    <!-- STAGE: mapping / improve / waypoints / deploy -->
+    <section class="view stage-view" id="view-stage">
+      <aside class="side">
+        <div class="side-block" id="blockWarnings">
+          <h3>Guidance</h3>
+          <ul id="warnList"></ul>
+        </div>
+
+        <div class="side-block" id="blockMapping">
+          <h3>Mapping</h3>
+          <div class="tool-row">
+            <button class="tool active" data-tool="pan">Pan</button>
+            <button class="tool" data-tool="measure">Measure</button>
+          </div>
+          <button class="btn btn-ghost" id="btnClearMeasuresMap">Clear measures</button>
+          <button class="btn btn-ghost" id="btnRemap">Remap</button>
+          <button class="btn btn-ghost" id="btnClearTrail">Clear path trail</button>
+          <button class="btn btn-primary" id="btnSaveMap">Save Map</button>
+          <button class="btn btn-danger" id="btnStopMapping">Stop SLAM</button>
+        </div>
+
+        <div class="side-block" id="blockImprove">
+          <h3>Improve map</h3>
+          <div class="tool-row">
+            <button class="tool active" data-tool="pan">Pan</button>
+            <button class="tool" data-tool="wall">Wall</button>
+            <button class="tool" data-tool="erase">Erase</button>
+            <button class="tool" data-tool="measure">Measure</button>
+          </div>
+          <div class="edit-tools" id="mapEditTools">
+            <div class="edit-tools-title">Fast wall editing</div>
+            <div class="tool-row">
+              <button class="tool" type="button" data-tool="wallbox">Wall box</button>
+              <button class="tool" type="button" data-tool="erasebox">Erase box</button>
+            </div>
+            <label class="edit-brush">
+              <span>Brush <b id="brushLabel">1</b> cells</span>
+              <input id="brushSize" type="range" min="1" max="60" step="1" value="1" />
+            </label>
+            <div class="edit-hint">
+              Wall/Erase drag paints a continuous stroke · Alt+wheel resizes the brush
+              · box tools fill a whole rectangle in one drag.
+            </div>
+            <div class="edit-tools-title">Restriction zones</div>
+            <div class="tool-row">
+              <button class="tool" type="button" data-tool="restrict">Add zone</button>
+              <button class="tool" type="button" data-tool="restrictdel">Remove zone</button>
+            </div>
+            <button class="btn btn-ghost" type="button" id="btnClearZones">Clear all zones</button>
+            <div class="edit-hint" id="zoneHint">No zones.</div>
+          </div>
+          <button class="btn btn-ghost" id="btnUndoEdit">Undo</button>
+          <button class="btn btn-ghost" id="btnClearMeasures">Clear measures</button>
+          <button class="btn btn-ghost" id="btnSaveEdits">Save edits to map</button>
+          <button class="btn btn-ghost" id="btnSaveRestrictions">Save restrictions</button>
+          <div class="tool-row" id="improvePoseRow" style="display:none">
+            <button class="tool" data-tool="pose">Set pose</button>
+          </div>
+          <button class="btn btn-primary" id="btnToWaypoints">Next: Waypoints</button>
+          <button class="btn btn-ghost" id="btnSkipWaypoints" title="Open the deploy view; nav is started from there">Skip waypoints → Open deploy</button>
+          <button class="btn btn-saffron" id="btnFinishImprove" title="Save, stop localization and open the deploy view">Save &amp; open deploy (stop robot)</button>
+        </div>
+
+        <div class="side-block" id="blockWaypoints">
+          <h3>Waypoints</h3>
+          <p class="hint" id="wpHint">Arena: drive then Save. Offline: click-drag yaw on map.</p>
+          <div class="wp-input-modes" id="wpInputModes">
+            <div class="wp-input-title">Waypoint input</div>
+            <div class="wp-input-buttons">
+              <button id="btnWpInputLive" class="chip" type="button">Teleop / robot pose</button>
+              <button id="btnWpInputMap" class="chip" type="button">Mark directly on map</button>
+            </div>
+          </div>
+          <button class="btn btn-saffron" id="btnSaveWp">Save waypoint</button>
+          <button class="btn btn-ghost" id="btnClearWp">Clear list</button>
+          <button class="btn btn-ghost" id="btnReloadWp">Reload saved waypoints</button>
+          <ol id="wpList" class="wp-list"></ol>
+          <button class="btn btn-primary" id="btnToDeploy" title="Save waypoints and open the deploy view; nav is started from there">Done — save &amp; open deploy</button>
+          <button class="btn btn-ghost" id="btnSkipWpToDeploy" title="Open the deploy view with saved waypoints; nav is started from there">Skip editing → Open deploy (keep saved)</button>
+        </div>
+
+        <!-- Deploy controls live in the map HUD (4 docks); keep a hook for battery. -->
+        <div class="side-block side-block-deploy" id="blockDeploy"></div>
+
+        <div class="side-block" id="blockTeleop">
+          <h3>Teleop</h3>
+          <div class="dpad">
+            <button class="hold" data-cmd="forward">↑</button>
+            <div class="dpad-mid">
+              <button class="hold" data-cmd="left">↰</button>
+              <button class="hold" data-cmd="strafe_l">←</button>
+              <button class="hold" data-cmd="stop">●</button>
+              <button class="hold" data-cmd="strafe_r">→</button>
+              <button class="hold" data-cmd="right">↱</button>
+            </div>
+            <button class="hold" data-cmd="back">↓</button>
+          </div>
+        </div>
+
+        <button class="btn btn-ghost" data-go="home" id="btnStageHome">Home</button>
+      </aside>
+
+      <div class="stage">
+        <canvas id="mapCanvas"></canvas>
+        <div class="stage-overlay" id="stageHud"></div>
+
+        <div class="deploy-hud" id="deployHud" hidden>
+          <div class="deploy-dock deploy-dock-top">
+            <div class="deploy-top-center">
+              <div class="battery-card deploy-battery" id="batteryWidgetDeploy">
+                <div class="battery-title">Battery</div>
+                <div class="value" id="batteryPctDeploy">—</div>
+                <div class="label" id="batteryVoltDeploy">—</div>
+                <div class="battery-bar"><div class="fill" id="batteryFillDeploy" style="width:0%"></div></div>
+              </div>
+              <div class="deploy-top-row">
+                <button class="btn btn-saffron" id="btnDeployNav2" title="ROS 2 Nav2 (clearance planner + RPP)">Start Nav2</button>
+                <button class="btn btn-primary" id="btnMissionStart">Start mission</button>
+                <button class="btn btn-ghost" id="btnMissionStop">Stop mission</button>
+                <button class="btn btn-ghost" id="btnClearCostmaps" title="Clear local + global Nav2 costmaps">Clear costmaps</button>
+                <button class="btn btn-ghost" id="btnDeployStop">Stop nav</button>
+                <button class="btn btn-danger" id="btnEstop">E-STOP</button>
+              </div>
+              <p class="hint deploy-costmap-hint" id="missionSourceHint">
+                Physical START = Titan1 m3 limit_rev · STOP = limit_fwd (momentary).
+                Dashboard shows whether the mission was started from the physical button or the dashboard.
+                Blank sequence → auto uses <strong>default</strong> (1→2→3…).
+              </p>
+              <div class="stat deploy-stat-inline" id="deployStat"></div>
+              <p class="hint deploy-costmap-hint" id="costmapHint"></p>
+            </div>
+          </div>
+
+          <div class="deploy-dock deploy-dock-left">
+            <div class="deploy-dock-label">Map &amp; waypoints</div>
+            <div class="tool-row deploy-tool-row">
+              <button class="tool" data-tool="pose">Set pose</button>
+              <button class="tool" data-tool="waypoint">Mark WP</button>
+              <button class="tool" data-tool="goal">Add goal</button>
+              <button class="tool" data-tool="measure">Measure</button>
+            </div>
+            <div class="deploy-grid deploy-grid-2 deploy-grid-compact">
+              <button class="btn btn-ghost" id="btnClearMeasuresDeploy">Clear measures</button>
+              <button class="btn btn-ghost" id="btnClearTrailDeploy">Clear trail</button>
+            </div>
+            <div class="deploy-dock-label">Mission</div>
+            <div id="deployWpStrip" class="seq-builder"></div>
+            <div class="deploy-inline-note">Seq <strong id="seqChainPreview">—</strong></div>
+            <div class="deploy-grid deploy-grid-2 deploy-grid-compact">
+              <button class="btn btn-ghost" id="btnSeqUndo">Undo</button>
+              <button class="btn btn-ghost" id="btnSeqClear">Clear</button>
+            </div>
+            <input type="text" id="seqName" placeholder="Sequence name" />
+            <div class="deploy-grid deploy-grid-2 deploy-grid-compact">
+              <button class="btn btn-ghost" id="btnSeqSave">Save seq</button>
+              <button class="btn btn-ghost" id="btnSeqDelete">Delete</button>
+            </div>
+            <select id="seqSelect"></select>
+            <div class="deploy-dock-label">WP tasks</div>
+            <div id="wpTaskList" class="wp-task-list"></div>
+          </div>
+
+          <div class="deploy-dock deploy-dock-right">
+            <aside class="node-status-panel" id="nodeStatusPanel" hidden>
+              <h4 id="nodeStatusTitle">Stack status</h4>
+              <ul id="nodeStatusList"></ul>
+            </aside>
+            <div class="deploy-dock-label">Relocalize</div>
+            <p class="hint" id="relocHint">Reloc: idle</p>
+            <div class="deploy-grid deploy-grid-3 deploy-grid-compact">
+              <button class="btn btn-ghost" id="btnRelocSpin">Spin</button>
+              <button class="btn btn-ghost" id="btnRelocFront">Front</button>
+              <button class="btn btn-ghost" id="btnRelocBack">Back</button>
+            </div>
+            <div class="deploy-grid deploy-grid-2 deploy-grid-compact">
+              <button class="btn btn-primary" id="btnRelocThen">Reloc → task</button>
+              <button class="btn btn-ghost" id="btnRelocStop">Stop</button>
+            </div>
+            <div class="deploy-dock-label">Simulate</div>
+            <p class="hint" id="simHint">Two map points → path preview</p>
+            <button class="btn btn-ghost" id="btnSimEnter">Enter sim</button>
+            <div id="simControls" hidden>
+              <select id="simStyle" style="width:100%">
+                <option value="planned" selected>Planned</option>
+                <option value="smoothed">Smoothed</option>
+              </select>
+              <div class="deploy-grid deploy-grid-2 deploy-grid-compact">
+                <button class="btn btn-ghost" id="btnSimClearPts">Clear pts</button>
+                <button class="btn btn-saffron" id="btnSimGenerate">Generate</button>
+              </div>
+              <button class="btn btn-ghost" id="btnSimExit">Exit sim</button>
+            </div>
+          </div>
+
+          <div class="deploy-dock deploy-dock-teleop" id="deployTeleopDock">
+            <div class="deploy-dock-label">Teleop</div>
+            <div class="dpad dpad-compact">
+              <button class="hold" data-cmd="forward">↑</button>
+              <div class="dpad-mid">
+                <button class="hold" data-cmd="left">↰</button>
+                <button class="hold" data-cmd="strafe_l">←</button>
+                <button class="hold" data-cmd="stop">●</button>
+                <button class="hold" data-cmd="strafe_r">→</button>
+                <button class="hold" data-cmd="right">↱</button>
+              </div>
+              <button class="hold" data-cmd="back">↓</button>
+            </div>
+          </div>
+
+          <div class="deploy-dock deploy-dock-bottom">
+            <div class="deploy-bottom-cam">
+              <div class="deploy-dock-label">Camera</div>
+              <div class="deploy-top-row">
+                <button class="btn btn-primary" id="btnCamOn">ON</button>
+                <button class="btn btn-ghost" id="btnCamOff">OFF</button>
+                <button class="btn btn-ghost" id="btnCamKill" title="Fully stop Orbbec process">Kill node</button>
+              </div>
+              <p class="hint" id="camHint">Camera: idle</p>
+            </div>
+            <div class="deploy-bottom-logs">
+              <p class="hint" id="logRunning">running: —</p>
+              <div class="deploy-log-grid">
+                <div>
+                  <h5 class="log-title">nav</h5>
+                  <pre class="log-box" id="logNav">—</pre>
+                </div>
+                <div>
+                  <h5 class="log-title">camera</h5>
+                  <pre class="log-box" id="logCamera">—</pre>
+                </div>
+                <div>
+                  <h5 class="log-title">orbbec</h5>
+                  <pre class="log-box" id="logOrbbec">—</pre>
+                </div>
+                <div>
+                  <h5 class="log-title">localize</h5>
+                  <pre class="log-box" id="logLocalize">—</pre>
+                </div>
+                <div>
+                  <h5 class="log-title">slam</h5>
+                  <pre class="log-box" id="logSlam">—</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Bump ?v= whenever these change so browsers cannot serve a stale build. -->
+  <script src="js/api.js?v=20260823a"></script>
+  <script src="js/map.js?v=20260823a"></script>
+  <script src="js/app.js?v=20260823a"></script>
+</body>
+</html>

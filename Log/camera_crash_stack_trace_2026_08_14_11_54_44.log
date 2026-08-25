@@ -1,0 +1,18 @@
+Received signal: 11
+Stack trace (most recent call last):
+#15   Object "[0xffffffffffffffff]", at 0xffffffffffffffff, in 
+#14   Object "/opt/ros/humble/lib/rclcpp_components/component_container", at 0xaaaae44e1daf, in 
+#13   Object "/lib/aarch64-linux-gnu/libc.so.6", at 0xffffa7a074d7, in __libc_start_main
+#12   Object "/lib/aarch64-linux-gnu/libc.so.6", at 0xffffa7a073ff, in 
+#11   Object "/opt/ros/humble/lib/rclcpp_components/component_container", at 0xaaaae44e1bbb, in 
+#10   Object "/opt/ros/humble/lib/librclcpp.so", at 0xffffa7f2159b, in rclcpp::executors::SingleThreadedExecutor::spin()
+#9    Object "/opt/ros/humble/lib/librclcpp.so", at 0xffffa7f19593, in rclcpp::Executor::execute_any_executable(rclcpp::AnyExecutable&)
+#8    Object "/opt/ros/humble/lib/librclcpp.so", at 0xffffa7f191df, in rclcpp::Executor::execute_service(std::shared_ptr<rclcpp::ServiceBase>)
+#7    Object "/opt/ros/humble/lib/librclcpp.so", at 0xffffa7f1b723, in 
+#6    Object "/home/vmx/skill23_ws/local_sysroot/opt/ros/humble/lib/liborbbec_camera.so", at 0xffffa1998393, in 
+#5    Object "/home/vmx/skill23_ws/local_sysroot/opt/ros/humble/lib/liborbbec_camera.so", at 0xffffa198aa53, in 
+#4    Object "/home/vmx/skill23_ws/local_sysroot/opt/ros/humble/lib/liborbbec_camera.so", at 0xffffa198a6ab, in orbbec_camera::OBCameraNode::toggleSensorCallback(std::shared_ptr<std_srvs::srv::SetBool_Request_<std::allocator<void> > > const&, std::shared_ptr<std_srvs::srv::SetBool_Response_<std::allocator<void> > >&, std::pair<OBStreamType, int> const&)
+#3    Object "/home/vmx/skill23_ws/local_sysroot/opt/ros/humble/lib/liborbbec_camera.so", at 0xffffa198a27b, in orbbec_camera::OBCameraNode::toggleSensor(std::pair<OBStreamType, int> const&, bool, std::__cxx11::basic_string<char, std::char_traits<char>, std::allocator<char> >&)
+#2    Object "/home/vmx/skill23_ws/local_sysroot/opt/ros/humble/lib/libOrbbecSDK.so.1.10", at 0xffff8ac25028, in ob::Pipeline::stop()
+#1    Object "linux-vdso.so.1", at 0xffffa80c07db, in 
+#0    Object "/home/vmx/skill23_ws/local_sysroot/opt/ros/humble/lib/liborbbec_camera.so", at 0xffffa19052ef, in signalHandler(int)

@@ -42,7 +42,7 @@ control_server:
         encoder_rate_hz: 20 # encoder/rpm feedback publish rate in Hz (default 20)
         motor_update_rate_hz: 50  # how often motor speeds are sent to hardware, in Hz (default 50)
         limit_switches: false     # true = publish /m_N/limit_fwd and /m_N/limit_rev (std_msgs/Bool)
-        enable_freshness: false   # true = skip publish on stale CAN frames (encoder, RPM, cypher max, limit switch); warn after 5 consecutive stale reads
+        enable_freshness: true   # true = skip publish on stale CAN frames (encoder, RPM, cypher max, limit switch); warn after 5 consecutive stale reads
         m_0:
           encoder_mode: "quadrature"  # "quadrature" or "absolute"
           dist_per_tick: 1.0          # metres per encoder tick (1.0 = raw counts)
@@ -191,6 +191,42 @@ control_server:
       sensors: ["cobra"]
       cobra:
         vref: 5.0   # reference voltage (V)
+
+    # -------------------------------------------------------------------------
+    # Colore — Studica color sensor (CAN or USB /dev/ttyACM0)
+    # Topics: /<name>/color, /<name>/color_info, /<name>/color_match
+    # Service: /<name>/colore_cmd  (get_config, set_brightness, learn_color,<name>)
+    # -------------------------------------------------------------------------
+    colore:
+      enabled: false
+      sensors: ["colore0"]
+      colore0:
+        transport: "usb"            # "usb" or "can"
+        can_id: 0
+        serial_port: "/dev/ttyACM0"
+        publish_rate_hz: 10
+        publish_outputs: ["info"]   # "info", "match"
+        brightness: 50
+        measmode: "off"             # off | auto | fixed
+        measmode_z_mm: -1.0
+        # omit match_references (Humble crashes on YAML [])
+        match_threshold: 0.05
+
+    # -------------------------------------------------------------------------
+    # Parsec — Studica multi-zone ToF (CAN or USB /dev/ttyACM0)
+    # Topics: /<name>/min_range, /<name>/grid, /<name>/zones, /<name>/pointcloud
+    # Service: /<name>/parsec_cmd  (get_config, get_min_distance, get_zone_distance)
+    # -------------------------------------------------------------------------
+    parsec:
+      enabled: false
+      sensors: ["parsec0"]
+      parsec0:
+        transport: "usb"            # "usb" or "can"
+        can_id: 0
+        serial_port: "/dev/ttyACM0"
+        frame_id: "parsec0"
+        publish_rate_hz: 15
+        publish_outputs: ["grid"]   # "zones", "grid", "pointcloud"
 
     # -------------------------------------------------------------------------
     # Gamepad — joystick/gamepad input to cmd_vel

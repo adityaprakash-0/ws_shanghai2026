@@ -323,7 +323,9 @@ class CustomNavBridge(Node):
             local=None,
             occupied_threshold=50,
             clearance_weight=12.0,
-            min_clearance_m=0.10,
+            min_clearance_m=0.14,
+            corner_clearance_m=0.20,
+            ridge_snap_radius_m=0.10,
         )
         if not poses:
             return {'ok': False, 'error': 'no path found', 'path': []}
@@ -336,7 +338,12 @@ class CustomNavBridge(Node):
             float(info.resolution),
             occupancy=occ,
             occupied_thresh=50,
+            min_turn_rad=0.35,
+            fillet_radius_m=0.06,
+            sample_step_m=0.04,
             min_clearance_m=0.14,
+            max_offset_m=0.0,
+            simplify_dev_m=0.03,
         )
         smoothed_path = [
             {'x': round(x, 3), 'y': round(y, 3)} for x, y, _yaw in smoothed]

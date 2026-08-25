@@ -1,0 +1,106 @@
+{
+  "robot": "xdrive",
+  "generated": "2026-08-23T18:51:34",
+  "settings": {
+    "rotate_duty": 0.25,
+    "rotate_duration_s_per_deg": 0.05,
+    "static_duration_s": 10.0,
+    "cmd_vel_is_duty_not_rad_s": true
+  },
+  "summary": {
+    "static_yaw_drift_deg_per_min": 0.05999999865889548,
+    "static_ax_mean": 0.022949715098829714,
+    "static_ay_mean": 0.009942519725170252,
+    "rotation_yaw_scale_real_over_imu": -1.8006538858748105
+  },
+  "static": {
+    "duration_s": 10.0,
+    "sample_count": 491,
+    "yaw_start_deg": -0.039999999105930335,
+    "yaw_end_deg": -0.029999999329447753,
+    "yaw_drift_deg": 0.00999999977648258,
+    "yaw_drift_deg_per_min": 0.05999999865889548,
+    "wz_mean": 1.5187068425848875e-05,
+    "wz_std": 0.0006430164348854222,
+    "ax_mean": 0.022949715098829714,
+    "ax_std": 0.17328972199268222,
+    "ay_mean": 0.009942519725170252,
+    "ay_std": 0.10157579594721801,
+    "az_mean": 9.764580804841144,
+    "az_std": 0.11252711517150918
+  },
+  "rotations": [
+    {
+      "commanded_deg": 90.0,
+      "rotate_duty": 0.25,
+      "rotate_duration_s_per_deg": 0.05,
+      "duration_s": 4.5,
+      "imu_yaw_delta_deg": 156.46999694779515,
+      "wz_mean": 0.5672904694774822,
+      "ax_mean": 0.029704804318450215,
+      "ay_mean": 0.058852817553143165,
+      "imu_start": {
+        "yaw_deg": -0.019999999552965168,
+        "wz": 0.0,
+        "ax": -0.1927332336425781,
+        "ay": -0.1771709228515625
+      },
+      "imu_end": {
+        "yaw_deg": 156.4499969482422,
+        "wz": -0.11611381520507638,
+        "ax": -0.10654197387695312,
+        "ay": 0.718260498046875
+      },
+      "real_measured_deg": 157.0,
+      "scale_real_over_imu": 1.0033872503517827
+    },
+    {
+      "commanded_deg": -90.0,
+      "rotate_duty": 0.25,
+      "rotate_duration_s_per_deg": 0.05,
+      "duration_s": 4.5,
+      "imu_yaw_delta_deg": -154.87000370025635,
+      "wz_mean": -0.5409269040362127,
+      "ax_mean": 0.12394701291202159,
+      "ay_mean": -0.0470769989356566,
+      "imu_start": {
+        "yaw_deg": -1.0399999618530273,
+        "wz": 0.001065264371013114,
+        "ax": 0.24181436767578124,
+        "ay": 0.11851298217773437
+      },
+      "imu_end": {
+        "yaw_deg": -155.91000366210938,
+        "wz": 0.09054746874031569,
+        "ax": -0.48722003784179685,
+        "ay": 0.9720458740234375
+      },
+      "real_measured_deg": -153.0,
+      "scale_real_over_imu": 0.9879253331466585
+    },
+    {
+      "commanded_deg": 180.0,
+      "rotate_duty": 0.25,
+      "rotate_duration_s_per_deg": 0.05,
+      "duration_s": 9.0,
+      "imu_yaw_delta_deg": -41.93000149726868,
+      "wz_mean": 0.5687669453715423,
+      "ax_mean": -0.0012173906746557228,
+      "ay_mean": 0.05642605777029263,
+      "imu_start": {
+        "yaw_deg": -2.7200000286102286,
+        "wz": 0.0,
+        "ax": -0.32561142578124996,
+        "ay": -0.06464344482421874
+      },
+      "imu_end": {
+        "yaw_deg": -44.650001525878906,
+        "wz": 0.06285059756468082,
+        "ax": 0.09576806640624999,
+        "ay": -0.8152256652832031
+      },
+      "real_measured_deg": 310.0,
+      "scale_real_over_imu": -7.393274241122873
+    }
+  ]
+}
