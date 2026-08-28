@@ -6157,3 +6157,396 @@
 [INFO] [sudo-1]: process has finished cleanly [pid 4559]
 [INFO] [ydlidar_ros2_driver_node-4]: process has finished cleanly [pid 4566]
 [INFO] [ydlidar_ros2_driver_node-3]: process has finished cleanly [pid 4564]
+
+# cmd [2026-08-26 11:48:19]: ros2 launch studica_control slam_tele_allterrain.py slam_params_file:=/home/vmx/skill23_ws/studio_maps/allterrain3/slam_params.yaml
+[INFO] [launch]: All log files can be found below /home/vmx/.ros/log/2026-08-26-11-48-21-234992-vmx-5863
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [sudo-1]: process started with pid [5997]
+[INFO] [robot_state_publisher-2]: process started with pid [6003]
+[INFO] [ydlidar_ros2_driver_node-3]: process started with pid [6006]
+[INFO] [ydlidar_ros2_driver_node-4]: process started with pid [6012]
+[INFO] [allterrain_node-5]: process started with pid [6015]
+[INFO] [lidar_merger_node-6]: process started with pid [6022]
+[ydlidar_ros2_driver_node-4] [INFO] [1787725102.992193023] [ydlidar_back]: [YDLIDAR INFO] Current ROS Driver Version: 1.0.1
+[ydlidar_ros2_driver_node-4] 
+[ydlidar_ros2_driver_node-3] [INFO] [1787725102.992387853] [ydlidar_front]: [YDLIDAR INFO] Current ROS Driver Version: 1.0.1
+[ydlidar_ros2_driver_node-3] 
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:48:22][info] SDK initializing
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:48:22][info] SDK has been initialized
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:48:22][info] SDK Version: 1.2.19
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:48:23][info] SDK initializing
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:48:23][info] SDK has been initialized
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:48:23][info] SDK Version: 1.2.19
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:48:23][info] Connect elapsed time 20 ms
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:48:23][info] Lidar successfully connected [/dev/ydlidar_back:230400]
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:48:23][info] Connect elapsed time 14 ms
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:48:23][info] Lidar successfully connected [/dev/ydlidar_front:230400]
+[robot_state_publisher-2] [INFO] [1787725103.290617876] [robot_state_publisher]: got segment base_footprint
+[robot_state_publisher-2] [INFO] [1787725103.290923204] [robot_state_publisher]: got segment base_link
+[robot_state_publisher-2] [INFO] [1787725103.290988850] [robot_state_publisher]: got segment imu_link
+[robot_state_publisher-2] [INFO] [1787725103.291021794] [robot_state_publisher]: got segment laser_back
+[robot_state_publisher-2] [INFO] [1787725103.291051275] [robot_state_publisher]: got segment laser_front
+[allterrain_node-5] [INFO] [1787725103.318107342] [allterrain_node]: AllTerrain node started. Diff-drive EKF mode (r=0.0625, ticks=1221).
+[lidar_merger_node-6] [INFO] [1787725103.339080353] [lidar_merger_node]: Dual LiDAR merger: front/back +/-132.0/132.0 deg, skew <= 100 ms, 720 bins, static mount transforms -> base_footprint
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:48:23][info] Lidar running correctly! The health status good
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:48:23][info] Lidar running correctly! The health status good
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:48:23][info] Current Lidar Model Code 151
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:48:23][info] Baseplate device info
+[ydlidar_ros2_driver_node-4] Firmware version: 1.2
+[ydlidar_ros2_driver_node-4] Hardware version: 1
+[ydlidar_ros2_driver_node-4] Model: Tmini Plus
+[ydlidar_ros2_driver_node-4] Serial: 2026010700090033
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:48:23][info] Current Lidar Model Code 151
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:48:23][info] Baseplate device info
+[ydlidar_ros2_driver_node-3] Firmware version: 1.2
+[ydlidar_ros2_driver_node-3] Hardware version: 1
+[ydlidar_ros2_driver_node-3] Model: Tmini Plus
+[ydlidar_ros2_driver_node-3] Serial: 2026010600090098
+[sudo-1] VMX HAL:  pigpio library version 69 opened.
+[sudo-1] VMX HAL:  SPI Aux Channel 2 opened with baudrate of 4000000.
+[sudo-1] Adjusted scheduler priority of VMX IO Thread 281473552658464 to 49.
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:48:23][info] Current scan frequency: 6.00Hz
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:48:23][info] Current scan frequency: 6.00Hz
+[sudo-1] PIGPIOClient::int_spi_transmit - Timeout waiting for falling edge after initial rising edge during read after write request.
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:48:23][info] Current scan frequency: 6.00Hz
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:48:23][info] Check status, Elapsed time 892 ms
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:48:23][info] Lidar init success, Elapsed time [913]ms
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:48:23][info] Current scan frequency: 6.00Hz
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:48:23][info] Check status, Elapsed time 894 ms
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:48:23][info] Lidar init success, Elapsed time [908]ms
+[sudo-1] PIGPIOClient::int_spi_transmit - Timeout waiting for falling edge after initial rising edge during read after write request.
+[sudo-1] VMX HAL:  Established communication with VMX board model 0x32, hardware rev 62, firmware version 4.0.450
+[sudo-1] Adjusted scheduler priority of VMX IO Thread 281473024461024 to 49.
+[sudo-1] VMX HAL:  Acquired navX-Sensor configuration.
+[sudo-1] VMX HAL:  VMXRemoteServer thread started.
+[sudo-1] [WARN] [1787725103.936827320] [rcl.logging_rosout]: Publisher already registered for provided node name. If this is due to multiple nodes with the same name then all logs for that logger name will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+[sudo-1] [INFO] [1787725103.964580189] [control_server]: power component ready — 1 × 3.0 Ah NiMH (3.0 Ah total), publishing on /battery_state at 2 Hz
+[sudo-1] [WARN] [1787725103.967241215] [rcl.logging_rosout]: Publisher already registered for provided node name. If this is due to multiple nodes with the same name then all logs for that logger name will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+[sudo-1] [INFO] [1787725103.998967643] [control_server]: gamepad controller ready. publishing to: cmd_vel at 50 hz
+[sudo-1] [INFO] [1787725103.999121732] [control_server]: gamepad controls: axis[1/-1] = movement, axis[2] = rotation, button[5] = turbo
+[sudo-1] [WARN] [1787725104.000409802] [rcl.logging_rosout]: Publisher already registered for provided node name. If this is due to multiple nodes with the same name then all logs for that logger name will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+[sudo-1] [INFO] [1787725104.040321822] [control_server]: IMU component ready.
+[sudo-1] [INFO] [1787725104.045176845] [control_server]: titan0 -> can_id: 42, motor_freq: 15600 hz, encoder: 20Hz, resend: 50Hz
+[sudo-1] [WARN] [1787725104.045694521] [rcl.logging_rosout]: Publisher already registered for provided node name. If this is due to multiple nodes with the same name then all logs for that logger name will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+[sudo-1] Opened CAN Receive Stream 0, handle:  0
+[sudo-1] Enabled Blackboard on Stream 0.
+[sudo-1] Flushed CAN RX FIFO
+[sudo-1] Flushed CAN TX FIFO
+[sudo-1] Set CAN Mode to Normal.
+[sudo-1] Adjusted scheduler priority of VMX IO Thread 281472998443232 to 49.
+[sudo-1] Titan Driver Started!
+[sudo-1] [INFO] [1787725104.109503147] [control_server]:   m_0: quadrature -> /titan0/m_0/encoder, /titan0/m_0/rpm
+[sudo-1] [INFO] [1787725104.115644629] [control_server]:   m_1: quadrature -> /titan0/m_1/encoder, /titan0/m_1/rpm
+[sudo-1] [INFO] [1787725104.121427598] [control_server]:   m_2: quadrature -> /titan0/m_2/encoder, /titan0/m_2/rpm
+[sudo-1] [INFO] [1787725104.128396806] [control_server]:   m_3: quadrature -> /titan0/m_3/encoder, /titan0/m_3/rpm
+[sudo-1] [INFO] [1787725105.130526917] [control_server]: titan ready. can_id: 42, freq: 15600 hz
+[sudo-1] [INFO] [1787725105.137391867] [control_server]: titan1 -> can_id: 43, motor_freq: 15600 hz, encoder: 20Hz, resend: 50Hz
+[sudo-1] [WARN] [1787725105.137934431] [rcl.logging_rosout]: Publisher already registered for provided node name. If this is due to multiple nodes with the same name then all logs for that logger name will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+[sudo-1] Opened CAN Receive Stream 0, handle:  0
+[sudo-1] Enabled Blackboard on Stream 0.
+[sudo-1] Flushed CAN RX FIFO
+[sudo-1] Flushed CAN TX FIFO
+[sudo-1] Set CAN Mode to Normal.
+[sudo-1] Titan Driver Started!
+[sudo-1] [INFO] [1787725105.197916033] [control_server]:   m_0: quadrature -> /titan1/m_0/encoder, /titan1/m_0/rpm
+[sudo-1] [INFO] [1787725105.202623337] [control_server]:   m_0: limit switches -> /titan1/m_0/limit_fwd, /titan1/m_0/limit_rev
+[sudo-1] [INFO] [1787725105.208539082] [control_server]:   m_1: quadrature -> /titan1/m_1/encoder, /titan1/m_1/rpm
+[sudo-1] [INFO] [1787725105.212621027] [control_server]:   m_1: limit switches -> /titan1/m_1/limit_fwd, /titan1/m_1/limit_rev
+[sudo-1] [INFO] [1787725105.218278925] [control_server]:   m_2: quadrature -> /titan1/m_2/encoder, /titan1/m_2/rpm
+[sudo-1] [INFO] [1787725105.222305704] [control_server]:   m_2: limit switches -> /titan1/m_2/limit_fwd, /titan1/m_2/limit_rev
+[sudo-1] [INFO] [1787725105.228166395] [control_server]:   m_3: quadrature -> /titan1/m_3/encoder, /titan1/m_3/rpm
+[sudo-1] [INFO] [1787725105.232320320] [control_server]:   m_3: limit switches -> /titan1/m_3/limit_fwd, /titan1/m_3/limit_rev
+[sudo-1] Adjusted scheduler priority of VMX IO Thread 281472989989088 to 49.
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:48:25][info] [YDLIDAR] Create thread 0xB65D08E0
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:48:25][info] [YDLIDAR] Create thread 0xAEC198E0
+[INFO] [ekf_node-7]: process started with pid [6128]
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:48:26][info] Successed to start scan mode, Elapsed time 2099 ms
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:48:26][info] Scan Frequency: 6.00Hz
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:48:26][info] Fixed Size: 716
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:48:26][info] Sample Rate: 4.00K
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:48:26][info] Successed to check the lidar, Elapsed time 0 ms
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:48:26][info] Now lidar is scanning...
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:48:26][info] Successed to start scan mode, Elapsed time 2097 ms
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:48:26][info] Scan Frequency: 6.00Hz
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:48:26][info] Fixed Size: 716
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:48:26][info] Sample Rate: 4.00K
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:48:26][info] Successed to check the lidar, Elapsed time 0 ms
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:48:26][info] Now lidar is scanning...
+[lidar_merger_node-6] [WARN] [1787725106.201030793] [lidar_merger_node]: Dropping LiDAR pair: midpoint skew 153.1 ms exceeds 100.0 ms
+[sudo-1] [INFO] [1787725106.234926755] [control_server]: titan ready. can_id: 43, freq: 15600 hz
+[INFO] [sync_slam_toolbox_node-8]: process started with pid [6163]
+[sync_slam_toolbox_node-8] [INFO] [1787725108.464718313] [slam_toolbox]: Node using stack size 40000000
+[sync_slam_toolbox_node-8] [INFO] [1787725109.275971685] [slam_toolbox]: Using solver plugin solver_plugins::CeresSolver
+[sync_slam_toolbox_node-8] [INFO] [1787725109.276997000] [slam_toolbox]: CeresSolver: Using SCHUR_JACOBI preconditioner.
+[sync_slam_toolbox_node-8] [WARN] [1787725109.817712719] [slam_toolbox]: minimum laser range setting (0.1 m) exceeds the capabilities of the used Lidar (0.1 m)
+[sync_slam_toolbox_node-8] Registering sensor: [Custom Described Lidar]
+[WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
+[INFO] [sync_slam_toolbox_node-8]: sending signal 'SIGINT' to process[sync_slam_toolbox_node-8]
+[INFO] [ekf_node-7]: sending signal 'SIGINT' to process[ekf_node-7]
+[INFO] [lidar_merger_node-6]: sending signal 'SIGINT' to process[lidar_merger_node-6]
+[ERROR] [sync_slam_toolbox_node-8]: process has died [pid 6163, exit code -2, cmd '/opt/ros/humble/lib/slam_toolbox/sync_slam_toolbox_node --ros-args -r __node:=slam_toolbox --params-file /home/vmx/skill23_ws/studio_maps/allterrain3/slam_params.yaml'].
+[INFO] [allterrain_node-5]: sending signal 'SIGINT' to process[allterrain_node-5]
+[INFO] [ydlidar_ros2_driver_node-4]: sending signal 'SIGINT' to process[ydlidar_ros2_driver_node-4]
+[ERROR] [ekf_node-7]: process has died [pid 6128, exit code -2, cmd '/opt/ros/humble/lib/robot_localization/ekf_node --ros-args -r __node:=ekf_filter_node --params-file /home/vmx/skill23_ws/install/allterrain/share/allterrain/config/ekf_allterrain.yaml'].
+[INFO] [ydlidar_ros2_driver_node-3]: sending signal 'SIGINT' to process[ydlidar_ros2_driver_node-3]
+[INFO] [robot_state_publisher-2]: sending signal 'SIGINT' to process[robot_state_publisher-2]
+[INFO] [sudo-1]: sending signal 'SIGINT' to process[sudo-1]
+[robot_state_publisher-2] [INFO] [1787725421.225335335] [rclcpp]: signal_handler(signum=2)
+[ydlidar_ros2_driver_node-4] [INFO] [1787725421.225716588] [rclcpp]: signal_handler(signum=2)
+[ydlidar_ros2_driver_node-4] [INFO] [1787725421.235282306] [ydlidar_back]: [YDLIDAR INFO] Now YDLIDAR is stopping .......
+[ydlidar_ros2_driver_node-3] [INFO] [1787725421.226043804] [rclcpp]: signal_handler(signum=2)
+[ydlidar_ros2_driver_node-3] [INFO] [1787725421.265271769] [ydlidar_front]: [YDLIDAR INFO] Now YDLIDAR is stopping .......
+[lidar_merger_node-6] [INFO] [1787725421.226080748] [rclcpp]: signal_handler(signum=2)
+[sync_slam_toolbox_node-8] [INFO] [1787725421.226387928] [rclcpp]: signal_handler(signum=2)
+[sudo-1] Signal 2 received by PIGPIOClient::signal_func().
+[sudo-1] /usr/local/lib/vmxpi/libvmxpi_hal_cpp.so(_ZN12PIGPIOClient11signal_funcEiPv+0x254) [0xffffaa941734]
+[sudo-1] /usr/local/lib/vmxpi/libvmxpi_hal_cpp.so(+0xcb0dc) [0xffffaa98b0dc]
+[sudo-1] linux-vdso.so.1(__kernel_rt_sigreturn+0) [0xffffab2497dc]
+[sudo-1] /lib/aarch64-linux-gnu/libc.so.6(+0x7cbac) [0xffffaa25cbac]
+[sudo-1] /lib/aarch64-linux-gnu/libc.so.6(+0x888f4) [0xffffaa2688f4]
+[sudo-1] /opt/ros/humble/lib/librclcpp.so(_ZN6rclcpp13SignalHandler15wait_for_signalEv+0x3c) [0xffffaa763ddc]
+[sudo-1] /opt/ros/humble/lib/librclcpp.so(_ZN6rclcpp13SignalHandler23deferred_signal_handlerEv+0xa8) [0xffffaa7650c8]
+[sudo-1] /lib/aarch64-linux-gnu/libstdc++.so.6(+0xd29cc) [0xffffaa4929cc]
+[sudo-1] /lib/aarch64-linux-gnu/libc.so.6(+0x803c8) [0xffffaa2603c8]
+[sudo-1] /lib/aarch64-linux-gnu/libc.so.6(+0xe9edc) [0xffffaa2c9edc]
+[sudo-1]   /lib/aarch64-linux-gnu/libc.so.6 (                                           + 0x888f4)  [0xffffaa2688f4]
+[sudo-1]   /opt/ros/humble/lib/librclcpp.so ( rclcpp::SignalHandler::wait_for_signal()  + 0x3c  )  [0xffffaa763ddc]
+[sudo-1]   /opt/ros/humble/lib/librclcpp.so ( rclcpp::SignalHandler::deferred_signal_handler()  + 0xa8  )  [0xffffaa7650c8]
+[sudo-1]   /lib/aarch64-linux-gnu/libstdc++.so.6 (                                           + 0xd29cc)  [0xffffaa4929cc]
+[sudo-1]   /lib/aarch64-linux-gnu/libc.so.6 (                                           + 0x803c8)  [0xffffaa2603c8]
+[sudo-1]   /lib/aarch64-linux-gnu/libc.so.6 (                                           + 0xe9edc)  [0xffffaa2c9edc]
+[sudo-1] Exiting VMX-pi HAL application due to receipt of signal 2 [normal exit].
+[sudo-1] VMX HAL:  pigpio library closed during exception handling.
+[sudo-1] Signal 2 received by PIGPIOClient::signal_func().
+[sudo-1] /usr/local/lib/vmxpi/libvmxpi_hal_cpp.so(_ZN12PIGPIOClient11signal_funcEiPv+0x254) [0xffffaa941734]
+[sudo-1] /usr/local/lib/vmxpi/libvmxpi_hal_cpp.so(+0xcb0dc) [0xffffaa98b0dc]
+[sudo-1] linux-vdso.so.1(__kernel_rt_sigreturn+0) [0xffffab2497dc]
+[sudo-1] /lib/aarch64-linux-gnu/libc.so.6(+0x84e70) [0xffffaa264e70]
+[sudo-1] /opt/ros/humble/lib/libfastrtps.so.2.6(_ZN8eprosima7fastdds3dds6detail11WaitSetImpl16detach_conditionERKNS1_9ConditionE+0x50) [0xffffa983f7b0]
+[sudo-1] /opt/ros/humble/lib/librmw_fastrtps_shared_cpp.so(_ZN23rmw_fastrtps_shared_cpp10__rmw_waitEPKcP19rmw_subscriptions_sP22rmw_guard_conditions_sP14rmw_services_sP13rmw_clients_sP12rmw_events_sP14rmw_wait_set_sPK10rmw_time_s+0x65c) [0xffffa9c65a1c]
+[sudo-1] /opt/ros/humble/lib/librcl.so(rcl_wait+0x198) [0xffffaa195d28]
+[sudo-1] /opt/ros/humble/lib/librclcpp.so(_ZN6rclcpp8Executor13wait_for_workENSt6chrono8durationIlSt5ratioILl1ELl1000000000EEEE+0x98c) [0xffffaa6e6990]
+[sudo-1] /opt/ros/humble/lib/librclcpp.so(_ZN6rclcpp8Executor19get_next_executableERNS_13AnyExecutableENSt6chrono8durationIlSt5ratioILl1ELl1000000000EEEE+0x4c) [0xffffaa6e99dc]
+[sudo-1] /opt/ros/humble/lib/librclcpp.so(_ZN6rclcpp9executors22SingleThreadedExecutor4spinEv+0xd8) [0xffffaa6f1588]
+[sudo-1] /home/vmx/skill23_ws/install/studica_control/lib/studica_control/manual_composition(+0x4248) [0xaaaae6f44248]
+[sudo-1] /lib/aarch64-linux-gnu/libc.so.6(+0x27400) [0xffffaa207400]
+[sudo-1] /lib/aarch64-linux-gnu/libc.so.6(__libc_start_main+0x98) [0xffffaa2074d8]
+[sudo-1] /home/vmx/skill23_ws/install/studica_control/lib/studica_control/manual_composition(+0x4430) [0xaaaae6f44430]
+[sudo-1]   /opt/ros/humble/lib/libfastrtps.so.2.6 ( eprosima::fastdds::dds::detail::WaitSetImpl::detach_condition(eprosima::fastdds::dds::Condition const&)  + 0x50  )  [0xffffa983f7b0]
+[sudo-1]   /opt/ros/humble/lib/librmw_fastrtps_shared_cpp.so ( rmw_fastrtps_shared_cpp::__rmw_wait(char const*, rmw_subscriptions_s*, rmw_guard_conditions_s*, rmw_services_s*, rmw_clients_s*, rmw_events_s*, rmw_wait_set_s*, rmw_time_s const*)  + 0x65c )  [0xffffa9c65a1c]
+[sudo-1]   /opt/ros/humble/lib/librcl.so  ( rcl_wait                                  + 0x198 )  [0xffffaa195d28]
+[sudo-1]   /opt/ros/humble/lib/librclcpp.so ( rclcpp::Executor::wait_for_work(std::chrono::duration<long, std::ratio<1l, 1000000000l> >)  + 0x98c )  [0xffffaa6e6990]
+[sudo-1]   /opt/ros/humble/lib/librclcpp.so ( rclcpp::Executor::get_next_executable(rclcpp::AnyExecutable&, std::chrono::duration<long, std::ratio<1l, 1000000000l> >)  + 0x4c  )  [0xffffaa6e99dc]
+[sudo-1]   /opt/ros/humble/lib/librclcpp.so ( rclcpp::executors::SingleThreadedExecutor::spin()  + 0xd8  )  [0xffffaa6f1588]
+[sudo-1]   /home/vmx/skill23_ws/install/studica_control/lib/studica_control/manual_composition (                                           + 0x4248)  [0xaaaae6f44248]
+[sudo-1]   /lib/aarch64-linux-gnu/libc.so.6 (                                           + 0x27400)  [0xffffaa207400]
+[sudo-1]   /lib/aarch64-linux-gnu/libc.so.6 ( __libc_start_main                         + 0x98  )  [0xffffaa2074d8]
+[sudo-1]   /home/vmx/skill23_ws/install/studica_control/lib/studica_control/manual_composition (                                           + 0x4430)  [0xaaaae6f44430]
+[sudo-1] Exiting VMX-pi HAL application due to receipt of signal 2 [normal exit].
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:53:41][info] Now lidar scanning has stopped!
+[allterrain_node-5] [INFO] [1787725421.239182106] [rclcpp]: signal_handler(signum=2)
+[ekf_node-7] [INFO] [1787725421.249689400] [rclcpp]: signal_handler(signum=2)
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:53:41][info] Now lidar scanning has stopped!
+[sudo-1] VMX HAL:  pigpio library closed during exception handling.
+[lidar_merger_node-6] [INFO] [1787725421.468986145] [rclcpp]: signal_handler(signum=2)
+[allterrain_node-5] [INFO] [1787725421.480911969] [rclcpp]: signal_handler(signum=2)
+[ydlidar_ros2_driver_node-4] [INFO] [1787725421.489218783] [rclcpp]: signal_handler(signum=2)
+[ydlidar_ros2_driver_node-3] [INFO] [1787725421.499554913] [rclcpp]: signal_handler(signum=2)
+[robot_state_publisher-2] [INFO] [1787725421.507745360] [rclcpp]: signal_handler(signum=2)
+[INFO] [allterrain_node-5]: process has finished cleanly [pid 6015]
+[INFO] [lidar_merger_node-6]: process has finished cleanly [pid 6022]
+[INFO] [robot_state_publisher-2]: process has finished cleanly [pid 6003]
+[INFO] [ydlidar_ros2_driver_node-4]: process has finished cleanly [pid 6012]
+[INFO] [ydlidar_ros2_driver_node-3]: process has finished cleanly [pid 6006]
+
+# cmd [2026-08-26 11:53:48]: ros2 launch studica_control slam_tele_allterrain.py slam_params_file:=/home/vmx/skill23_ws/studio_maps/allterrain3/slam_params.yaml
+[INFO] [launch]: All log files can be found below /home/vmx/.ros/log/2026-08-26-11-53-49-520588-vmx-8633
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [sudo-1]: process started with pid [8694]
+[INFO] [robot_state_publisher-2]: process started with pid [8696]
+[INFO] [ydlidar_ros2_driver_node-3]: process started with pid [8699]
+[INFO] [ydlidar_ros2_driver_node-4]: process started with pid [8701]
+[INFO] [allterrain_node-5]: process started with pid [8704]
+[INFO] [lidar_merger_node-6]: process started with pid [8707]
+[ydlidar_ros2_driver_node-3] [INFO] [1787725430.636741120] [ydlidar_front]: [YDLIDAR INFO] Current ROS Driver Version: 1.0.1
+[ydlidar_ros2_driver_node-3] 
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:53:50][info] SDK initializing
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:53:50][info] SDK has been initialized
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:53:50][info] SDK Version: 1.2.19
+[ydlidar_ros2_driver_node-4] [INFO] [1787725430.641275298] [ydlidar_back]: [YDLIDAR INFO] Current ROS Driver Version: 1.0.1
+[ydlidar_ros2_driver_node-4] 
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:53:50][info] SDK initializing
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:53:50][info] SDK has been initialized
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:53:50][info] SDK Version: 1.2.19
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:53:50][info] Connect elapsed time 16 ms
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:53:50][info] Lidar successfully connected [/dev/ydlidar_front:230400]
+[robot_state_publisher-2] [INFO] [1787725430.687341567] [robot_state_publisher]: got segment base_footprint
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:53:50][info] Connect elapsed time 46 ms
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:53:50][info] Lidar successfully connected [/dev/ydlidar_back:230400]
+[robot_state_publisher-2] [INFO] [1787725430.693124149] [robot_state_publisher]: got segment base_link
+[robot_state_publisher-2] [INFO] [1787725430.694371275] [robot_state_publisher]: got segment imu_link
+[robot_state_publisher-2] [INFO] [1787725430.694434792] [robot_state_publisher]: got segment laser_back
+[robot_state_publisher-2] [INFO] [1787725430.694466310] [robot_state_publisher]: got segment laser_front
+[lidar_merger_node-6] [INFO] [1787725430.783318036] [lidar_merger_node]: Dual LiDAR merger: front/back +/-132.0/132.0 deg, skew <= 100 ms, 720 bins, static mount transforms -> base_footprint
+[allterrain_node-5] [INFO] [1787725430.961903028] [allterrain_node]: AllTerrain node started. Diff-drive EKF mode (r=0.0625, ticks=1221).
+[sudo-1] VMX HAL:  pigpio library version 69 opened.
+[sudo-1] VMX HAL:  SPI Aux Channel 2 opened with baudrate of 4000000.
+[sudo-1] Adjusted scheduler priority of VMX IO Thread 281473085452320 to 49.
+[sudo-1] VMX HAL:  Established communication with VMX board model 0x32, hardware rev 62, firmware version 4.0.450
+[sudo-1] Adjusted scheduler priority of VMX IO Thread 281472616675552 to 49.
+[sudo-1] VMX HAL:  Acquired navX-Sensor configuration.
+[sudo-1] VMX HAL:  VMXRemoteServer thread started.
+[sudo-1] [WARN] [1787725431.158745897] [rcl.logging_rosout]: Publisher already registered for provided node name. If this is due to multiple nodes with the same name then all logs for that logger name will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+[sudo-1] [INFO] [1787725431.189597382] [control_server]: power component ready — 1 × 3.0 Ah NiMH (3.0 Ah total), publishing on /battery_state at 2 Hz
+[sudo-1] [WARN] [1787725431.191809084] [rcl.logging_rosout]: Publisher already registered for provided node name. If this is due to multiple nodes with the same name then all logs for that logger name will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+[sudo-1] [INFO] [1787725431.224741569] [control_server]: gamepad controller ready. publishing to: cmd_vel at 50 hz
+[sudo-1] [INFO] [1787725431.224874770] [control_server]: gamepad controls: axis[1/-1] = movement, axis[2] = rotation, button[5] = turbo
+[sudo-1] [WARN] [1787725431.225872030] [rcl.logging_rosout]: Publisher already registered for provided node name. If this is due to multiple nodes with the same name then all logs for that logger name will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+[sudo-1] [INFO] [1787725431.263013440] [control_server]: IMU component ready.
+[sudo-1] [INFO] [1787725431.266729781] [control_server]: titan0 -> can_id: 42, motor_freq: 15600 hz, encoder: 20Hz, resend: 50Hz
+[sudo-1] [WARN] [1787725431.267243642] [rcl.logging_rosout]: Publisher already registered for provided node name. If this is due to multiple nodes with the same name then all logs for that logger name will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:53:51][info] Lidar running correctly! The health status good
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:53:51][info] Lidar running correctly! The health status good
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:53:51][info] Current Lidar Model Code 151
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:53:51][info] Baseplate device info
+[ydlidar_ros2_driver_node-3] Firmware version: 1.2
+[ydlidar_ros2_driver_node-3] Hardware version: 1
+[ydlidar_ros2_driver_node-3] Model: Tmini Plus
+[ydlidar_ros2_driver_node-3] Serial: 2026010600090098
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:53:51][info] Current Lidar Model Code 151
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:53:51][info] Baseplate device info
+[ydlidar_ros2_driver_node-4] Firmware version: 1.2
+[ydlidar_ros2_driver_node-4] Hardware version: 1
+[ydlidar_ros2_driver_node-4] Model: Tmini Plus
+[ydlidar_ros2_driver_node-4] Serial: 2026010700090033
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:53:51][info] Current scan frequency: 6.00Hz
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:53:51][info] Current scan frequency: 6.00Hz
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:53:51][info] Current scan frequency: 6.00Hz
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:53:51][info] Check status, Elapsed time 898 ms
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:53:51][info] Lidar init success, Elapsed time [914]ms
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:53:51][info] Current scan frequency: 6.00Hz
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:53:51][info] Check status, Elapsed time 888 ms
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:53:51][info] Lidar init success, Elapsed time [934]ms
+[sudo-1] Opened CAN Receive Stream 0, handle:  0
+[sudo-1] Enabled Blackboard on Stream 0.
+[sudo-1] Flushed CAN RX FIFO
+[sudo-1] Flushed CAN TX FIFO
+[sudo-1] Set CAN Mode to Normal.
+[sudo-1] Adjusted scheduler priority of VMX IO Thread 281472591313120 to 49.
+[sudo-1] Titan Driver Started!
+[sudo-1] [INFO] [1787725432.231507400] [control_server]:   m_0: quadrature -> /titan0/m_0/encoder, /titan0/m_0/rpm
+[sudo-1] [INFO] [1787725432.237064041] [control_server]:   m_1: quadrature -> /titan0/m_1/encoder, /titan0/m_1/rpm
+[sudo-1] [INFO] [1787725432.243131710] [control_server]:   m_2: quadrature -> /titan0/m_2/encoder, /titan0/m_2/rpm
+[sudo-1] [INFO] [1787725432.249319896] [control_server]:   m_3: quadrature -> /titan0/m_3/encoder, /titan0/m_3/rpm
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:53:53][info] [YDLIDAR] Create thread 0x96A298E0
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:53:53][info] [YDLIDAR] Create thread 0x923C28E0
+[sudo-1] [INFO] [1787725433.251271332] [control_server]: titan ready. can_id: 42, freq: 15600 hz
+[sudo-1] [INFO] [1787725433.259654145] [control_server]: titan1 -> can_id: 43, motor_freq: 15600 hz, encoder: 20Hz, resend: 50Hz
+[sudo-1] [WARN] [1787725433.260285559] [rcl.logging_rosout]: Publisher already registered for provided node name. If this is due to multiple nodes with the same name then all logs for that logger name will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+[sudo-1] Opened CAN Receive Stream 0, handle:  0
+[sudo-1] Enabled Blackboard on Stream 0.
+[sudo-1] Flushed CAN RX FIFO
+[sudo-1] Flushed CAN TX FIFO
+[sudo-1] Set CAN Mode to Normal.
+[sudo-1] Titan Driver Started!
+[sudo-1] [INFO] [1787725433.327146975] [control_server]:   m_0: quadrature -> /titan1/m_0/encoder, /titan1/m_0/rpm
+[sudo-1] [INFO] [1787725433.333879188] [control_server]:   m_0: limit switches -> /titan1/m_0/limit_fwd, /titan1/m_0/limit_rev
+[sudo-1] [INFO] [1787725433.340648789] [control_server]:   m_1: quadrature -> /titan1/m_1/encoder, /titan1/m_1/rpm
+[sudo-1] [INFO] [1787725433.345124876] [control_server]:   m_1: limit switches -> /titan1/m_1/limit_fwd, /titan1/m_1/limit_rev
+[sudo-1] [INFO] [1787725433.351795886] [control_server]:   m_2: quadrature -> /titan1/m_2/encoder, /titan1/m_2/rpm
+[sudo-1] Adjusted scheduler priority of VMX IO Thread 281472582858976 to 49.
+[sudo-1] [INFO] [1787725433.356501820] [control_server]:   m_2: limit switches -> /titan1/m_2/limit_fwd, /titan1/m_2/limit_rev
+[sudo-1] [INFO] [1787725433.363784283] [control_server]:   m_3: quadrature -> /titan1/m_3/encoder, /titan1/m_3/rpm
+[sudo-1] [INFO] [1787725433.368567586] [control_server]:   m_3: limit switches -> /titan1/m_3/limit_fwd, /titan1/m_3/limit_rev
+[INFO] [ekf_node-7]: process started with pid [8823]
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:53:53][info] Successed to start scan mode, Elapsed time 2101 ms
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:53:53][info] Scan Frequency: 6.00Hz
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:53:53][info] Fixed Size: 716
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:53:53][info] Sample Rate: 4.00K
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:53:53][info] Successed to check the lidar, Elapsed time 0 ms
+[ydlidar_ros2_driver_node-3] [2026-08-26 11:53:53][info] Now lidar is scanning...
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:53:53][info] Successed to start scan mode, Elapsed time 2098 ms
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:53:53][info] Scan Frequency: 6.00Hz
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:53:53][info] Fixed Size: 716
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:53:53][info] Sample Rate: 4.00K
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:53:53][info] Successed to check the lidar, Elapsed time 0 ms
+[ydlidar_ros2_driver_node-4] [2026-08-26 11:53:53][info] Now lidar is scanning...
+[lidar_merger_node-6] [WARN] [1787725433.975557121] [lidar_merger_node]: Dropping LiDAR pair: midpoint skew 119.7 ms exceeds 100.0 ms
+[sudo-1] [INFO] [1787725434.372144659] [control_server]: titan ready. can_id: 43, freq: 15600 hz
+[INFO] [sync_slam_toolbox_node-8]: process started with pid [8847]
+[sync_slam_toolbox_node-8] [INFO] [1787725436.111877532] [slam_toolbox]: Node using stack size 40000000
+[sync_slam_toolbox_node-8] [INFO] [1787725436.898846589] [slam_toolbox]: Using solver plugin solver_plugins::CeresSolver
+[sync_slam_toolbox_node-8] [INFO] [1787725436.903267825] [slam_toolbox]: CeresSolver: Using SCHUR_JACOBI preconditioner.
+[sync_slam_toolbox_node-8] [INFO] [1787725437.092474405] [slam_toolbox]: Message Filter dropping message: frame 'base_footprint' at time 1787725436.687 for reason 'discarding message because the queue is full'
+[sync_slam_toolbox_node-8] [WARN] [1787725437.094390407] [slam_toolbox]: minimum laser range setting (0.1 m) exceeds the capabilities of the used Lidar (0.1 m)
+[sync_slam_toolbox_node-8] Registering sensor: [Custom Described Lidar]
+[sudo-1] Wed Aug 26 11:56:33 2026 - WARN :  VMX HAL:  CAN HW Receive Overflow detected.  Packets remaining:  2
+[sudo-1]  (VMXCAN.cpp [351])
+[sudo-1] Wed Aug 26 11:56:33 2026 - INFO :  VMX HAL:  Cleared CAN HW Receive Overflow.  
+[sudo-1]  (VMXCAN.cpp [480])
+[sudo-1] Wed Aug 26 11:56:33 2026 - WARN :  VMX HAL:  CAN HW Receive Overflow detected.  Packets remaining:  2
+[sudo-1]  (VMXCAN.cpp [351])
+[sudo-1] Wed Aug 26 11:56:33 2026 - INFO :  VMX HAL:  Cleared CAN HW Receive Overflow.  
+[sudo-1]  (VMXCAN.cpp [480])
+[sudo-1] Wed Aug 26 12:01:12 2026 - WARN :  VMX HAL:  CAN HW Receive Overflow detected.  Packets remaining:  2
+[sudo-1]  (VMXCAN.cpp [351])
+[sudo-1] Wed Aug 26 12:01:12 2026 - INFO :  VMX HAL:  Cleared CAN HW Receive Overflow.  
+[sudo-1]  (VMXCAN.cpp [480])
+[ekf_node-7] Failed to meet update rate! Took 0.082892087000000003183seconds. Try decreasing the rate, limiting sensor output frequency, or limiting the number of sensors.
+[WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
+[INFO] [sync_slam_toolbox_node-8]: sending signal 'SIGINT' to process[sync_slam_toolbox_node-8]
+[INFO] [ekf_node-7]: sending signal 'SIGINT' to process[ekf_node-7]
+[INFO] [lidar_merger_node-6]: sending signal 'SIGINT' to process[lidar_merger_node-6]
+[ERROR] [sync_slam_toolbox_node-8]: process has died [pid 8847, exit code -2, cmd '/opt/ros/humble/lib/slam_toolbox/sync_slam_toolbox_node --ros-args -r __node:=slam_toolbox --params-file /home/vmx/skill23_ws/studio_maps/allterrain3/slam_params.yaml'].
+[INFO] [allterrain_node-5]: sending signal 'SIGINT' to process[allterrain_node-5]
+[ERROR] [ekf_node-7]: process has died [pid 8823, exit code -2, cmd '/opt/ros/humble/lib/robot_localization/ekf_node --ros-args -r __node:=ekf_filter_node --params-file /home/vmx/skill23_ws/install/allterrain/share/allterrain/config/ekf_allterrain.yaml'].
+[INFO] [ydlidar_ros2_driver_node-4]: sending signal 'SIGINT' to process[ydlidar_ros2_driver_node-4]
+[INFO] [ydlidar_ros2_driver_node-3]: sending signal 'SIGINT' to process[ydlidar_ros2_driver_node-3]
+[INFO] [robot_state_publisher-2]: sending signal 'SIGINT' to process[robot_state_publisher-2]
+[INFO] [sudo-1]: sending signal 'SIGINT' to process[sudo-1]
+[robot_state_publisher-2] [INFO] [1787725907.384840497] [rclcpp]: signal_handler(signum=2)
+[ERROR] [robot_state_publisher-2]: process has died [pid 8696, exit code -2, cmd '/opt/ros/humble/lib/robot_state_publisher/robot_state_publisher --ros-args -r __node:=robot_state_publisher --params-file /tmp/launch_params_vtbw37dg'].
+[lidar_merger_node-6] [INFO] [1787725907.384868219] [rclcpp]: signal_handler(signum=2)
+[ydlidar_ros2_driver_node-4] [INFO] [1787725907.385141547] [rclcpp]: signal_handler(signum=2)
+[ydlidar_ros2_driver_node-3] [INFO] [1787725907.387291120] [rclcpp]: signal_handler(signum=2)
+[sudo-1] Signal 2 received by PIGPIOClient::signal_func().
+[sudo-1] /usr/local/lib/vmxpi/libvmxpi_hal_cpp.so(_ZN12PIGPIOClient11signal_funcEiPv+0x254) [0xffff8ebb1734]
+[sudo-1] /usr/local/lib/vmxpi/libvmxpi_hal_cpp.so(+0xcb0dc) [0xffff8ebfb0dc]
+[sudo-1] linux-vdso.so.1(__kernel_rt_sigreturn+0) [0xffff8f4b97dc]
+[sudo-1] /lib/aarch64-linux-gnu/libc.so.6(+0x7e540) [0xffff8e4ce540]
+[sudo-1] linux-vdso.so.1(__kernel_rt_sigreturn+0) [0xffff8f4b97dc]
+[sudo-1] /lib/aarch64-linux-gnu/libgcc_s.so.1(+0xe058) [0xffff8e60e058]
+[sudo-1] /lib/aarch64-linux-gnu/libgcc_s.so.1(_Unwind_ForcedUnwind+0x60) [0xffff8e60e904]
+[sudo-1] /lib/aarch64-linux-gnu/libc.so.6(+0x89098) [0xffff8e4d9098]
+[sudo-1] /lib/aarch64-linux-gnu/libc.so.6(+0x7c90c) [0xffff8e4cc90c]
+[sudo-1] /lib/aarch64-linux-gnu/libc.so.6(read+0x5c) [0xffff8e52babc]
+[sudo-1] /usr/local/lib/vmxpi/libvmxpi_hal_cpp.so(+0xdf6a0) [0xffff8ec0f6a0]
+[sudo-1] /lib/aarch64-linux-gnu/libc.so.6(+0x803c8) [0xffff8e4d03c8]
+[sudo-1] /lib/aarch64-linux-gnu/libc.so.6(+0xe9edc) [0xffff8e539edc]
+[sudo-1]   linux-vdso.so.1                ( __kernel_rt_sigreturn                     + 0     )  [0xffff8f4b97dc]
+[sudo-1]   /lib/aarch64-linux-gnu/libgcc_s.so.1 (                                           + 0xe058)  [0xffff8e60e058]
+[sudo-1]   /lib/aarch64-linux-gnu/libgcc_s.so.1 ( _Unwind_ForcedUnwind                      + 0x60  )  [0xffff8e60e904]
+[sudo-1]   /lib/aarch64-linux-gnu/libc.so.6 (                                           + 0x89098)  [0xffff8e4d9098]
+[sudo-1]   /lib/aarch64-linux-gnu/libc.so.6 (                                           + 0x7c90c)  [0xffff8e4cc90c]
+[sudo-1]   /lib/aarch64-linux-gnu/libc.so.6 ( read                                      + 0x5c  )  [0xffff8e52babc]
+[sudo-1]   /usr/local/lib/vmxpi/libvmxpi_hal_cpp.so (                                           + 0xdf6a0)  [0xffff8ec0f6a0]
+[sudo-1]   /lib/aarch64-linux-gnu/libc.so.6 (                                           + 0x803c8)  [0xffff8e4d03c8]
+[sudo-1]   /lib/aarch64-linux-gnu/libc.so.6 (                                           + 0xe9edc)  [0xffff8e539edc]
+[sudo-1] Exiting VMX-pi HAL application due to receipt of signal 2 [normal exit].
+[sudo-1] double free or corruption (fasttop)
+[sync_slam_toolbox_node-8] [INFO] [1787725907.392581710] [rclcpp]: signal_handler(signum=2)
+[allterrain_node-5] [INFO] [1787725907.396168035] [rclcpp]: signal_handler(signum=2)
+[ekf_node-7] [INFO] [1787725907.400674435] [rclcpp]: signal_handler(signum=2)
+[ydlidar_ros2_driver_node-3] [INFO] [1787725907.480637742] [ydlidar_front]: [YDLIDAR INFO] Now YDLIDAR is stopping .......
+[ydlidar_ros2_driver_node-3] [2026-08-26 12:01:47][info] Now lidar scanning has stopped!
+[ydlidar_ros2_driver_node-4] [INFO] [1787725907.533808936] [ydlidar_back]: [YDLIDAR INFO] Now YDLIDAR is stopping .......
+[ydlidar_ros2_driver_node-4] [2026-08-26 12:01:47][info] Now lidar scanning has stopped!
+[lidar_merger_node-6] [INFO] [1787725907.751091372] [rclcpp]: signal_handler(signum=2)
+[allterrain_node-5] [INFO] [1787725907.796391023] [rclcpp]: signal_handler(signum=2)
+[ydlidar_ros2_driver_node-4] [INFO] [1787725907.819169559] [rclcpp]: signal_handler(signum=2)
+[ydlidar_ros2_driver_node-3] [INFO] [1787725907.829456337] [rclcpp]: signal_handler(signum=2)
+[INFO] [lidar_merger_node-6]: process has finished cleanly [pid 8707]
+[INFO] [allterrain_node-5]: process has finished cleanly [pid 8704]
+[ERROR] [sudo-1]: process has died [pid 8694, exit code -6, cmd 'sudo -E /home/vmx/skill23_ws/install/studica_control/lib/studica_control/manual_composition --ros-args -r __node:=control_server --params-file /home/vmx/skill23_ws/install/skill23_studio/share/skill23_studio/config/hw_params/hw_params_allterrain.yaml'].
+[INFO] [ydlidar_ros2_driver_node-4]: process has finished cleanly [pid 8701]
+[INFO] [ydlidar_ros2_driver_node-3]: process has finished cleanly [pid 8699]

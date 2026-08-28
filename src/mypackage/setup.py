@@ -33,6 +33,7 @@ setup(
             'light_tower_play = mypackage.light_tower_play:main',
             'merged_scan_clearance = mypackage.merged_scan_clearance:main',
             'oms_node = mypackage.oms_node:main',
+            'oms_joy_node = mypackage.oms_joy_node:main',
         ],
     },
 )

@@ -1,7 +1,11 @@
-"""Arena-live localization only (no planner / mission).
+"""Arena-live localization only (no planner / mission / world model).
 
-Starts hardware, lidars, EKF, world model (map), and AMCL so the robot
-localizes on a saved studio map. Used by Skill23 Studio "Arena (live)".
+Hardware + lidars + EKF, then Nav2 map_server + skill23_amcl using
+skill23_studio/config/amcl.yaml (the same AMCL file as custom-nav).
+
+Stock nav2_amcl + nav2_params hangs after "Creating" and never advertises
+amcl/get_state (see localize.log). skill23_amcl is a plain node that
+self-configures — do not put it under lifecycle_manager.
 
   ros2 launch skill23_studio studio_localize.launch.py \\
     robot:=grip map:=/home/vmx/skill23_ws/studio_maps/test1/map.yaml
@@ -10,12 +14,15 @@ localizes on a saved studio map. Used by Skill23 Studio "Arena (live)".
 from __future__ import annotations
 
 import os
+import tempfile
 
+import yaml
 from ament_index_python.packages import get_package_prefix, get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
     ExecuteProcess,
+    LogInfo,
     OpaqueFunction,
     SetEnvironmentVariable,
     TimerAction,
@@ -32,17 +39,34 @@ def _node(package, executable, name, **kwargs):
 
 
 def _control_server_cmd(exec_path, hw_params, cpus='2,3'):
-    """Same as slam_tele: sudo -E <binary> --ros-args … (no env PATH= wrapper).
-
-    Pinned like the nav launch: the HAL's SCHED_FIFO SPI poll would otherwise
-    preempt AMCL on whichever core it lands on.
-    """
     return [
         'sudo', '-E', 'taskset', '-c', cpus, exec_path,
         '--ros-args',
         '-r', '__node:=control_server',
         '--params-file', hw_params,
     ]
+
+
+def _write_map_yaml(src_yaml: str) -> str:
+    """Keep PGM 205 (unknown) as OccupancyGrid -1, not free/white.
+
+    map_server occ = (255 - pixel) / 255. PGM unknown 205 → 0.196.
+    free_thresh 0.25 therefore classifies unknown as free.
+    """
+    with open(src_yaml, 'r', encoding='utf-8') as handle:
+        cfg = yaml.safe_load(handle) or {}
+    image = str(cfg.get('image') or 'map.pgm')
+    if not os.path.isabs(image):
+        cfg['image'] = os.path.join(os.path.dirname(os.path.abspath(src_yaml)), image)
+    cfg['mode'] = 'trinary'
+    cfg['negate'] = int(cfg.get('negate') or 0)
+    cfg['free_thresh'] = 0.19
+    cfg['occupied_thresh'] = float(cfg.get('occupied_thresh') or 0.65)
+    tmp = tempfile.NamedTemporaryFile(
+        mode='w', suffix='_studio_map.yaml', delete=False)
+    yaml.dump(cfg, tmp, default_flow_style=False, sort_keys=False)
+    tmp.close()
+    return tmp.name
 
 
 def _setup(context, *args, **kwargs):
@@ -62,12 +86,14 @@ def _setup(context, *args, **kwargs):
     studica_share = get_package_share_directory('studica_control')
     robot_share = get_package_share_directory(robot)
 
-    hw_params = os.path.join(share, 'config', f'hw_params_{robot}.yaml')
+    hw_params = os.path.join(share, 'config', 'hw_params', f'hw_params_{robot}.yaml')
+    if not os.path.isfile(hw_params):
+        raise RuntimeError(f'Missing HW params: {hw_params}')
     amcl_params = os.path.join(share, 'config', 'amcl.yaml')
     if not os.path.isfile(amcl_params):
-        raise RuntimeError(f"Missing {amcl_params}")
+        raise RuntimeError(f'Missing AMCL params: {amcl_params}')
+    loc_map_yaml = _write_map_yaml(map_yaml)
 
-    # Same EKF as mapping (slam_tele): full holonomic for xdrive/mecanum.
     ekf_yaml = ekf_yaml_for_robot(robot, navigation=False)
 
     exec_path = os.path.join(
@@ -92,11 +118,12 @@ def _setup(context, *args, **kwargs):
         with open(urdf_file, 'r', encoding='utf-8') as f:
             robot_desc = f.read()
 
-    map_params = [{'map': map_yaml}]
-    actions = []
-
-    actions.append(ExecuteProcess(
-        cmd=_control_server_cmd(exec_path, hw_params), output='screen'))
+    actions = [
+        LogInfo(msg=(
+            f'[studio_localize] robot={robot} map={map_yaml} '
+            f'skill23_amcl params={amcl_params}')),
+        ExecuteProcess(cmd=_control_server_cmd(exec_path, hw_params), output='screen'),
+    ]
 
     if robot_desc:
         actions.append(_node(
@@ -106,10 +133,14 @@ def _setup(context, *args, **kwargs):
 
     actions.append(_node(drive[0], drive[1], drive[2]))
 
-    # World model → /map + /custom_nav/world/ready (AMCL waits on this)
+    # Studica gamepad reads /joy — without this the stick never moves the robot
+    # and idle zeros are not the issue (component already latches one zero).
     actions.append(_node(
-        'skill23_studio', 'cn_world_model', 'cn_world_model',
-        parameters=map_params,
+        'joy', 'joy_node', 'studio_joy_node',
+        parameters=[{
+            'autorepeat_rate': 20.0,
+            'deadzone': 0.08,
+        }],
     ))
 
     actions.append(TimerAction(period=1.5, actions=[
@@ -144,11 +175,41 @@ def _setup(context, *args, **kwargs):
             _node('allterrain', 'lidar_merger_node', 'lidar_merger_node'),
         ]))
 
-    amcl_delay = 6.0 if enable_lidar else 3.0
-    actions.append(TimerAction(period=amcl_delay, actions=[
+    loc_delay = 6.5 if enable_lidar else 3.0
+    actions.append(TimerAction(period=loc_delay, actions=[
+        LogInfo(msg=f'[studio_localize] map_server yaml={loc_map_yaml}'),
+        _node(
+            'nav2_map_server', 'map_server', 'map_server',
+            parameters=[{
+                'use_sim_time': False,
+                'yaml_filename': loc_map_yaml,
+                'topic_name': 'map',
+                'frame_id': 'map',
+            }],
+        ),
+        _node(
+            'nav2_lifecycle_manager', 'lifecycle_manager',
+            'lifecycle_manager_localization',
+            parameters=[{
+                'use_sim_time': False,
+                'autostart': True,
+                'node_names': ['map_server'],
+                'bond_timeout': 60.0,
+            }],
+        ),
+    ]))
+    # skill23_amcl is not a lifecycle node. Wait for map_server to latch /map.
+    actions.append(TimerAction(period=loc_delay + 2.0, actions=[
+        LogInfo(msg='[studio_localize] starting skill23_amcl (wait_for_world_ready=false)'),
         _node(
             'skill23_amcl', 'amcl', 'amcl',
-            parameters=[amcl_params],
+            parameters=[
+                amcl_params,
+                {
+                    'wait_for_world_ready': False,
+                    'use_sim_time': False,
+                },
+            ],
         ),
     ]))
 

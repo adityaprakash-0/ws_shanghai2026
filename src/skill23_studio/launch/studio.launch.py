@@ -7,7 +7,7 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, LogInfo, RegisterEventHandler
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, LogInfo, RegisterEventHandler, SetEnvironmentVariable
 from launch.event_handlers import OnShutdown
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -21,6 +21,7 @@ def generate_launch_description():
         stop_sh = os.path.expanduser(
             '~/skill23_ws/src/skill23_studio/scripts/stop_studio_stack.sh')
     return LaunchDescription([
+        SetEnvironmentVariable('FASTDDS_BUILTIN_TRANSPORTS', 'UDPv4'),
         DeclareLaunchArgument('http_port', default_value='8083'),
         Node(
             package='skill23_studio',

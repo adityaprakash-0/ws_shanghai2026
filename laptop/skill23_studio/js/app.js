@@ -16,11 +16,13 @@
     sequenceBuilder: [],
     sequences: JSON.parse(localStorage.getItem(SEQ_LS) || '{}'),
     deployInFlight: false,
+    deployModule: 'nav',
     waypointInputMode: 'live',
     simActive: false,
     simPoints: [],
     simStyle: 'planned',   // planned | smoothed — which sim path to draw
     lastHwAlert: '',
+    localizeRunning: false,
   };
 
   const $ = (id) => document.getElementById(id);
@@ -28,6 +30,7 @@
   /** Button ids that start nav — disable together while one is working. */
   const DEPLOY_BTN_IDS = [
     'btnDeployNav2',
+    'btnDeployNav2Cam',
   ];
 
   function setButtonLoading(btn, loading, busyText) {
@@ -131,6 +134,7 @@
     create: $('view-create'),
     import: $('view-import'),
     mode: $('view-mode'),
+    deployPick: $('view-deploy-pick'),
     stage: $('view-stage'),
   };
 
@@ -142,11 +146,16 @@
   function setPhase(phase) {
     state.phase = phase;
     if (state.simActive && phase !== 'deploy') exitSim();
-    $('phasePill').textContent = phase;
+    $('phasePill').textContent = phase === 'deploy-pick'
+      ? 'Choose deploy'
+      : (phase === 'deploy'
+        ? (state.deployModule === 'commission' ? 'Commissioning' : 'Navigation')
+        : phase);
     const mapping = phase === 'mapping';
     const improve = phase === 'improve';
     const waypoints = phase === 'waypoints';
     const deploy = phase === 'deploy';
+    const deployPick = phase === 'deploy-pick';
     const stage = mapping || improve || waypoints || deploy;
     const stageView = document.getElementById('view-stage');
     if (stageView) stageView.classList.toggle('deploy-layout', deploy);
@@ -163,10 +172,21 @@
       || deploy);
     const poseRow = $('improvePoseRow');
     if (poseRow) poseRow.style.display = (improve && state.mode === 'arena') ? '' : 'none';
+    const wpPoseRow = $('wpPoseRow');
+    if (wpPoseRow) wpPoseRow.style.display = (waypoints && state.mode === 'arena') ? '' : 'none';
+    const locBox = $('localizeControls');
+    if (locBox) locBox.hidden = !(waypoints && state.mode === 'arena');
     const nsp = $('nodeStatusPanel');
     if (nsp) nsp.hidden = !deploy;
+    const dap = $('detectAlignPanel');
+    if (dap) dap.hidden = !(deploy && state.deployModule === 'commission');
     const hud = $('deployHud');
-    if (hud) hud.hidden = !deploy;
+    if (hud) {
+      hud.hidden = !deploy;
+      hud.classList.toggle('module-nav', deploy && state.deployModule !== 'commission');
+      hud.classList.toggle('module-commission', deploy && state.deployModule === 'commission');
+    }
+    applyDeployModuleUi();
 
     if (stage) {
       showView('stage');
@@ -186,6 +206,8 @@
         refreshSeqSelect();
         bindToolButtons();
       }
+    } else if (deployPick) {
+      showView('deployPick');
     }
     const topBat = $('batteryWidget');
     if (topBat) topBat.style.display = deploy ? 'none' : '';
@@ -358,6 +380,97 @@
       + `<div class="ns-detail">${r.detail}</div></div></li>`).join('');
   }
 
+  function renderDetectAlign(t) {
+    const d = t.detect_align || {};
+    const oms = t.oms || {};
+    const stateEl = $('daState');
+    if (!stateEl) return;
+    const st = String(d.state || 'idle');
+    stateEl.textContent = st;
+    const aligned = $('daAligned');
+    if (aligned) {
+      aligned.textContent = d.aligned
+        ? `yes${d.stopped ? ' · stopped' : ''}`
+        : (st === 'idle' ? '—' : 'no');
+    }
+    const omsEl = $('daOms');
+    if (omsEl) {
+      const ang = Number(d.oms_angle_deg != null ? d.oms_angle_deg : oms.angle_deg);
+      const homed = oms.homed === true;
+      const omsState = String(oms.state || '');
+      if (Number.isFinite(ang)) {
+        omsEl.textContent = `${ang.toFixed(1)}°${homed ? '' : ' · homing'}${omsState && omsState !== 'idle' ? ` · ${omsState}` : ''}`;
+      } else {
+        omsEl.textContent = omsState || '—';
+      }
+    }
+    const depth = $('daDepth');
+    if (depth) {
+      const optical = Number(d.depth_m);
+      const horiz = Number(d.depth_horizontal_m);
+      if (Number.isFinite(optical)) {
+        depth.textContent = Number.isFinite(horiz)
+          ? `${optical.toFixed(3)} m  (horiz ${horiz.toFixed(3)} m)`
+          : `${optical.toFixed(3)} m`;
+      } else {
+        depth.textContent = '—';
+      }
+    }
+    const obj = $('daObject');
+    if (obj) {
+      const name = d.class_name || '';
+      const conf = Number(d.conf);
+      const bits = [];
+      if (name) bits.push(name);
+      if (Number.isFinite(conf)) bits.push(`${Math.round(conf * 100)}%`);
+      obj.textContent = bits.join(' · ') || '—';
+    }
+    const grip = $('daGrip');
+    if (grip) {
+      const gu = Number(d.gripper_u);
+      grip.textContent = Number.isFinite(gu) ? `u ${gu.toFixed(3)}` : 'center';
+    }
+    const center = $('daCenter');
+    if (center) {
+      const ox = Number(d.obj_cx);
+      const fx = Number(d.frame_cx);
+      center.textContent = (Number.isFinite(ox) && Number.isFinite(fx))
+        ? `obj ${ox.toFixed(0)}  frame ${fx.toFixed(0)}`
+        : '—';
+    }
+    const uEl = $('daU');
+    if (uEl) {
+      const u = Number(d.u_norm);
+      uEl.textContent = Number.isFinite(u) ? u.toFixed(3) : '—';
+    }
+    const cf = $('daConfirm');
+    if (cf) {
+      cf.textContent = d.confirm_need
+        ? `${d.confirm || 0}/${d.confirm_need}`
+        : '—';
+    }
+    const res = $('daResult');
+    if (res) {
+      if (d.last_ok === true) res.textContent = `PASS  ${d.last_result || ''}`.trim();
+      else if (d.last_ok === false) res.textContent = `FAIL  ${d.last_result || ''}`.trim();
+      else res.textContent = '—';
+    }
+    const hint = $('daHint');
+    if (hint) hint.textContent = d.message || 'Snapshot YOLO + OMS rotate until a Detect+Align waypoint';
+    const log = $('daLog');
+    if (log) {
+      const lines = [
+        d.message || '',
+        Number.isFinite(Number(d.u_norm)) ? `u=${Number(d.u_norm).toFixed(3)}` : '',
+        Number.isFinite(Number(d.oms_angle_deg != null ? d.oms_angle_deg : oms.angle_deg))
+          ? `oms=${Number(d.oms_angle_deg != null ? d.oms_angle_deg : oms.angle_deg).toFixed(1)}°`
+          : '',
+        d.last_result ? `result ${d.last_ok ? 'ok' : 'fail'}: ${d.last_result}` : '',
+      ].filter(Boolean);
+      log.textContent = lines.join('\n') || '—';
+    }
+  }
+
   function onTelemetry(t) {
     state.telemetry = t;
     setConnected(true);
@@ -430,6 +543,7 @@
     }
 
     renderNodeStatus(t);
+    renderDetectAlign(t);
 
     const logRunning = $('logRunning');
     if (logRunning) logRunning.textContent = `running: ${(t.logs && t.logs.running) || '—'}`;
@@ -441,8 +555,10 @@
       setLog('logLocalize', t.logs.localize);
       setLog('logSlam', t.logs.slam);
       setLog('logNav', t.logs.nav);
+      setLog('logDetectAlign', t.logs.detect_align);
       setLog('logOrbbec', t.logs.camera);
     }
+    updateLocalizeButtons(t.stacks || {});
     const cam = t.camera || {};
     const camHint = $('camHint');
     if (camHint) {
@@ -474,6 +590,23 @@
       t.pose ? `(${t.pose.x.toFixed(2)}, ${t.pose.y.toFixed(2)}) yaw=${t.pose.yaw.toFixed(2)}` : 'no pose',
       t.map ? `res=${Number(t.map.resolution).toFixed(3)}m` : '',
     ].filter(Boolean).join(' · ');
+  }
+
+  function updateLocalizeButtons(stacks) {
+    const running = !!(stacks && stacks.localize);
+    state.localizeRunning = running;
+    const start = $('btnStartLocalize');
+    const stop = $('btnStopLocalize');
+    if (start && !start.classList.contains('loading')) {
+      start.disabled = running;
+      start.title = running ? 'Localize already running' : 'Start map_server + AMCL';
+    }
+    if (stop && !stop.classList.contains('loading')) {
+      stop.disabled = !running;
+      stop.title = running ? 'Stop localization' : 'Localize already stopped';
+    }
+    const hint = $('locHint');
+    if (hint) hint.textContent = running ? 'Localize: running' : 'Localize: stopped';
   }
 
   document.querySelectorAll('[data-go]').forEach((btn) => {
@@ -556,32 +689,77 @@
     } catch (_) {}
 
     if (mode === 'arena') {
-      try {
-        const res = await StudioApi.localizeStart({
-          map_name: state.mapName,
-          robot: state.robot,
-        });
-        await StudioApi.phase('improve');
-        setPhase('improve');
-        StudioMap.setShowTrail(true);
-        alert(
-          'Arena live started (AMCL localization).\n'
-          + 'Wait ~8s for lidars + pose, then Set pose if needed.\n'
-          + 'Edit map if you want → Next: Waypoints → Deploy starts custom nav.\n'
-          + (res.log ? `Log: ${res.log}` : ''));
-      } catch (e) {
-        alert(`Could not start arena localization:\n${e.message}`);
-        return;
-      }
+      await StudioApi.phase('waypoints');
+      setPhase('waypoints');
+      StudioMap.setShowTrail(false);
     } else {
       await StudioApi.phase('improve');
       setPhase('improve');
     }
   }
   $('btnModeArena').onclick = (ev) => runWithLoading(
-    ev.currentTarget, () => pickMode('arena'), 'Starting arena…');
+    ev.currentTarget, () => pickMode('arena'), 'Opening…');
   $('btnModeOffline').onclick = (ev) => runWithLoading(
     ev.currentTarget, () => pickMode('offline'), 'Loading…');
+
+  const btnStartLoc = $('btnStartLocalize');
+  if (btnStartLoc) {
+    btnStartLoc.onclick = async (ev) => {
+      if (state.localizeRunning) {
+        alert('Localize is already running.');
+        updateLocalizeButtons({ localize: true });
+        return;
+      }
+      await runWithLoading(ev.currentTarget, async () => {
+        if (state.localizeRunning) {
+          alert('Localize is already running.');
+          return;
+        }
+        if (!state.mapName) return alert('No map selected');
+        const res = await StudioApi.localizeStart({
+          map_name: state.mapName,
+          robot: state.robot,
+        });
+        if (res.already) {
+          alert('Localize is already running.');
+          state.localizeRunning = true;
+          return;
+        }
+        state.localizeRunning = true;
+        StudioMap.setShowTrail(true);
+        alert(
+          'Started map_server + AMCL.\n'
+          + 'Wait ~8s for lidars, then Set pose if the robot is off the map.\n'
+          + 'Drive with teleop. At each stop, click Save waypoint (x, y, z, yaw).');
+      }, 'Starting localize…');
+      updateLocalizeButtons({ localize: state.localizeRunning });
+    };
+  }
+  const btnStopLoc = $('btnStopLocalize');
+  if (btnStopLoc) {
+    btnStopLoc.onclick = async (ev) => {
+      if (!state.localizeRunning) {
+        alert('Localize is already stopped.');
+        updateLocalizeButtons({ localize: false });
+        return;
+      }
+      await runWithLoading(ev.currentTarget, async () => {
+        if (!state.localizeRunning) {
+          alert('Localize is already stopped.');
+          return;
+        }
+        const res = await StudioApi.localizeStop();
+        if (res.already) {
+          alert('Localize is already stopped.');
+          state.localizeRunning = false;
+          return;
+        }
+        state.localizeRunning = false;
+        StudioMap.setShowTrail(false);
+      }, 'Stopping localize…');
+      updateLocalizeButtons({ localize: state.localizeRunning });
+    };
+  }
 
   bindLoading('btnRemap', async () => {
     if (!confirm('Remap clears the live SLAM map. Continue?')) return;
@@ -627,6 +805,7 @@
       state.waypoints.push({
         x: +x.toFixed(3),
         y: +y.toFixed(3),
+        z: 0,
         yaw: +yaw.toFixed(3),
         name: `wp${state.waypoints.length + 1}`,
       });
@@ -889,27 +1068,22 @@
   }, 'Loading…');
 
   async function finishImproveToDeploy() {
-    const res = await goDeploy({ saveCurrent: true });
+    const res = await openDeployPicker({ saveCurrent: true });
     if (res && res.busy) {
       alert('Deploy already opening — please wait.');
       return;
     }
-    alert(
-      'Deploy ready. Localization stopped.\n'
-      + 'Use Start nav stack or Deploy with camera to launch nav.');
   }
   bindLoading('btnFinishImprove', () => finishImproveToDeploy(), 'Opening deploy…');
 
   bindLoading('btnSkipWaypoints', async () => {
     const wps = await loadSavedWaypoints();
-    const res = await goDeploy({ saveCurrent: false });
+    const res = await openDeployPicker({ saveCurrent: false });
     if (res && res.busy) {
       alert('Deploy already opening — please wait.');
       return;
     }
-    alert(
-      `Skipped waypoint editing — loaded ${wps.length} saved waypoint(s).\n`
-      + 'Use Start nav stack or Deploy with camera to launch nav.');
+    alert(`Skipped waypoint editing — loaded ${wps.length} saved waypoint(s).`);
   }, 'Opening deploy…');
 
   bindLoading('btnReloadWp', async () => {
@@ -919,11 +1093,19 @@
 
   function renderWpList() {
     $('wpList').innerHTML = state.waypoints.map((w, i) => {
-      const wait = w.action && w.action.type === 'wait'
-        ? ` · wait ${Math.max(0, Number(w.action.seconds) || 0)}s`
-        : '';
-      return `<li>${i + 1}. (${w.x}, ${w.y}) ${Math.round(((w.yaw || 0) * 180) / Math.PI)}°`
-        + ` (${(w.yaw || 0).toFixed(2)} rad)${wait}</li>`;
+      const tag = w.sticker ? ` [${String(w.sticker).toUpperCase()}]` : '';
+      let task = '';
+      if (w.action && w.action.type === 'wait') {
+        task = ` · wait ${Math.max(0, Number(w.action.seconds) || 0)}s`;
+      } else if (w.action && w.action.type === 'detect_align') {
+        task = ' · detect+align';
+      } else if (w.action && w.action.type === 'align') {
+        task = ' · align yaw';
+      } else if (w.action && w.action.type === 'align_move') {
+        task = ` · align+${Number(w.action.distance_m) || 0}m`;
+      }
+      return `<li>${i + 1}.${tag} (${w.x}, ${w.y}, ${w.z ?? 0}) ${Math.round(((w.yaw || 0) * 180) / Math.PI)}°`
+        + ` (${(w.yaw || 0).toFixed(2)} rad)${task}</li>`;
     }).join('');
     renderWpTaskEditors();
   }
@@ -933,7 +1115,7 @@
       const p = state.lastPose;
       if (!p) return alert('No live pose yet');
       state.waypoints.push({
-        x: p.x, y: p.y, yaw: p.yaw,
+        x: p.x, y: p.y, z: p.z ?? 0, yaw: p.yaw,
         name: `wp${state.waypoints.length + 1}`,
       });
     }
@@ -950,26 +1132,21 @@
   }, 'Clearing…');
 
   bindLoading('btnToDeploy', async () => {
-    const res = await goDeploy({ saveCurrent: true });
+    const res = await openDeployPicker({ saveCurrent: true });
     if (res && res.busy) {
       alert('Deploy already opening — please wait.');
       return;
     }
-    alert(
-      'Deploy ready. Localization stopped.\n'
-      + 'Use Start nav stack or Deploy with camera to launch nav.');
   }, 'Opening deploy…');
 
   bindLoading('btnSkipWpToDeploy', async () => {
     const wps = await loadSavedWaypoints();
-    const res = await goDeploy({ saveCurrent: false });
+    const res = await openDeployPicker({ saveCurrent: false });
     if (res && res.busy) {
       alert('Deploy already opening — please wait.');
       return;
     }
-    alert(
-      `Using ${wps.length} saved waypoint(s) (edits discarded).\n`
-      + 'Use Start nav stack or Deploy with camera to launch nav.');
+    alert(`Using ${wps.length} saved waypoint(s) (edits discarded).`);
   }, 'Opening deploy…');
 
   function renderDeployWpStrip() {
@@ -1027,41 +1204,103 @@
     refreshSeqSelect();
   }
 
+  function isCommission() {
+    return state.deployModule === 'commission';
+  }
+
+  function nextSticker(kind) {
+    const prefix = kind === 'drop' ? 'd' : 'p';
+    const used = new Set(
+      (state.waypoints || [])
+        .map((w) => String(w.sticker || '').trim().toLowerCase())
+        .filter(Boolean),
+    );
+    let n = 1;
+    while (used.has(prefix + n)) n += 1;
+    return prefix + n;
+  }
+
+  function applyDeployModuleUi() {
+    const hud = $('deployHud');
+    if (hud) {
+      hud.classList.toggle('module-nav', !isCommission());
+      hud.classList.toggle('module-commission', isCommission());
+    }
+    const badge = $('deployModuleBadge');
+    if (badge) {
+      badge.textContent = isCommission()
+        ? 'Commissioning'
+        : 'Navigation and localisation';
+    }
+    const hint = $('missionSourceHint');
+    if (hint && state.phase === 'deploy') {
+      hint.innerHTML = isCommission()
+        ? 'Commissioning: Start Nav2+camera, then Start mission. Per WP use Wait or Detect+Align. Stickers P1/D1 mark pick/drop.'
+        : 'Navigation: Start Nav2, then Start mission. Per WP: Wait, Align (saved yaw), or Align+distance. Physical START = Titan1 m3 limit_rev.';
+    }
+    const dap = $('detectAlignPanel');
+    if (dap) dap.hidden = !(state.phase === 'deploy' && isCommission());
+  }
+
   function renderWpTaskEditors() {
     const box = $('wpTaskList');
     if (!box) return;
     box.innerHTML = '';
+    const commission = isCommission();
 
     state.waypoints.forEach((wp, i) => {
-      const action = wp.action && ['wait', 'us_align', 'cobra_align'].includes(wp.action.type)
-        ? wp.action
-        : { type: 'none' };
+      const type = (wp.action && wp.action.type) || 'wait';
+      const known = commission
+        ? (['wait', 'detect_align'].includes(type) ? wp.action : { type: 'wait', seconds: 0 })
+        : (['wait', 'align', 'align_move'].includes(type)
+          ? wp.action
+          : { type: 'wait', seconds: 0 });
       const card = document.createElement('div');
       card.className = 'wp-task-card';
+      let extra = '';
+      if (known.type === 'wait') {
+        extra = '<label>Seconds</label>'
+          + `<input type="number" min="0" step="0.5" data-seconds value="${Math.max(0, Number(known.seconds) || 0)}">`;
+      } else if (known.type === 'align_move') {
+        extra = '<label>Distance (m)</label>'
+          + `<input type="number" min="0.03" max="5" step="0.01" data-dist value="${Math.max(0.03, Number(known.distance_m) || 0.15)}">`;
+      }
+      const sticker = String(wp.sticker || '').toUpperCase();
+      const stickerRow = commission
+        ? '<div class="wp-sticker-row">'
+          + `<button type="button" class="chip ${sticker.startsWith('P') ? 'sticker-p' : ''}" data-sticker="pick">Pick ${sticker.startsWith('P') ? sticker : ''}</button>`
+          + `<button type="button" class="chip ${sticker.startsWith('D') ? 'sticker-d' : ''}" data-sticker="drop">Drop ${sticker.startsWith('D') ? sticker : ''}</button>`
+          + '<button type="button" class="chip" data-sticker="clear">Clear</button>'
+          + '</div>'
+        : '';
+      const taskOpts = commission
+        ? (`<option value="wait" ${known.type === 'wait' ? 'selected' : ''}>Wait</option>`
+          + `<option value="detect_align" ${known.type === 'detect_align' ? 'selected' : ''}>Detect+Align</option>`)
+        : (`<option value="wait" ${known.type === 'wait' ? 'selected' : ''}>Wait</option>`
+          + `<option value="align" ${known.type === 'align' ? 'selected' : ''}>Align (saved yaw)</option>`
+          + `<option value="align_move" ${known.type === 'align_move' ? 'selected' : ''}>Align + distance</option>`);
       card.innerHTML =
-        `<header>Waypoint ${i + 1}</header>`
+        `<header>Waypoint ${i + 1}${sticker ? ` · ${sticker}` : ''}</header>`
         + '<label>Task</label>'
-        + '<select data-task>'
-        + `<option value="none" ${!['wait','us_align','cobra_align'].includes(action.type) ? 'selected' : ''}>No task</option>`
-        + `<option value="wait" ${action.type === 'wait' ? 'selected' : ''}>Wait</option>`
-        + `<option value="us_align" ${action.type === 'us_align' ? 'selected' : ''}>US Align</option>`
-        + `<option value="cobra_align" ${action.type === 'cobra_align' ? 'selected' : ''}>Cobra Align</option>`
-        + '</select>'
-        + (action.type === 'wait'
-          ? '<label>Seconds</label>'
-            + `<input type="number" min="0" step="0.5" data-seconds value="${Math.max(0, Number(action.seconds) || 0)}">`
-          : '');
+        + `<select data-task>${taskOpts}</select>`
+        + extra
+        + stickerRow;
 
       card.querySelector('[data-task]').onchange = (event) => {
         const val = event.target.value;
         if (val === 'wait') {
           wp.action = { type: 'wait', seconds: 3 };
-        } else if (val === 'us_align' || val === 'cobra_align') {
-          wp.action = { type: val };
+        } else if (val === 'detect_align') {
+          wp.action = { type: 'detect_align' };
+        } else if (val === 'align') {
+          wp.action = { type: 'align' };
+        } else if (val === 'align_move') {
+          wp.action = { type: 'align_move', distance_m: 0.15 };
         } else {
-          delete wp.action;
+          wp.action = { type: 'wait', seconds: 0 };
         }
         renderWpList();
+        StudioMap.setWaypoints(state.waypoints);
         StudioApi.waypointsSave(state.waypoints).catch((error) => console.warn(error));
       };
       const seconds = card.querySelector('[data-seconds]');
@@ -1075,6 +1314,33 @@
           StudioApi.waypointsSave(state.waypoints).catch((error) => console.warn(error));
         };
       }
+      const dist = card.querySelector('[data-dist]');
+      if (dist) {
+        dist.onchange = () => {
+          wp.action = {
+            type: 'align_move',
+            distance_m: Math.max(0.03, Math.min(5, Number(dist.value) || 0.15)),
+          };
+          renderWpList();
+          StudioApi.waypointsSave(state.waypoints).catch((error) => console.warn(error));
+        };
+      }
+      card.querySelectorAll('[data-sticker]').forEach((btn) => {
+        btn.onclick = () => {
+          const kind = btn.getAttribute('data-sticker');
+          if (kind === 'clear') wp.sticker = '';
+          else if (kind === 'pick' && String(wp.sticker || '').toLowerCase().startsWith('p')) {
+            wp.sticker = '';
+          } else if (kind === 'drop' && String(wp.sticker || '').toLowerCase().startsWith('d')) {
+            wp.sticker = '';
+          } else {
+            wp.sticker = nextSticker(kind);
+          }
+          renderWpList();
+          StudioMap.setWaypoints(state.waypoints);
+          StudioApi.waypointsSave(state.waypoints).catch((error) => console.warn(error));
+        };
+      });
       box.appendChild(card);
     });
   }
@@ -1085,13 +1351,22 @@
         if (!w || !Number.isFinite(+w.x) || !Number.isFinite(+w.y)) return null;
         const o = { x: +w.x, y: +w.y, yaw: +(w.yaw || 0) };
         if (w.name) o.name = w.name;
-        if (w.action && w.action.type === 'wait') {
+        if (w.sticker) o.sticker = String(w.sticker).trim().toLowerCase();
+        const act = w.action;
+        if (act && act.type === 'wait') {
           o.action = {
             type: 'wait',
-            seconds: Math.max(0, Number(w.action.seconds) || 0),
+            seconds: Math.max(0, Number(act.seconds) || 0),
           };
-        } else if (w.action && (w.action.type === 'us_align' || w.action.type === 'cobra_align')) {
-          o.action = { type: w.action.type };
+        } else if (act && act.type === 'detect_align' && isCommission()) {
+          o.action = { type: 'detect_align' };
+        } else if (act && act.type === 'align' && !isCommission()) {
+          o.action = { type: 'align' };
+        } else if (act && act.type === 'align_move' && !isCommission()) {
+          o.action = {
+            type: 'align_move',
+            distance_m: Math.max(0.03, Math.min(5, Number(act.distance_m) || 0.15)),
+          };
         }
         return o;
       })
@@ -1172,8 +1447,41 @@
     }
   }
 
+  async function openDeployPicker({ saveCurrent = false } = {}) {
+    if (state.deployInFlight) {
+      return { ok: false, busy: true };
+    }
+    state.deployInFlight = true;
+    try {
+      if (saveCurrent) {
+        await StudioApi.waypointsSave(state.waypoints);
+      } else {
+        await loadSavedWaypoints();
+      }
+      if (state.pendingEdits.length) {
+        await StudioApi.mapEdit(state.pendingEdits);
+        state.pendingEdits = [];
+        StudioMap.clearUndo();
+      }
+      try { await StudioApi.mapRestrictions(state.restrictions, false); } catch (_) {}
+      try { await StudioApi.localizeStop(); } catch (_) {}
+      try { await StudioApi.mappingStop(); } catch (_) {}
+      const hint = $('deployPickHint');
+      if (hint) {
+        hint.textContent = `${state.waypoints.length} waypoint(s) on ${state.mapName || 'map'} · ${state.mode}`;
+      }
+      setPhase('deploy-pick');
+      return { ok: true };
+    } finally {
+      state.deployInFlight = false;
+    }
+  }
+
   /** Open the Deploy view only. Nav is started from the Deploy buttons. */
-  async function goDeploy({ saveCurrent = false } = {}) {
+  async function goDeploy({ saveCurrent = false, module = '' } = {}) {
+    if (module === 'nav' || module === 'commission') {
+      state.deployModule = module;
+    }
     if (state.deployInFlight) {
       return { ok: false, busy: true };
     }
@@ -1198,6 +1506,7 @@
       renderDeployWpStrip();
       ensureDefaultSequence();
       refreshSeqSelect();
+      applyDeployModuleUi();
       await syncArmedMission();
       return { ok: true };
     } finally {
@@ -1253,7 +1562,7 @@
     updateSeqPreview();
   };
 
-  async function startDeploy() {
+  async function startDeploy(startCamera = false) {
     if (state.deployInFlight) {
       alert('Deploy already in progress — please wait.');
       return;
@@ -1266,11 +1575,36 @@
         + 'Click Stop nav / stop mapping / stop localize first, then Start Nav2.');
       return;
     }
-    const res = await StudioApi.deployStart({ burn_restrictions: true, stack: 'nav2' });
-    alert(`Nav2 starting (clearance planner + RPP).\n${res.map || ''}`);
+    const camera = isCommission() || !!startCamera;
+    const res = await StudioApi.deployStart({
+      burn_restrictions: true,
+      stack: 'nav2',
+      module: isCommission() ? 'commission' : 'nav',
+      start_camera: camera,
+    });
+    alert(camera
+      ? `Commissioning: Nav2+camera (streams off) + Detect+Align.\n${res.map || ''}`
+      : `Navigation: Nav2 + Align YAML (saved yaw).\n${res.map || ''}`);
   }
 
-  bindLoading('btnDeployNav2', () => startDeploy(), 'Starting Nav2…');
+  bindLoading('btnDeployNav2', () => startDeploy(false), 'Starting Nav2…');
+  bindLoading('btnDeployNav2Cam', () => startDeploy(true), 'Starting Nav2+camera…');
+  bindLoading('btnPickNav', () => goDeploy({ saveCurrent: false, module: 'nav' }), 'Opening…');
+  bindLoading(
+    'btnPickCommission',
+    () => goDeploy({ saveCurrent: false, module: 'commission' }),
+    'Opening…');
+  const btnPickBack = $('btnDeployPickBack');
+  if (btnPickBack) {
+    btnPickBack.onclick = () => {
+      setPhase('waypoints');
+      renderWpList();
+    };
+  }
+  const btnChangeModule = $('btnChangeModule');
+  if (btnChangeModule) {
+    btnChangeModule.onclick = () => setPhase('deploy-pick');
+  }
 
   bindLoading('btnClearCostmaps', async () => {
     const hint = $('costmapHint');

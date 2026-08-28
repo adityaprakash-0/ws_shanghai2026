@@ -5,23 +5,25 @@ running until SPACE (or the stop key) sends zero. Standard servos only
 have two poses each.
 
   Titans (service /titan1/titan_cmd, params=set_speed):
-    Q / E  rotate ACW / CW     motor 0
-    R / F  lift up / down      motor 2
+    Q / E  rotate ACW / CW     titan1 m_2
+    R / F  lift up / down      titan1 m_1
     SPACE  stop rotate + lift + linear (speed 0)
 
-  Servos (service /<name>/set_servo, initparams.speed):
-    T / G  linear fwd / back   continuous; SPACE → 0
-    Y / H  vertical up / down  two angles
-    U / J  rotation horiz/vert two angles
-    I / K  gripper open/close  two angles
+  Servos:
+    T / G  linear fwd / back   topic /linear_servo/cmd (continuous); SPACE → 0
+    Y / H  vertical up / down  service (two angles)
+    U / J  rotation horiz/vert service (two angles)
+    I / K  gripper open/close  service (two angles)
 
-  ros2 launch mypackage oms.launch.py
   ros2 launch mypackage oms.launch.py enable_servos:=true
+  # then in a second terminal (this is where you type):
+  ros2 run mypackage oms_node
 """
 
 from __future__ import annotations
 
 import errno
+import fcntl
 import glob
 import os
 import struct
@@ -31,6 +33,7 @@ from typing import Optional
 
 import rclpy
 from rclpy.node import Node
+from std_msgs.msg import Float64
 from studica_control.srv import SetData
 
 
@@ -52,21 +55,39 @@ KEY_SPACE = 57
 
 INPUT_EVENT = struct.Struct('@llHHi')
 
-ROTATE_MOTOR = 0
-LIFT_MOTOR = 2
+ROTATE_MOTOR = 2
+LIFT_MOTOR = 1
+
+STDIN_ALIASES = {'', 'auto', 'stdin', 'tty', '/dev/tty'}
+
+CHAR_TO_CODE = {
+    'q': KEY_Q, 'Q': KEY_Q,
+    'e': KEY_E, 'E': KEY_E,
+    'r': KEY_R, 'R': KEY_R,
+    'f': KEY_F, 'F': KEY_F,
+    't': KEY_T, 'T': KEY_T,
+    'g': KEY_G, 'G': KEY_G,
+    'y': KEY_Y, 'Y': KEY_Y,
+    'h': KEY_H, 'H': KEY_H,
+    'u': KEY_U, 'U': KEY_U,
+    'j': KEY_J, 'J': KEY_J,
+    'i': KEY_I, 'I': KEY_I,
+    'k': KEY_K, 'K': KEY_K,
+    ' ': KEY_SPACE,
+    '\x1b': KEY_ESC,
+}
 
 
-def find_keyboard_device(requested: str) -> str:
-    if requested:
-        return os.path.realpath(os.path.expanduser(requested))
-
-    keyboards = sorted(glob.glob('/dev/input/by-id/*-event-kbd'))
-    if keyboards:
-        return os.path.realpath(keyboards[0])
-
-    raise RuntimeError(
-        'No keyboard found under /dev/input/by-id. Pass the device explicitly, '
-        'for example: -p device:=/dev/input/event3')
+def find_evdev_keyboard(requested: str) -> Optional[str]:
+    raw = str(requested or '').strip()
+    if raw.lower() in STDIN_ALIASES:
+        for path in sorted(glob.glob('/dev/input/by-id/*-event-kbd')):
+            real = os.path.realpath(path)
+            if 'hdmi' in path.lower() or 'vc4' in real.lower():
+                continue
+            return real
+        return None
+    return os.path.realpath(os.path.expanduser(raw))
 
 
 class OmsNode(Node):
@@ -75,23 +96,28 @@ class OmsNode(Node):
 
         self.declare_parameter('device', '')
         self.declare_parameter('titan_service', '/titan1/titan_cmd')
-        self.declare_parameter('linear_service', '/linear_servo/set_servo')
+        self.declare_parameter('linear_cmd_topic', '/linear_servo/cmd')
+        self.declare_parameter('linear_speed', 30.0)
         self.declare_parameter('vertical_service', '/vertical_servo/set_servo')
         self.declare_parameter('rotation_service', '/rotation_servo/set_servo')
         self.declare_parameter('gripper_service', '/gripper_servo/set_servo')
-        self.declare_parameter('rotate_duty', 0.30)
-        self.declare_parameter('lift_duty', 0.30)
-        self.declare_parameter('linear_speed', 50.0)
-        self.declare_parameter('vertical_up_deg', 90.0)
-        self.declare_parameter('vertical_down_deg', 0.0)
-        self.declare_parameter('rotation_horizontal_deg', 0.0)
-        self.declare_parameter('rotation_vertical_deg', 90.0)
-        self.declare_parameter('gripper_open_deg', 45.0)
-        self.declare_parameter('gripper_close_deg', -45.0)
+        self.declare_parameter('rotate_duty', 0.2)
+        self.declare_parameter('lift_duty', 0.50)
+        self.declare_parameter('rotate_motor', ROTATE_MOTOR)
+        self.declare_parameter('lift_motor', LIFT_MOTOR)
+        self.declare_parameter('vertical_up_deg', 50.0)
+        self.declare_parameter('vertical_down_deg', -40.0)
+        self.declare_parameter('rotation_horizontal_deg', 70.0)
+        self.declare_parameter('rotation_vertical_deg', 170.0)
+        self.declare_parameter('gripper_open_deg', -150.0)
+        self.declare_parameter('gripper_close_deg', 150.0)
 
         self.rotate_duty = float(self.get_parameter('rotate_duty').value)
         self.lift_duty = float(self.get_parameter('lift_duty').value)
-        self.linear_speed = float(self.get_parameter('linear_speed').value)
+        self.rotate_motor = int(self.get_parameter('rotate_motor').value)
+        self.lift_motor = int(self.get_parameter('lift_motor').value)
+        self.linear_speed = max(1.0, min(100.0, abs(float(
+            self.get_parameter('linear_speed').value))))
         self.vertical_up = float(self.get_parameter('vertical_up_deg').value)
         self.vertical_down = float(self.get_parameter('vertical_down_deg').value)
         self.rotation_horizontal = float(
@@ -103,8 +129,6 @@ class OmsNode(Node):
 
         self.titan_cli = self.create_client(
             SetData, str(self.get_parameter('titan_service').value))
-        self.linear_cli = self.create_client(
-            SetData, str(self.get_parameter('linear_service').value))
         self.vertical_cli = self.create_client(
             SetData, str(self.get_parameter('vertical_service').value))
         self.rotation_cli = self.create_client(
@@ -112,22 +136,113 @@ class OmsNode(Node):
         self.gripper_cli = self.create_client(
             SetData, str(self.get_parameter('gripper_service').value))
 
-        self.running = True
-        requested_device = str(self.get_parameter('device').value)
-        self.device = find_keyboard_device(requested_device)
-        self.fd = os.open(self.device, os.O_RDONLY | os.O_NONBLOCK)
+        linear_topic = str(self.get_parameter('linear_cmd_topic').value)
+        self._linear_pub = self.create_publisher(Float64, linear_topic, 10)
+        self._linear_cmd = 0
 
-        self.create_timer(0.005, self._read_events)
+        self.running = True
+        self.fd = -1
+        self._own_fd = False
+        self._tty_settings = None
+        self._use_tty = False
+        requested_device = str(self.get_parameter('device').value)
+        evdev = find_evdev_keyboard(requested_device)
+        if evdev:
+            self.device = evdev
+            self.fd = os.open(self.device, os.O_RDONLY | os.O_NONBLOCK)
+            self._own_fd = True
+            self.create_timer(0.005, self._read_events)
+            source = self.device
+        else:
+            self._open_tty()
+            self.create_timer(0.02, self._read_tty)
+            source = f'terminal ({self.device})'
 
         self.get_logger().info(
-            f'OMS click-to-run on {self.device}\n'
-            '  Q/E  rotate ACW / CW   (titan1 m_0, stays until SPACE)\n'
-            '  R/F  lift up / down    (titan1 m_2, stays until SPACE)\n'
-            '  T/G  linear fwd / back (continuous servo, stays until SPACE)\n'
+            f'OMS click-to-run on {source}\n'
+            f'  Q/E  rotate ACW / CW   (titan1 m_{self.rotate_motor}, stays until SPACE)\n'
+            f'  R/F  lift up / down    (titan1 m_{self.lift_motor}, stays until SPACE)\n'
+            '  T/G  linear fwd / back (continuous −100…100, latches until SPACE)\n'
             '  Y/H  vertical up / down\n'
             '  U/J  rotation horiz / vert\n'
             '  I/K  gripper open / close\n'
-            '  SPACE stop continuous (motors + linear = 0) | ESC quit')
+            '  SPACE stop motors (node stays running) | ESC quit')
+
+    def _open_tty(self) -> None:
+        """Read keys from the SSH/terminal session (no USB keyboard on the Pi)."""
+        if sys.stdin.isatty():
+            self.device = 'stdin'
+            self.fd = sys.stdin.fileno()
+            self._own_fd = False
+            self._use_tty = True
+            self._make_raw(self.fd)
+            return
+        for candidate in ('/dev/tty',):
+            try:
+                fd = os.open(candidate, os.O_RDONLY | os.O_NONBLOCK)
+            except OSError:
+                continue
+            self.device = candidate
+            self.fd = fd
+            self._own_fd = True
+            self._use_tty = True
+            self._make_raw(fd)
+            return
+        raise RuntimeError(
+            'No USB keyboard and this process has no terminal.\n'
+            'Keep HW running, then in a second SSH terminal:\n'
+            '  source ~/skill23_ws/install/setup.bash\n'
+            '  ros2 run mypackage oms_node')
+
+    def _make_raw(self, fd: int) -> None:
+        try:
+            self._tty_settings = termios.tcgetattr(fd)
+            updated = termios.tcgetattr(fd)
+            updated[3] &= ~(termios.ECHO | termios.ICANON)
+            updated[6][termios.VMIN] = 0
+            updated[6][termios.VTIME] = 0
+            termios.tcsetattr(fd, termios.TCSADRAIN, updated)
+            try:
+                flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+                fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+            except OSError:
+                pass
+        except termios.error:
+            self._tty_settings = None
+
+    def _read_tty(self) -> None:
+        if not self.running or self.fd < 0:
+            return
+        try:
+            data = os.read(self.fd, 32)
+        except BlockingIOError:
+            return
+        except OSError as exc:
+            if exc.errno in (errno.EAGAIN, errno.EWOULDBLOCK):
+                return
+            if exc.errno in (errno.ENODEV, errno.EBADF, errno.EIO):
+                self.get_logger().error('Terminal closed; stopping OMS')
+                self._stop_continuous('disconnect')
+                self.running = False
+                rclpy.shutdown()
+            return
+        if not data:
+            return
+        text = data.decode('latin-1', errors='ignore')
+        i = 0
+        while i < len(text):
+            ch = text[i]
+            if ch == '\x1b':
+                if i + 1 < len(text):
+                    i += 3 if text[i + 1] == '[' else 2
+                    continue
+                self._handle_key(KEY_ESC, 1)
+                i += 1
+                continue
+            code = CHAR_TO_CODE.get(ch)
+            if code is not None:
+                self._handle_key(code, 1)
+            i += 1
 
     def _read_events(self) -> None:
         while self.running:
@@ -138,7 +253,7 @@ class OmsNode(Node):
             except OSError as exc:
                 if exc.errno in (errno.ENODEV, errno.EBADF):
                     self.get_logger().error('Keyboard disconnected; stopping OMS')
-                    self._stop_continuous()
+                    self._stop_continuous('disconnect')
                     self.running = False
                     rclpy.shutdown()
                     return
@@ -159,17 +274,17 @@ class OmsNode(Node):
             return
 
         if code == KEY_Q:
-            self._titan(ROTATE_MOTOR, -self.rotate_duty, 'rotate ACW')
+            self._titan(self.rotate_motor, -self.rotate_duty, 'rotate ACW')
         elif code == KEY_E:
-            self._titan(ROTATE_MOTOR, self.rotate_duty, 'rotate CW')
+            self._titan(self.rotate_motor, self.rotate_duty, 'rotate CW')
         elif code == KEY_R:
-            self._titan(LIFT_MOTOR, self.lift_duty, 'lift up')
+            self._titan(self.lift_motor, -self.lift_duty, 'lift up')
         elif code == KEY_F:
-            self._titan(LIFT_MOTOR, -self.lift_duty, 'lift down')
+            self._titan(self.lift_motor, self.lift_duty, 'lift down')
         elif code == KEY_T:
-            self._servo(self.linear_cli, self.linear_speed, 'linear forward')
+            self._linear(-self.linear_speed, 'linear forward')
         elif code == KEY_G:
-            self._servo(self.linear_cli, -self.linear_speed, 'linear backward')
+            self._linear(self.linear_speed, 'linear backward')
         elif code == KEY_Y:
             self._servo(self.vertical_cli, self.vertical_up, 'vertical up')
         elif code == KEY_H:
@@ -183,9 +298,10 @@ class OmsNode(Node):
         elif code == KEY_K:
             self._servo(self.gripper_cli, self.gripper_close, 'gripper close')
         elif code == KEY_SPACE:
-            self._stop_continuous()
+            self._stop_continuous('SPACE')
         elif code == KEY_ESC:
-            self._stop_continuous()
+            self.get_logger().info('ESC: quitting (SPACE only stops motors)')
+            self._stop_continuous('quit')
             self.running = False
             rclpy.shutdown()
 
@@ -200,6 +316,21 @@ class OmsNode(Node):
         future = self.titan_cli.call_async(req)
         future.add_done_callback(
             lambda f, lab=label, d=duty: self._on_done(lab, d, f))
+
+    def _linear(self, speed: float, label: str) -> None:
+        """One cmd on /linear_servo/cmd. Continuous PWM holds until the next cmd.
+
+        Do not stream the same speed — each SetAngle can glitch the pulse.
+        Speed is an int in −100…100; values near 0 are in the servo deadband.
+        """
+        cmd = max(-100, min(100, int(round(speed))))
+        if cmd == self._linear_cmd:
+            return
+        self._linear_cmd = cmd
+        msg = Float64()
+        msg.data = float(cmd)
+        self._linear_pub.publish(msg)
+        self.get_logger().info(f'{label} → {cmd}  (/linear_servo/cmd)')
 
     def _servo(self, client, value: float, label: str) -> None:
         if not client.service_is_ready():
@@ -223,16 +354,24 @@ class OmsNode(Node):
         else:
             self.get_logger().error(f'{label} failed: {resp.message}')
 
-    def _stop_continuous(self) -> None:
-        self._titan(ROTATE_MOTOR, 0.0, 'rotate stop')
-        self._titan(LIFT_MOTOR, 0.0, 'lift stop')
-        self._servo(self.linear_cli, 0.0, 'linear stop')
-        self.get_logger().info('SPACE: continuous axes set to 0')
+    def _stop_continuous(self, reason: str = 'stop') -> None:
+        self._titan(self.rotate_motor, 0.0, 'rotate stop')
+        self._titan(self.lift_motor, 0.0, 'lift stop')
+        self._linear(0.0, 'linear stop')
+        self.get_logger().info(
+            f'{reason}: motors+linear set to 0 (node still running)'
+            if reason == 'SPACE' else f'{reason}: motors+linear set to 0')
 
     def close(self) -> None:
         if rclpy.ok():
-            self._stop_continuous()
-        if getattr(self, 'fd', -1) >= 0:
+            self._stop_continuous('shutdown')
+        if self._tty_settings is not None and self.fd >= 0:
+            try:
+                termios.tcsetattr(self.fd, termios.TCSADRAIN, self._tty_settings)
+            except termios.error:
+                pass
+            self._tty_settings = None
+        if self._own_fd and self.fd >= 0:
             os.close(self.fd)
             self.fd = -1
 

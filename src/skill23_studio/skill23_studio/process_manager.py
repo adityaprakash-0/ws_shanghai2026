@@ -74,6 +74,9 @@ class ManagedProcess:
 _NAV_ORPHANS = (
     'studio_nav_camera.launch.py',
     'studio_nav2.launch.py',
+    'test_detect_align.launch.py',
+    'test_wp_align.launch.py',
+    'test_oms.launch.py',
     'studio_nav.launch.py',
     'studio_localize.launch.py',
     'slam_tele_grip.py',
@@ -81,6 +84,10 @@ _NAV_ORPHANS = (
     'slam_tele_mecanum.py',
     'slam_tele_xdrive.py',
     'lib/skill23_studio/cn_',
+    'lib/skill23_studio/studio_align',
+    'lib/skill23_studio/studio_detect_align',
+    'lib/oms/oms_rotation',
+    'lib/oms/oms_vertical',
     'cn_obstacle_detector',
     'cn_collision_checker',
     'cn_planner',
@@ -95,8 +102,14 @@ _NAV_ORPHANS = (
     'ydlidar_ros2_driver_node',
     'lidar_merger_node',
     'robot_localization/ekf_node',
+    '__node:=studio_joy_node',
     'skill23_amcl',
+    'lib/skill23_amcl/amcl',
     '__node:=amcl',
+    '__node:=map_server',
+    'lib/nav2_amcl/amcl',
+    'lib/nav2_map_server/map_server',
+    'lifecycle_manager_localization',
     'lib/grip/grip_node',
     'allterrain_node',
     'mecanum_node',
@@ -115,6 +128,7 @@ _NAV_ORPHANS = (
     'scan_filtered_relay',
 )
 _CAM_ORPHANS = (
+    'dabai.launch.py',
     'gemini_e.launch.py',
     'launch_gemini_e.sh',
     '__node:=camera_container',
@@ -211,6 +225,9 @@ def _pkill_patterns(patterns: Iterable[str]) -> None:
 _PKILL_SAFE = (
     'studio_nav_camera.launch.py',
     'studio_nav2.launch.py',
+    'test_detect_align.launch.py',
+    'test_wp_align.launch.py',
+    'test_oms.launch.py',
     'studio_nav.launch.py',
     'studio_localize.launch.py',
     'slam_tele_grip.py',
@@ -224,6 +241,10 @@ _PKILL_SAFE = (
     'mecanum_node',
     'xdrive_node',
     'lib/skill23_studio/cn_',
+    'lib/skill23_studio/studio_align',
+    'lib/skill23_studio/studio_detect_align',
+    'lib/oms/oms_rotation',
+    'lib/oms/oms_vertical',
     'cn_obstacle_detector',
     'cn_collision_checker',
     'cn_planner',
@@ -236,6 +257,13 @@ _PKILL_SAFE = (
     'studio_camera_gate',
     'ydlidar_ros2_driver_node',
     'lidar_merger_node',
+    '__node:=studio_joy_node',
+    '__node:=amcl',
+    '__node:=map_server',
+    'lib/skill23_amcl/amcl',
+    'lib/nav2_amcl/amcl',
+    'lib/nav2_map_server/map_server',
+    'lifecycle_manager_localization',
     'gemini_e.launch.py',
     'launch_gemini_e.sh',
     '__node:=camera_container',
@@ -303,6 +331,7 @@ def reap_studio_orphans(
             safe.extend([p for p in _PKILL_SAFE if 'gemini' not in p and 'camera' not in p and 'ob_camera' not in p])
         if camera:
             safe.extend([
+                'dabai.launch.py',
                 'gemini_e.launch.py', 'launch_gemini_e.sh',
                 '__node:=camera_container', 'ob_camera_node',
             ])
@@ -355,12 +384,18 @@ class ProcessManager:
                 or _cmdline_has('slam_tele_xdrive.py')),
             'camera': (
                 self.running('camera')
+                or _cmdline_has('dabai.launch.py')
                 or _cmdline_has('gemini_e.launch.py')
                 or _cmdline_has('__node:=camera_container')),
         }
 
     def nav2_component_status(self) -> Dict[str, Dict[str, Any]]:
         """Process-level health for Nav2 stack status panel."""
+        stack_up = (
+            self.running('nav')
+            or _cmdline_has('studio_nav2.launch.py')
+            or _cmdline_has('__node:=nav2_container')
+            or _cmdline_has('component_container_isolated'))
         checks = (
             ('amcl', ('__node:=amcl', 'skill23_amcl')),
             ('map_server', ('__node:=map_server', 'nav2_map_server')),
@@ -372,9 +407,15 @@ class ProcessManager:
             ('ekf', ('robot_localization/ekf_node', 'ekf_node')),
             ('lidar', ('ydlidar_ros2_driver_node', 'lidar_merger_node')),
         )
+        composable = {
+            'amcl', 'map_server', 'planner', 'controller',
+            'bt_navigator', 'behavior', 'smoother',
+        }
         out: Dict[str, Dict[str, Any]] = {}
         for key, needles in checks:
             alive = any(_cmdline_has(n) for n in needles)
+            if key in composable:
+                alive = alive or stack_up
             out[key] = {
                 'node': key,
                 'state': 'ready' if alive else 'stopped',
@@ -572,6 +613,11 @@ class ProcessManager:
         if not map_yaml or not os.path.isfile(map_yaml):
             raise FileNotFoundError(f'map not found: {map_yaml}')
         with self._stack_lock:
+            if self.running('localize') or _cmdline_has('studio_localize.launch.py'):
+                existing = self._procs.get('localize')
+                if existing is not None and existing.popen.poll() is None:
+                    return existing
+                raise RuntimeError('localize already running')
             self._stop_other_hw_stacks()
             self.stop('localize')
             self._wait_stack_idle('localize')
@@ -593,10 +639,13 @@ class ProcessManager:
     def start_nav(
             self, robot: str, map_yaml: str, *,
             with_camera: bool = False,
+            with_align: Optional[bool] = None,
             stack: str = 'custom') -> ManagedProcess:
         if not map_yaml or not os.path.isfile(map_yaml):
             raise FileNotFoundError(f'map not found: {map_yaml}')
         stack = 'nav2' if str(stack).lower() == 'nav2' else 'custom'
+        if with_align is None:
+            with_align = not with_camera
         with self._stack_lock:
             # Localize/slam share grip/ekf/lidar — stop them first so orphans
             # cannot survive beside a new nav stack (duplicate cn_* / grip_node).
@@ -609,6 +658,8 @@ class ProcessManager:
                     'launch', 'skill23_studio', launch_file,
                     f'robot:={robot}',
                     f'map:={map_yaml}',
+                    f'with_camera:={"true" if with_camera else "false"}',
+                    f'with_align:={"true" if with_align else "false"}',
                 ]
             else:
                 launch_file = (
@@ -629,34 +680,24 @@ class ProcessManager:
             self._wait_stack_idle('nav')
 
     def start_camera(self, *, enable_depth: bool = False) -> ManagedProcess:
-        """Orbbec Gemini E — color always; depth only for depth-approach actions.
+        """Orbbec Gemini E — node up with toggle_color / toggle_depth.
 
-        USB2 Gemini E resets if color+depth+HW align run together.
+        enable_color/depth stay true so the driver creates the toggle
+        services; the bridge then stops the streams until Detect+Align.
         """
-        ws = os.path.expanduser('~/skill23_ws')
+        from skill23_studio.orbbec_dabai import (
+            clear_orbbec_device_lock, dabai_cli_args, prefer_workspace_orbbec,
+            wake_orbbec_usb)
         self.stop_camera()
-        script = os.path.join(ws, 'scripts', 'launch_gemini_e.sh')
-        extra = [
-            'enable_color:=true',
-            'color_format:=MJPG',
-            'color_qos:=default',
-            'color_fps:=15',
-            f'enable_depth:={"true" if enable_depth else "false"}',
-            f'depth_registration:={"true" if enable_depth else "false"}',
-            'enable_ir:=false',
-            'enable_ir_right:=false',
-            'enable_point_cloud:=false',
-            'enable_colored_point_cloud:=false',
-            'enable_sync_output_accel_gyro:=false',
-            'publish_tf:=false',
-            'connection_delay:=500',
-        ]
-        if os.path.isfile(script):
-            return self.start(
-                'camera', [],
-                raw_cmd=['bash', script] + extra,
-                cwd=ws,
-            )
+        clear_orbbec_device_lock()
+        wake_orbbec_usb()
+        prefer_workspace_orbbec()
+        extra = dabai_cli_args()
+        if enable_depth:
+            extra = [
+                ('enable_depth:=true' if a.startswith('enable_depth:=') else a)
+                for a in extra
+            ]
         return self.start(
             'camera',
             ['launch', 'orbbec_camera', 'gemini_e.launch.py'] + extra,

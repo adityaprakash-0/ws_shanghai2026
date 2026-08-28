@@ -1,10 +1,15 @@
-"""OMS bring-up: Studica control_server (allterrain HW) + keyboard OMS teleop.
+"""OMS bring-up: Studica control_server (allterrain HW).
 
-  ros2 launch mypackage oms.launch.py
-  ros2 launch mypackage oms.launch.py enable_servos:=true   # actually drive PWM servos
+Do NOT wrap this launch in sudo — control_server is already sudo -E inside.
 
-Uses skill23_studio hw_params_allterrain.yaml.
-Servos stay disabled unless enable_servos:=true.
+This Pi has no USB keyboard, so type keys in a second terminal:
+
+  ros2 launch mypackage oms.launch.py enable_servos:=true
+  # other terminal:
+  source ~/skill23_ws/install/setup.bash
+  ros2 run mypackage oms_node
+
+USB keyboard only: add start_teleop:=true
 """
 
 from __future__ import annotations
@@ -13,13 +18,20 @@ import os
 
 from ament_index_python.packages import get_package_prefix, get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction
+from launch.actions import (
+    DeclareLaunchArgument,
+    ExecuteProcess,
+    LogInfo,
+    OpaqueFunction,
+)
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
 def _setup(context, *args, **kwargs):
     enable_servos = LaunchConfiguration('enable_servos').perform(context).lower() in (
+        '1', 'true', 'yes', 'on')
+    start_teleop = LaunchConfiguration('start_teleop').perform(context).lower() in (
         '1', 'true', 'yes', 'on')
     params_file = os.path.expanduser(LaunchConfiguration('params_file').perform(context))
     if not os.path.isfile(params_file):
@@ -39,17 +51,21 @@ def _setup(context, *args, **kwargs):
     if enable_servos:
         cmd += ['-p', 'servo.enabled:=true']
 
-    control_server = ExecuteProcess(cmd=cmd, output='screen')
-
-    oms = Node(
-        package='mypackage',
-        executable='oms_node',
-        name='oms_node',
-        output='screen',
-        emulate_tty=True,
-    )
-
-    return [control_server, oms]
+    actions = [
+        LogInfo(msg=(
+            '[oms] HW starting. Type keys in a SECOND terminal:\n'
+            '  source ~/skill23_ws/install/setup.bash && ros2 run mypackage oms_node')),
+        ExecuteProcess(cmd=cmd, output='screen'),
+    ]
+    if start_teleop:
+        actions.append(Node(
+            package='mypackage',
+            executable='oms_node',
+            name='oms_node',
+            output='screen',
+            emulate_tty=True,
+        ))
+    return actions
 
 
 def generate_launch_description():
@@ -67,6 +83,11 @@ def generate_launch_description():
             'enable_servos',
             default_value='false',
             description='Override servo.enabled so OMS PWM servos actually start',
+        ),
+        DeclareLaunchArgument(
+            'start_teleop',
+            default_value='false',
+            description='Start oms_node here (USB keyboard only; SSH uses ros2 run)',
         ),
         OpaqueFunction(function=_setup),
     ])

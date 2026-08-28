@@ -67,6 +67,12 @@ class MissionManagerNode(Node):
         self.stop_pub = self.create_publisher(Empty, '/custom_nav/mission/stop', 10)
         self._us_pub = self.create_publisher(String, '/custom_nav/align/us', 10)
         self._cobra_pub = self.create_publisher(String, '/custom_nav/align/cobra', 10)
+        self._align_cmd_pub = self.create_publisher(String, '/studio/align/cmd', 10)
+        self._align_cancel_pub = self.create_publisher(Empty, '/studio/align/cancel', 10)
+        self._detect_cmd_pub = self.create_publisher(
+            String, '/studio/detect_align/cmd', 10)
+        self._detect_cancel_pub = self.create_publisher(
+            Empty, '/studio/detect_align/cancel', 10)
 
         self._align_lock = threading.Lock()
         self._align_pending: Dict[str, threading.Event] = {}
@@ -74,6 +80,9 @@ class MissionManagerNode(Node):
         self._align_id_counter = 0
 
         self.create_subscription(String, '/custom_nav/align/result', self._on_align_result, 10)
+        self.create_subscription(String, '/studio/align/result', self._on_align_result, 10)
+        self.create_subscription(
+            String, '/studio/detect_align/result', self._on_align_result, 10)
         self.create_subscription(PoseStamped, '/custom_nav/goal', self._on_single_goal, 10)
         self.create_subscription(String, '/custom_nav/goals', self._on_goals_json, 10)
         self.create_subscription(Empty, '/custom_nav/mission/start', self._on_start, 10)
@@ -139,8 +148,22 @@ class MissionManagerNode(Node):
                 clean['action'] = {'type': 'wait', 'seconds': seconds}
             else:
                 clean.pop('action', None)
-        elif atype in ('us_align', 'cobra_align'):
-            clean['action'] = {'type': atype}
+        elif atype == 'detect_align':
+            clean['action'] = {'type': 'detect_align'}
+        elif atype == 'align':
+            clean['action'] = {'type': 'align'}
+        elif atype == 'align_move':
+            try:
+                dist = float(action.get('distance_m', 0.0) or 0.0)
+            except (TypeError, ValueError):
+                dist = 0.0
+            if math.isfinite(dist) and dist > 0.0:
+                clean['action'] = {
+                    'type': 'align_move',
+                    'distance_m': min(5.0, max(0.03, dist)),
+                }
+            else:
+                clean.pop('action', None)
         else:
             clean.pop('action', None)
         return clean
@@ -211,6 +234,14 @@ class MissionManagerNode(Node):
 
     def _on_stop(self, _msg: Empty) -> None:
         self._wait_until = 0.0
+        try:
+            self._align_cancel_pub.publish(Empty())
+        except Exception:
+            pass
+        try:
+            self._detect_cancel_pub.publish(Empty())
+        except Exception:
+            pass
         self._set_state(MissionState.STOPPED, 'mission stopped')
         self.ctrl_pub.publish(Bool(data=False))
         self._publish_status()
@@ -303,20 +334,41 @@ class MissionManagerNode(Node):
         self._align_id_counter += 1
         return f'align_{self._align_id_counter}'
 
-    def _run_align(self, mode: str, timeout: float) -> tuple:
+    def _run_align(self, mode: str, timeout: float, wp: Optional[dict] = None) -> tuple:
         """Send an align command and block until the result or timeout."""
         cmd_id = self._new_align_id()
         evt = threading.Event()
         with self._align_lock:
             self._align_pending[cmd_id] = evt
-        payload = String()
-        payload.data = json.dumps({
-            'cmd_id': cmd_id, 'timeout_sec': timeout})
-        if mode == 'us':
-            self._us_pub.publish(payload)
+        yaw = float((wp or {}).get('yaw', 0.0) or 0.0)
+        payload = {
+            'cmd_id': cmd_id,
+            'mode': mode,
+            'yaw': yaw,
+        }
+        msg = String()
+        if mode == 'detect_align':
+            msg.data = json.dumps({'cmd_id': cmd_id, 'mode': 'detect_align'})
+            self._detect_cmd_pub.publish(msg)
+        elif mode == 'align_move':
+            action = self._get_action(wp or {})
+            try:
+                dist = float(action.get('distance_m', 0.0) or 0.0)
+            except (TypeError, ValueError):
+                dist = 0.0
+            payload['distance_m'] = dist
+            msg.data = json.dumps(payload)
+            self._align_cmd_pub.publish(msg)
+        elif mode == 'align':
+            msg.data = json.dumps(payload)
+            self._align_cmd_pub.publish(msg)
+        elif mode == 'us':
+            msg.data = json.dumps({'cmd_id': cmd_id, 'timeout_sec': timeout})
+            self._us_pub.publish(msg)
         else:
-            self._cobra_pub.publish(payload)
-        evt.wait(timeout=timeout + 5.0)
+            msg.data = json.dumps({'cmd_id': cmd_id, 'timeout_sec': timeout})
+            self._cobra_pub.publish(msg)
+        evt.wait(timeout=timeout * 6.0 + 30.0)
         with self._align_lock:
             result = self._align_results.pop(cmd_id, None)
             self._align_pending.pop(cmd_id, None)
@@ -346,22 +398,44 @@ class MissionManagerNode(Node):
                 f'Waypoint {self.index + 1} reached — waiting {seconds:g}s')
             return
 
-        if atype in ('us_align', 'cobra_align'):
-            mode = 'us' if atype == 'us_align' else 'cobra'
+        if atype == 'detect_align':
             self._set_state(
                 MissionState.WAIT_ACTION,
-                f'wp {self.index + 1}: {atype}')
+                f'wp {self.index + 1}: detect+align')
             self.get_logger().info(
-                f'Waypoint {self.index + 1} reached — running {atype}')
+                f'Waypoint {self.index + 1} reached — running detect+align')
             threading.Thread(
                 target=self._run_align_and_advance,
-                args=(mode,), daemon=True).start()
+                args=('detect_align', wp), daemon=True).start()
+            return
+
+        if atype == 'align':
+            self._set_state(
+                MissionState.WAIT_ACTION,
+                f'wp {self.index + 1}: align')
+            self.get_logger().info(
+                f'Waypoint {self.index + 1} reached — running align')
+            threading.Thread(
+                target=self._run_align_and_advance,
+                args=('align', wp), daemon=True).start()
+            return
+
+        if atype == 'align_move':
+            self._set_state(
+                MissionState.WAIT_ACTION,
+                f'wp {self.index + 1}: align+move')
+            self.get_logger().info(
+                f'Waypoint {self.index + 1} reached — running align+move')
+            threading.Thread(
+                target=self._run_align_and_advance,
+                args=('align_move', wp), daemon=True).start()
             return
 
         self._advance()
 
-    def _run_align_and_advance(self, mode: str) -> None:
-        ok, msg = self._run_align(mode, 8.0)
+    def _run_align_and_advance(self, mode: str, wp: Optional[dict] = None) -> None:
+        timeout = 40.0 if mode == 'align_move' else 25.0
+        ok, msg = self._run_align(mode, timeout, wp)
         self.get_logger().info(f'Align {mode} result: ok={ok} {msg}')
         self._advance()
 
@@ -393,11 +467,12 @@ class MissionManagerNode(Node):
             else:
                 self._resend_goal_if_unheard()
         elif self.state == MissionState.WAIT_ACTION:
-            now = self.get_clock().now().nanoseconds / 1e9
-            if now >= self._wait_until:
-                self.get_logger().info(
-                    f'Waypoint {self.index + 1} wait complete')
-                self._advance()
+            if self._wait_until > 0.0:
+                now = self.get_clock().now().nanoseconds / 1e9
+                if now >= self._wait_until:
+                    self.get_logger().info(
+                        f'Waypoint {self.index + 1} wait complete')
+                    self._advance()
         self._publish_status()
 
 

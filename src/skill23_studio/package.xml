@@ -29,6 +29,7 @@
   <exec_depend>grip</exec_depend>
   <exec_depend>ydlidar_ros2_driver</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>joy</exec_depend>
   <exec_depend>skill23_amcl</exec_depend>
   <exec_depend>skill23_clearance_planner</exec_depend>
   <exec_depend>skill23_custom_costmap</exec_depend>
@@ -41,9 +42,13 @@
   <exec_depend>nav2_smoother</exec_depend>
   <exec_depend>nav2_waypoint_follower</exec_depend>
   <exec_depend>nav2_regulated_pure_pursuit_controller</exec_depend>
+  <exec_depend>nav2_amcl</exec_depend>
+  <exec_depend>nav2_lifecycle_manager</exec_depend>
   <exec_depend>nav2_map_server</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>oms</exec_depend>
 
   <export>
     <build_type>ament_python</build_type>

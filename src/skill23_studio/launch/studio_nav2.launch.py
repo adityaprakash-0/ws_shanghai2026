@@ -28,7 +28,16 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
+from skill23_studio.align_paths import align_yaml_for_robot
+from skill23_studio.detect_align_paths import detect_align_yaml_for_robot
 from skill23_studio.ekf_paths import ekf_yaml_for_robot
+from skill23_studio.orbbec_dabai import (
+    clear_orbbec_device_lock,
+    dabai_launch_args,
+    orbbec_launch_path,
+    prefer_workspace_orbbec,
+    wake_orbbec_usb,
+)
 
 
 def _node(package, executable, name, **kwargs):
@@ -86,6 +95,19 @@ def _setup(context, *args, **kwargs):
     map_yaml = os.path.expanduser(LaunchConfiguration('map').perform(context))
     enable_lidar = LaunchConfiguration('enable_lidar').perform(context).lower() in (
         '1', 'true', 'yes', 'on')
+    with_camera = LaunchConfiguration('with_camera').perform(context).lower() in (
+        '1', 'true', 'yes', 'on')
+    with_align = LaunchConfiguration('with_align').perform(context).lower() in (
+        '1', 'true', 'yes', 'on')
+    try:
+        camera_stabilize = float(
+            LaunchConfiguration('camera_stabilize_sec').perform(context))
+    except (TypeError, ValueError):
+        camera_stabilize = 12.0
+    camera_stabilize = max(4.0, min(40.0, camera_stabilize))
+    color_width = str(LaunchConfiguration('color_width').perform(context) or '640')
+    color_height = str(LaunchConfiguration('color_height').perform(context) or '360')
+    color_fps = str(LaunchConfiguration('color_fps').perform(context) or '5')
 
     if robot not in ('allterrain', 'mecanum', 'xdrive', 'grip'):
         raise RuntimeError(
@@ -102,6 +124,8 @@ def _setup(context, *args, **kwargs):
     exec_path = os.path.join(studica_prefix, 'lib', 'studica_control', 'manual_composition')
     ekf_yaml = ekf_yaml_for_robot(robot, navigation=True)
     nav2_params = _prepare_nav2_params(robot, share)
+    detect_yaml = detect_align_yaml_for_robot(robot, share)
+    align_yaml = align_yaml_for_robot(robot, share)
     loc_launch = os.path.join(
         get_package_share_directory('nav2_bringup'), 'launch', 'localization_launch.py')
     nav_launch = os.path.join(share, 'launch', 'studio_nav2_navigation.launch.py')
@@ -174,6 +198,59 @@ def _setup(context, *args, **kwargs):
         #     confidence_gate_node,
         # ]))
 
+    detect_delay = 6.0 if enable_lidar else 2.5
+    if with_align:
+        actions.append(TimerAction(
+            period=detect_delay,
+            actions=[
+                LogInfo(msg=f'[studio_nav2] align yaml={align_yaml}'),
+                _node(
+                    'skill23_studio', 'studio_align', 'align',
+                    parameters=[align_yaml]),
+            ],
+        ))
+    if with_camera:
+        actions.append(TimerAction(
+            period=detect_delay,
+            actions=[
+                LogInfo(msg=f'[studio_nav2] detect_align yaml={detect_yaml} (idle until WP)'),
+                _node(
+                    'skill23_studio', 'studio_detect_align', 'detect_align',
+                    parameters=[detect_yaml],
+                    output='both',
+                    emulate_tty=True,
+                    additional_env={'PYTHONUNBUFFERED': '1'},
+                ),
+                LogInfo(msg='[studio_nav2] OMS rotation (Titan1 M2)'),
+                IncludeLaunchDescription(
+                    PythonLaunchDescriptionSource(os.path.join(
+                        get_package_share_directory('oms'),
+                        'launch', 'oms.launch.py')),
+                ),
+            ],
+        ))
+        overlay = prefer_workspace_orbbec()
+        dabai_launch = orbbec_launch_path()
+        shm_note = clear_orbbec_device_lock()
+        usb_note = wake_orbbec_usb()
+        actions.append(TimerAction(
+            period=detect_delay,
+            actions=[
+                LogInfo(msg=(
+                    f'[studio_nav2] Gemini E {color_width}x{color_height} @ {color_fps}fps '
+                    f'orbbec={overlay} shm={shm_note or "clean"} usb={usb_note} — '
+                    f'USB2 OpenNI enum often 30-50s. Nav2 in {camera_stabilize:.0f}s')),
+                IncludeLaunchDescription(
+                    PythonLaunchDescriptionSource(dabai_launch),
+                    launch_arguments=dabai_launch_args(
+                        color_width=color_width,
+                        color_height=color_height,
+                        color_fps=color_fps,
+                    ).items(),
+                ),
+            ],
+        ))
+
     nav2_args = {
         'namespace': '',
         'use_sim_time': 'false',
@@ -206,10 +283,16 @@ def _setup(context, *args, **kwargs):
             launch_arguments=nav2_args.items(),
         ),
     ]
+    if with_camera:
+        nav2_delay = detect_delay + camera_stabilize
+    else:
+        nav2_delay = 7.0 if enable_lidar else 3.0
     actions.append(TimerAction(
-        period=7.0 if enable_lidar else 3.0,
+        period=nav2_delay,
         actions=[
-            LogInfo(msg='[studio_nav2] Launching Nav2 (Theta* + RPP, no velocity_smoother)'),
+            LogInfo(msg=(
+                '[studio_nav2] Launching Nav2 (Theta* + RPP, no velocity_smoother)'
+                + (' after camera stabilize' if with_camera else ''))),
             *nav2,
         ],
     ))
@@ -229,5 +312,23 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'enable_lidar', default_value='true',
             description='Start dual YDLidar + merger publishing /scan'),
+        DeclareLaunchArgument(
+            'with_camera', default_value='false',
+            description='Commissioning: Gemini E (streams off) + Detect+Align node'),
+        DeclareLaunchArgument(
+            'with_align', default_value='true',
+            description='Navigation module: yaw Align / Align+Move node (no camera)'),
+        DeclareLaunchArgument(
+            'camera_stabilize_sec', default_value='12.0',
+            description='Seconds after camera node before Nav2 starts'),
+        DeclareLaunchArgument(
+            'color_width', default_value='640',
+            description='Gemini E color width'),
+        DeclareLaunchArgument(
+            'color_height', default_value='360',
+            description='Gemini E color height (native 360)'),
+        DeclareLaunchArgument(
+            'color_fps', default_value='5',
+            description='Color + depth fps. Gemini E 640x360 min is 5 (no 3fps mode)'),
         OpaqueFunction(function=_setup),
     ])

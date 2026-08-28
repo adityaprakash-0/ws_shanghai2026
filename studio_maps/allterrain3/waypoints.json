@@ -1,0 +1,25 @@
+{
+  "waypoints": [
+    {
+      "x": 1.119,
+      "y": 2.796,
+      "z": 0,
+      "yaw": 1.616,
+      "name": "wp1",
+      "action": {
+        "type": "detect_align"
+      }
+    },
+    {
+      "x": 0.445,
+      "y": 0.909,
+      "z": 0,
+      "yaw": 3.097,
+      "name": "wp2",
+      "action": {
+        "type": "detect_align"
+      },
+      "sticker": ""
+    }
+  ]
+}

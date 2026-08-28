@@ -1,0 +1,44 @@
+# Grip Detect+Align — NCNN YOLOv8n visual servo + one-shot depth.
+# Dashboard Deploy loads this when robot=grip.
+# Titan /cmd_vel is duty (−1…1). Camera is pitched 35° down.
+
+detect_align:
+  ros__parameters:
+    cmd_vel_topic: /cmd_vel
+    cmd_topic: /studio/detect_align/cmd
+    result_topic: /studio/detect_align/result
+    cancel_topic: /studio/detect_align/cancel
+    status_topic: /studio/detect_align/status
+    color_topic: /camera/color/image_raw
+    depth_topic: /camera/depth/image_raw
+    model_dir: ''
+    input_size: 320
+    conf_threshold: 0.35
+    nms_iou: 0.45
+    num_threads: 1
+    target_class: -1
+    target_name: ''
+    min_box_area_frac: 0.002
+    control_rate_hz: 8.0
+    center_tol_norm: 0.12
+    center_u_offset: 0.0
+    confirm_frames: 3
+    detect_wait_sec: 8.0
+    align_timeout_sec: 20.0
+    depth_after_align_sec: 1.0
+    depth_samples: 5
+    depth_sample_timeout_sec: 4.0
+    depth_roi_frac: 0.08
+    camera_tilt_deg: 35.0
+    hold_after_done_sec: 1.0
+    retries: 2
+    retry_pause_sec: 0.4
+    yaw_kp: 0.70
+    yaw_ki: 0.0
+    yaw_kd: 0.0
+    yaw_i_limit: 0.2
+    yaw_duty_min: 0.10
+    yaw_duty_max: 0.14
+    yaw_pulse_sec: 0.07
+    angular_sign: 1.0
+    log_hz: 2.0

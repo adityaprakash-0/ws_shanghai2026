@@ -1,0 +1,53 @@
+# Bench: ros2 launch skill23_studio test_detect_align.launch.py robot:=allterrain
+#        then: ros2 run skill23_studio studio_detect_align_test
+# AllTerrain Detect+Align — NCNN YOLOv8n visual servo + one-shot depth.
+# Dashboard Deploy loads this when robot=allterrain.
+# Titan /cmd_vel is duty (−1…1). Camera is pitched 35° down.
+#
+# detect_wait_sec          how long to wait for the first YOLO box.
+# align_timeout_sec        max time to center the box after first detection.
+# confirm_frames           consecutive centered + stopped frames before "aligned".
+# depth_after_align_sec    sit still after aligned, then enable depth.
+# yaw_duty_min / max       Titan yaw clamp. Keep low — camera is ~5 fps.
+# yaw_pulse_sec            how long to command yaw per new color frame, then stop.
+
+detect_align:
+  ros__parameters:
+    cmd_vel_topic: /cmd_vel
+    cmd_topic: /studio/detect_align/cmd
+    result_topic: /studio/detect_align/result
+    cancel_topic: /studio/detect_align/cancel
+    status_topic: /studio/detect_align/status
+    color_topic: /camera/color/image_raw
+    depth_topic: /camera/depth/image_raw
+    model_dir: ''
+    input_size: 320
+    conf_threshold: 0.35
+    nms_iou: 0.45
+    num_threads: 1
+    target_class: -1
+    target_name: 'Cylinder'
+    min_box_area_frac: 0.002
+    control_rate_hz: 8.0
+    center_tol_norm: 0.02
+    center_u_offset: 0.0
+    confirm_frames: 6
+    detect_wait_sec: 8.0
+    align_timeout_sec: 20.0
+    depth_after_align_sec: 1.0
+    depth_samples: 5
+    depth_sample_timeout_sec: 4.0
+    depth_roi_frac: 0.08
+    camera_tilt_deg: 35.0
+    hold_after_done_sec: 1.0
+    retries: 2
+    retry_pause_sec: 0.4
+    yaw_kp: 0.70
+    yaw_ki: 0.0
+    yaw_kd: 0.0
+    yaw_i_limit: 0.2
+    yaw_duty_min: 0.55
+    yaw_duty_max: 0.60
+    yaw_pulse_sec: 0.07
+    angular_sign: 1.0
+    log_hz: 2.0

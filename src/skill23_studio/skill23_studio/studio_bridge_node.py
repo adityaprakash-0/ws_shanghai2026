@@ -29,7 +29,7 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from rclpy.time import Time
 from sensor_msgs.msg import BatteryState, LaserScan
-from std_msgs.msg import Bool, Empty, String
+from std_msgs.msg import Bool, Empty, Float64, String
 from std_srvs.srv import SetBool
 from tf2_ros import Buffer, TransformException, TransformListener
 
@@ -71,6 +71,7 @@ class StudioBridge(Node):
             'mode': 'offline',  # arena | offline
             'phase': 'idle',    # idle|mapping|improve|waypoints|deploy
             'nav_stack': 'custom',  # custom | nav2
+            'deploy_module': 'nav',  # nav | commission
             'warnings': [],
             'slam': {
                 'resolution': 0.03,
@@ -133,6 +134,7 @@ class StudioBridge(Node):
         self._cam_process_started_at = 0.0
         self._cam_deploy_requested = False
         self._cam_deploy_launch_after = 0.0
+        self._cam_in_nav_launch = False
         self._sim_path: Optional[Path] = None
         self._sim_path_smooth: Optional[Path] = None
         self._sim_result: Dict[str, Any] = {}
@@ -155,6 +157,33 @@ class StudioBridge(Node):
         self._nav2_seq_ok = 0
         self._nav2_seq_skipped = 0
         self._nav2_wait_until = 0.0
+        self._nav2_action_cmd_id = ''
+        self._nav2_action_deadline = 0.0
+        self._nav2_action_kind = ''
+        self._detect_align: Dict[str, Any] = {
+            'state': 'idle',
+            'message': '',
+            'aligned': False,
+            'stopped': True,
+            'depth_m': None,
+            'depth_horizontal_m': None,
+            'u_norm': None,
+            'bbox': None,
+            'conf': None,
+            'class_name': '',
+            'confirm': 0,
+            'confirm_need': 0,
+            'obj_cx': None,
+            'frame_cx': None,
+            'last_ok': None,
+            'last_result': '',
+        }
+        self._oms: Dict[str, Any] = {
+            'angle_deg': None,
+            'homed': False,
+            'state': 'offline',
+            'home_switch': False,
+        }
 
         qos = QoSProfile(
             depth=1,
@@ -223,7 +252,13 @@ class StudioBridge(Node):
         # when Studio wants frames. Studio itself never subscribes to images.
         self._cam_need_pub = self.create_publisher(Bool, '/studio/camera/need', 10)
         self._toggle_color_cli = self.create_client(SetBool, '/camera/toggle_color')
+        self._toggle_color_cli_ns = self.create_client(
+            SetBool, '/camera/camera/toggle_color')
+        self._toggle_color_cli_root = self.create_client(SetBool, '/toggle_color')
         self._toggle_depth_cli = self.create_client(SetBool, '/camera/toggle_depth')
+        self._toggle_depth_cli_ns = self.create_client(
+            SetBool, '/camera/camera/toggle_depth')
+        self._toggle_depth_cli_root = self.create_client(SetBool, '/toggle_depth')
         self._cam_need_last: Optional[bool] = None
         self._cam_need_depth = False
         self._cam_depth_running = False
@@ -243,6 +278,24 @@ class StudioBridge(Node):
             Bool, '/titan1/m_3/limit_fwd', self._on_hw_stop_btn, 10)
         self.create_subscription(Bool, '/studio/camera/action_need', self._on_cam_action, 10)
         self.create_subscription(Bool, '/studio/camera/need_depth', self._on_cam_need_depth, 10)
+        self._align_cmd_pub = self.create_publisher(String, '/studio/align/cmd', 10)
+        self._align_cancel_pub = self.create_publisher(Empty, '/studio/align/cancel', 10)
+        self.create_subscription(
+            String, '/studio/align/result', self._on_studio_align_result, 10)
+        self._detect_cmd_pub = self.create_publisher(
+            String, '/studio/detect_align/cmd', 10)
+        self._detect_cancel_pub = self.create_publisher(
+            Empty, '/studio/detect_align/cancel', 10)
+        self.create_subscription(
+            String, '/studio/detect_align/result',
+            self._on_studio_detect_align_result, 10)
+        self.create_subscription(
+            String, '/studio/detect_align/status',
+            self._on_studio_detect_align_status, 10)
+        self.create_subscription(
+            String, '/oms/rotation/status', self._on_oms_status, 10)
+        self.create_subscription(
+            Float64, '/oms/rotation/angle_deg', self._on_oms_angle, 10)
 
         self.create_timer(0.1, self._reloc_tick)
         self.create_timer(0.1, self._nav2_seq_tick)
@@ -355,7 +408,7 @@ class StudioBridge(Node):
         goal = ComputePathToPose.Goal()
         goal.planner_id = 'GridBased'
         goal.use_start = True
-        stamp = self.get_clock().now().to_msg()
+        stamp = Time().to_msg()
 
         goal.start = PoseStamped()
         goal.start.header.frame_id = 'map'
@@ -420,7 +473,10 @@ class StudioBridge(Node):
 
     def _pose_stamped(self, x: float, y: float, yaw: float = 0.0) -> PoseStamped:
         ps = PoseStamped()
-        ps.header.stamp = self.get_clock().now().to_msg()
+        # Stamp 0 = latest TF. A wall-clock stamp goes stale under Pi load and
+        # Nav2 then fails every tick with "extrapolation into the past".
+        ps.header.stamp.sec = 0
+        ps.header.stamp.nanosec = 0
         ps.header.frame_id = 'map'
         ps.pose.position.x = float(x)
         ps.pose.position.y = float(y)
@@ -436,6 +492,17 @@ class StudioBridge(Node):
         self._nav2_seq_active = False
         self._nav2_seq_gen += 1
         self._nav2_wait_until = 0.0
+        self._nav2_action_cmd_id = ''
+        self._nav2_action_deadline = 0.0
+        self._nav2_action_kind = ''
+        try:
+            self._align_cancel_pub.publish(Empty())
+        except Exception:
+            pass
+        try:
+            self._detect_cancel_pub.publish(Empty())
+        except Exception:
+            pass
         self._cancel_nav2_goal_only()
         if str((self._mission or {}).get('state', '')).lower() in (
                 'running', 'wait_goal', 'wait_action', 'recovering'):
@@ -470,6 +537,8 @@ class StudioBridge(Node):
         remaining = 0.0
         if self._nav2_wait_until > 0.0:
             remaining = max(0.0, self._nav2_wait_until - time.time())
+        elif self._nav2_action_deadline > 0.0:
+            remaining = max(0.0, self._nav2_action_deadline - time.time())
         current = self._nav2_seq_wps[idx] if 0 <= idx < n else None
         self._mission = {
             'state': state,
@@ -516,6 +585,9 @@ class StudioBridge(Node):
         self._nav2_seq_ok = 0
         self._nav2_seq_skipped = 0
         self._nav2_wait_until = 0.0
+        self._nav2_action_cmd_id = ''
+        self._nav2_action_deadline = 0.0
+        self._nav2_action_kind = ''
         self._nav2_seq_active = True
         self.get_logger().info(
             f'Nav2 mission {len(wps)} waypoint(s) — one pose at a time, '
@@ -534,6 +606,9 @@ class StudioBridge(Node):
         if idx >= len(wps):
             self._nav2_seq_active = False
             self._nav2_wait_until = 0.0
+            self._nav2_action_cmd_id = ''
+            self._nav2_action_deadline = 0.0
+            self._nav2_action_kind = ''
             self._nav2_set_mission('done', 'mission complete')
             self.get_logger().info(
                 f'Nav2 mission complete — {self._nav2_seq_ok} reached, '
@@ -579,11 +654,211 @@ class StudioBridge(Node):
 
         fut.add_done_callback(_on_sent)
 
+    @staticmethod
+    def _wp_action(wp: dict) -> dict:
+        action = (wp or {}).get('action')
+        return action if isinstance(action, dict) else {}
+
+    def _nav2_action_timeout(self, atype: str, action: dict) -> float:
+        """Watchdog if the align node never replies (covers YAML timeout + hold)."""
+        try:
+            raw = float(action.get('timeout_sec', 0.0) or 0.0)
+        except (TypeError, ValueError):
+            raw = 0.0
+        if raw > 0.0 and math.isfinite(raw):
+            return min(120.0, max(2.0, raw))
+        return 180.0 if atype == 'detect_align' else 150.0
+
+    def _nav2_start_detect_align(self, wp: dict, reached_idx: int) -> None:
+        n = len(self._nav2_seq_wps)
+        action = self._wp_action(wp)
+        timeout = self._nav2_action_timeout('detect_align', action)
+        cmd_id = f'nav2_{self._nav2_seq_gen}_{reached_idx}_{int(time.time() * 1000)}'
+        payload: Dict[str, Any] = {
+            'cmd_id': cmd_id,
+            'mode': 'detect_align',
+        }
+        try:
+            cmd_timeout = float(action.get('timeout_sec', 0.0) or 0.0)
+        except (TypeError, ValueError):
+            cmd_timeout = 0.0
+        if cmd_timeout > 0.0 and math.isfinite(cmd_timeout):
+            payload['timeout_sec'] = min(90.0, max(2.0, cmd_timeout))
+        detail = f'wp {reached_idx + 1}/{n} detect+align'
+        self._detect_cmd_pub.publish(String(data=json.dumps(payload)))
+        self._nav2_action_cmd_id = cmd_id
+        self._nav2_action_kind = 'detect_align'
+        self._nav2_action_deadline = time.time() + timeout + 15.0
+        self._nav2_set_mission('wait_action', detail)
+        self.get_logger().info(f'Waypoint {reached_idx + 1}/{n} reached — {detail}')
+
+    def _nav2_start_align_action(
+            self, wp: dict, reached_idx: int, atype: str) -> None:
+        n = len(self._nav2_seq_wps)
+        action = self._wp_action(wp)
+        timeout = self._nav2_action_timeout(atype, action)
+        cmd_id = f'nav2_{self._nav2_seq_gen}_{reached_idx}_{int(time.time() * 1000)}'
+        try:
+            yaw = float(wp.get('yaw', 0.0) or 0.0)
+        except (TypeError, ValueError):
+            yaw = 0.0
+        payload: Dict[str, Any] = {
+            'cmd_id': cmd_id,
+            'mode': atype,
+            'yaw': yaw,
+        }
+        if atype == 'align_move':
+            try:
+                dist = float(action.get('distance_m', 0.0) or 0.0)
+            except (TypeError, ValueError):
+                dist = 0.0
+            if math.isfinite(dist) and dist > 0.0:
+                payload['distance_m'] = min(5.0, max(0.03, dist))
+            else:
+                self.get_logger().warn(
+                    f'Waypoint {reached_idx + 1}/{n} align+move missing distance — '
+                    'running yaw align only')
+                atype = 'align'
+                payload['mode'] = 'align'
+        detail = (
+            f'wp {reached_idx + 1}/{n} {atype} '
+            f'yaw={math.degrees(yaw):.1f}deg')
+        if 'distance_m' in payload:
+            detail += f' dist={payload["distance_m"]:.3f}m'
+        self._align_cmd_pub.publish(String(data=json.dumps(payload)))
+        self._nav2_action_cmd_id = cmd_id
+        self._nav2_action_kind = atype
+        self._nav2_action_deadline = time.time() + timeout + 15.0
+        self._nav2_set_mission('wait_action', detail)
+        self.get_logger().info(
+            f'Waypoint {reached_idx + 1}/{n} reached — {detail} (YAML timeouts)')
+
+    def _nav2_finish_action_then_next(self, reason: str) -> None:
+        self._nav2_wait_until = 0.0
+        self._nav2_action_cmd_id = ''
+        self._nav2_action_deadline = 0.0
+        self._nav2_action_kind = ''
+        self.get_logger().info(f'{reason} — generating path to next waypoint')
+        self._send_nav2_seq_pose()
+
+    def _on_studio_detect_align_status(self, msg: String) -> None:
+        try:
+            data = json.loads(msg.data)
+        except Exception:
+            return
+        if not isinstance(data, dict):
+            return
+        bbox = data.get('bbox')
+        obj_cx = None
+        frame_cx = None
+        if isinstance(bbox, (list, tuple)) and len(bbox) >= 4:
+            try:
+                obj_cx = round(0.5 * (float(bbox[0]) + float(bbox[2])), 1)
+            except (TypeError, ValueError):
+                obj_cx = None
+        size = data.get('size')
+        if isinstance(size, (list, tuple)) and size:
+            try:
+                frame_cx = round(0.5 * float(size[0]), 1)
+            except (TypeError, ValueError):
+                frame_cx = None
+        self._detect_align = {
+            'state': str(data.get('state') or 'idle'),
+            'message': str(data.get('message') or ''),
+            'aligned': bool(data.get('aligned')),
+            'stopped': bool(data.get('stopped', True)),
+            'depth_m': data.get('depth_m'),
+            'depth_horizontal_m': data.get('depth_horizontal_m'),
+            'u_norm': data.get('u_norm'),
+            'bbox': bbox,
+            'conf': data.get('conf'),
+            'class_name': str(data.get('class_name') or ''),
+            'confirm': int(data.get('confirm') or 0),
+            'confirm_need': int(data.get('confirm_need') or 0),
+            'obj_cx': obj_cx,
+            'frame_cx': frame_cx,
+            'oms_angle_deg': data.get('oms_angle_deg'),
+            'gripper_u': data.get('gripper_u'),
+            'last_ok': self._detect_align.get('last_ok'),
+            'last_result': self._detect_align.get('last_result') or '',
+        }
+
+    def _on_oms_angle(self, msg: Float64) -> None:
+        try:
+            self._oms['angle_deg'] = round(float(msg.data), 2)
+        except (TypeError, ValueError):
+            pass
+
+    def _on_oms_status(self, msg: String) -> None:
+        try:
+            data = json.loads(msg.data)
+        except Exception:
+            return
+        if not isinstance(data, dict):
+            return
+        if data.get('angle_deg') is not None:
+            try:
+                self._oms['angle_deg'] = round(float(data['angle_deg']), 2)
+            except (TypeError, ValueError):
+                pass
+        self._oms['homed'] = bool(data.get('homed'))
+        self._oms['state'] = str(data.get('state') or self._oms.get('state') or '')
+        self._oms['home_switch'] = bool(data.get('home_switch'))
+
+    def _on_studio_detect_align_result(self, msg: String) -> None:
+        try:
+            data = json.loads(msg.data)
+        except Exception:
+            data = {}
+        if isinstance(data, dict):
+            ok = bool(data.get('success'))
+            text = str(data.get('message') or '')
+            self._detect_align['last_ok'] = ok
+            self._detect_align['last_result'] = text
+            if data.get('depth_m') is not None:
+                self._detect_align['depth_m'] = data.get('depth_m')
+            if data.get('depth_horizontal_m') is not None:
+                self._detect_align['depth_horizontal_m'] = data.get(
+                    'depth_horizontal_m')
+            if data.get('u_norm') is not None:
+                self._detect_align['u_norm'] = data.get('u_norm')
+            if data.get('class_name'):
+                self._detect_align['class_name'] = str(data.get('class_name'))
+            if data.get('oms_angle_deg') is not None:
+                self._detect_align['oms_angle_deg'] = data.get('oms_angle_deg')
+            if data.get('gripper_u') is not None:
+                self._detect_align['gripper_u'] = data.get('gripper_u')
+        self._on_studio_align_result(msg)
+
+    def _on_studio_align_result(self, msg: String) -> None:
+        if not self._nav2_seq_active or not self._nav2_action_cmd_id:
+            return
+        try:
+            data = json.loads(msg.data)
+        except Exception:
+            return
+        if str(data.get('cmd_id', '')) != self._nav2_action_cmd_id:
+            return
+        ok = bool(data.get('success'))
+        mode = str(data.get('mode') or 'align')
+        text = str(data.get('message') or '')
+        self.get_logger().info(
+            f'{mode} result ok={ok} {text}')
+        self._nav2_finish_action_then_next(
+            f'{mode} {"ok" if ok else "failed"}')
+
     def _nav2_begin_wait_then_next(self, reached_idx: int) -> None:
         wp = self._nav2_seq_wps[reached_idx]
-        wait_s = self._nav2_wait_seconds(wp)
         self._nav2_seq_index = reached_idx + 1
         self._nav2_seq_attempt = 1
+        atype = str(self._wp_action(wp).get('type') or '')
+        if atype == 'detect_align':
+            self._nav2_start_detect_align(wp, reached_idx)
+            return
+        if atype in ('align', 'align_move'):
+            self._nav2_start_align_action(wp, reached_idx, atype)
+            return
+        wait_s = self._nav2_wait_seconds(wp)
         if wait_s <= 0.0:
             self._send_nav2_seq_pose()
             return
@@ -601,16 +876,35 @@ class StudioBridge(Node):
                 'then mission complete')
 
     def _nav2_seq_tick(self) -> None:
-        if not self._nav2_seq_active or self._nav2_wait_until <= 0.0:
+        if not self._nav2_seq_active:
+            return
+        if self._nav2_action_cmd_id:
+            remaining = self._nav2_action_deadline - time.time()
+            kind = self._nav2_action_kind or 'action'
+            self._nav2_set_mission(
+                'wait_action',
+                f'{kind} {max(0.0, remaining):.1f}s')
+            if remaining > 0.0:
+                return
+            self.get_logger().warn(
+                f'Waypoint {kind} timed out — continuing mission')
+            try:
+                self._align_cancel_pub.publish(Empty())
+            except Exception:
+                pass
+            try:
+                self._detect_cancel_pub.publish(Empty())
+            except Exception:
+                pass
+            self._nav2_finish_action_then_next(f'{kind} timeout')
+            return
+        if self._nav2_wait_until <= 0.0:
             return
         remaining = self._nav2_wait_until - time.time()
         self._nav2_set_mission('wait_action', f'waiting {max(0.0, remaining):.1f}s')
         if remaining > 0.0:
             return
-        self._nav2_wait_until = 0.0
-        self.get_logger().info(
-            'Waypoint wait complete — generating path to next waypoint')
-        self._send_nav2_seq_pose()
+        self._nav2_finish_action_then_next('Waypoint wait complete')
 
     def _on_nav2_seq_result(self, gen: int, rfut) -> None:
         if not self._nav2_seq_active or gen != self._nav2_seq_gen:
@@ -662,8 +956,8 @@ class StudioBridge(Node):
         if not fut.done():
             return False
         try:
-            res = fut.result()
-            return bool(res.success)
+            fut.result()
+            return True
         except Exception:
             return False
 
@@ -869,6 +1163,24 @@ class StudioBridge(Node):
             return True
         return False
 
+    def _orbbec_color_cli(self):
+        if self._toggle_color_cli.service_is_ready():
+            return self._toggle_color_cli
+        if self._toggle_color_cli_ns.service_is_ready():
+            return self._toggle_color_cli_ns
+        if self._toggle_color_cli_root.service_is_ready():
+            return self._toggle_color_cli_root
+        return self._toggle_color_cli
+
+    def _orbbec_depth_cli(self):
+        if self._toggle_depth_cli.service_is_ready():
+            return self._toggle_depth_cli
+        if self._toggle_depth_cli_ns.service_is_ready():
+            return self._toggle_depth_cli_ns
+        if self._toggle_depth_cli_root.service_is_ready():
+            return self._toggle_depth_cli_root
+        return self._toggle_depth_cli
+
     def _toggle_orbbec(self, *, color: bool, depth: Optional[bool] = None) -> None:
         """Start/stop Orbbec hardware streams via /camera/toggle_color (and depth)."""
         if self._toggle_inflight:
@@ -880,7 +1192,13 @@ class StudioBridge(Node):
         )
         if color_same and depth_same:
             return
-        if not self._toggle_color_cli.service_is_ready():
+        color_cli = self._orbbec_color_cli()
+        if not color_cli.service_is_ready() and not color_cli.wait_for_service(timeout_sec=0.3):
+            now = time.time()
+            if now - getattr(self, '_toggle_not_ready_log', 0.0) >= 2.0:
+                self._toggle_not_ready_log = now
+                self._cam_log(
+                    f'toggle skipped — {color_cli.srv_name} not ready')
             return
 
         def _done(fut, kind: str, wanted: bool) -> None:
@@ -913,23 +1231,30 @@ class StudioBridge(Node):
             self._toggle_inflight = True
             req = SetBool.Request()
             req.data = bool(color)
-            fut = self._toggle_color_cli.call_async(req)
+            fut = color_cli.call_async(req)
             fut.add_done_callback(lambda f, w=bool(color): _done(f, 'color', w))
-        if depth is not None and not depth_same and self._toggle_depth_cli.service_is_ready():
+        depth_cli = self._orbbec_depth_cli()
+        if depth is not None and not depth_same and depth_cli.service_is_ready():
             dreq = SetBool.Request()
             dreq.data = bool(depth)
-            dfut = self._toggle_depth_cli.call_async(dreq)
+            dfut = depth_cli.call_async(dreq)
             dfut.add_done_callback(lambda f, w=bool(depth): _done(f, 'depth', w))
 
     def _ensure_orbbec(self, *, force: bool = False) -> None:
         """Launch Orbbec node on demand (never at deploy unless camera wanted)."""
         if self._cam_forbid_autostart:
             return
+        if self._cam_in_nav_launch:
+            return
         if not force and not self._cam_wanted():
             return
         if time.time() < self._cam_launch_backoff_until:
             return
-        if self.pm.running('camera'):
+        if (
+            self.pm.running('camera')
+            or self._orbbec_color_cli().service_is_ready()
+            or bool(self.pm.stacks_alive().get('camera'))
+        ):
             return
         try:
             mp = self.pm.start_camera(enable_depth=False)
@@ -953,10 +1278,15 @@ class StudioBridge(Node):
             self._cam_log(f'Orbbec launch failed: {exc}')
 
     def _stop_orbbec(self) -> None:
-        if self.pm.running('camera'):
+        try:
             self._toggle_orbbec(color=False, depth=False)
+        except Exception:
+            pass
+        if self.pm.running('camera') or bool(self.pm.stacks_alive().get('camera')):
             self.pm.stop_camera()
             self._cam_log('Orbbec node stopped')
+        else:
+            self.pm.stop_camera()
         self._cam_stream = None
         self._cam_depth_stream = None
         self._cam_depth_running = False
@@ -985,9 +1315,12 @@ class StudioBridge(Node):
             if wanted and self._cam_stream_allowed():
                 self._toggle_orbbec(
                     color=True,
-                    depth=True if self._cam_need_depth else None)
-            else:
-                self._toggle_orbbec(color=False)
+                    depth=bool(self._cam_need_depth))
+            elif self._cam_stream or self._cam_depth_stream:
+                # Do not toggle OFF the moment /camera/toggle_* appears —
+                # that races Orbbec setupPublishers and kills the color
+                # publisher (then Detect+Align crashes the camera).
+                self._toggle_orbbec(color=False, depth=False)
             return
 
         if wanted:
@@ -1205,6 +1538,7 @@ class StudioBridge(Node):
         return {
             'x': round(float(ps.pose.position.x), 3),
             'y': round(float(ps.pose.position.y), 3),
+            'z': round(float(ps.pose.position.z), 3),
             'yaw': round(_yaw_of(ps), 3),
         }
 
@@ -1291,7 +1625,9 @@ class StudioBridge(Node):
                 'age': round(max(0.0, time.time() - self._amcl_stamp), 2)
                 if self._amcl_stamp else None,
             },
-            'world_ready': self._world_ready,
+            'world_ready': (
+                True if (self._using_nav2() and self._map is not None)
+                else self._world_ready),
             'map': map_payload,
             'map_rev': map_rev,
             'scan': self._scan,
@@ -1345,15 +1681,19 @@ class StudioBridge(Node):
             'warnings': warnings,
             'robot_dims': self._robot_dims(),
             'logs': self._process_logs(),
+            'detect_align': dict(self._detect_align),
+            'oms': dict(self._oms),
             'camera': {
                 'on': self._cam_wanted(),
                 'ui': self._cam_ui,
                 'action': self._cam_action_need,
                 'killed': bool(self._cam_forbid_autostart),
-                'process': self.pm.running('camera'),
+                'process': (
+                    self.pm.running('camera')
+                    or bool(self.pm.stacks_alive().get('camera'))),
                 'stream': bool(self._cam_stream),
                 'depth_stream': bool(self._cam_depth_stream),
-                'toggle_ready': self._toggle_color_cli.service_is_ready(),
+                'toggle_ready': self._orbbec_color_cli().service_is_ready(),
                 # Consumers subscribe to these Orbbec topics directly.
                 'topics': {
                     'color': '/camera/color/image_raw',
@@ -1373,7 +1713,7 @@ class StudioBridge(Node):
     def _process_logs(self, max_lines: int = 40) -> Dict[str, str]:
         out: Dict[str, str] = {}
         log_dir = FsPath(os.path.expanduser('~/skill23_ws/studio_maps/_logs'))
-        for name in ('slam', 'nav', 'localize', 'camera'):
+        for name in ('slam', 'nav', 'localize', 'camera', 'detect_align'):
             path = log_dir / f'{name}.log'
             try:
                 # Read only the tail: nav.log grows to megabytes during a run
@@ -1516,6 +1856,7 @@ class StudioBridge(Node):
                 # running (map-list clicks used to wait many seconds on empty
                 # pkill sweeps).
                 self._cam_deploy_requested = False
+                self._cam_in_nav_launch = False
                 alive = self.pm.stacks_alive()
                 if any(alive.get(k) for k in ('nav', 'localize', 'slam', 'camera')):
                     self.pm.stop_all(timeout=0.4)
@@ -1684,47 +2025,60 @@ class StudioBridge(Node):
             name = self.session.get('map_name') or ''
             robot = self.session.get('robot') or 'grip'
             start_camera = bool(body.get('start_camera', False))
+            module = str(body.get('module') or '').strip().lower()
+            if module in ('commission', 'commissioning', 'detect'):
+                start_camera = True
+                with_align = False
+                module = 'commission'
+            elif module in ('nav', 'navigation', 'localisation', 'localization'):
+                start_camera = False
+                with_align = True
+                module = 'nav'
+            else:
+                module = 'commission' if start_camera else 'nav'
+                with_align = not start_camera
             stack = 'nav2'
             yaml_path = maps.map_yaml_path(name)
             if not yaml_path.is_file():
                 raise FileNotFoundError(str(yaml_path))
-            # Normal deploy explicitly frees camera USB/CPU. Camera deploy starts
-            # Orbbec after nav/AMCL have had time to stabilize.
+            # Nav module: Align YAML, no camera. Commissioning: camera + Detect+Align.
             self._cam_deploy_requested = False
             if not start_camera:
                 self._cam_ui = False
                 self._stop_orbbec()
+            else:
+                self.pm.stop_camera()
             # Optionally burn restrictions before nav
             if body.get('burn_restrictions', True):
                 maps.burn_restrictions_into_map(name)
             mp = self.pm.start_nav(
-                robot, str(yaml_path), with_camera=start_camera, stack=stack)
+                robot, str(yaml_path),
+                with_camera=start_camera, with_align=with_align, stack=stack)
             self.session['phase'] = 'deploy'
             self.session['mode'] = 'arena'
             self.session['nav_stack'] = stack
+            self.session['deploy_module'] = module
             self._clear_nav_paths()
             self._sim_path = None
             self._sim_path_smooth = None
             self._sim_result = {}
             self._cam_forbid_autostart = False
+            self._cam_in_nav_launch = bool(start_camera)
             if start_camera:
-                self._cam_deploy_requested = True
-                # Keep camera startup away from the navigation process burst.
-                self._cam_deploy_launch_after = time.time() + 8.0
                 self._cam_log(
-                    'Deploy with camera selected — starting Orbbec after '
-                    'the basic nav startup delay')
-            # Orbbec launches only when camera UI or vision action needs it.
+                    'Commissioning — Gemini E in launch (streams OFF); '
+                    'Detect+Align idle until waypoint')
             self.get_logger().info(
-                f'Deploy START stack={stack} robot={robot} camera={start_camera} '
-                f'map={yaml_path} pid={mp.popen.pid} log={mp.log_path} '
-                f'cmd={" ".join(mp.cmd)}')
+                f'Deploy START module={module} stack={stack} robot={robot} '
+                f'camera={start_camera} align={with_align} map={yaml_path} '
+                f'pid={mp.popen.pid} log={mp.log_path} cmd={" ".join(mp.cmd)}')
             return {
                 'ok': True,
                 'stack': stack,
+                'module': module,
                 'map': str(yaml_path),
                 'camera': start_camera,
-                'camera_after_nav_startup': start_camera,
+                'camera_after_nav_startup': False,
                 'pid': mp.popen.pid,
                 'log': mp.log_path,
                 'cmd': ' '.join(mp.cmd),
@@ -1733,12 +2087,14 @@ class StudioBridge(Node):
         if path == '/api/deploy/stop':
             self.get_logger().info('Deploy STOP — shutting down nav stack')
             self._cam_deploy_requested = False
+            self._cam_in_nav_launch = False
             self._cancel_nav2()
             self.pm.stop_nav()
             self._stop_orbbec()
             self._enable_ctrl(False)
             self.session['phase'] = 'idle'
             self.session['nav_stack'] = 'nav2'
+            self.session['deploy_module'] = 'nav'
             return {'ok': True}
 
         if path == '/api/nav2/clear_costmaps':
@@ -1779,7 +2135,7 @@ class StudioBridge(Node):
             # Optimistic pose until AMCL / TF catch up (UI was preferring stale TF)
             self._pose = self._pose_stamped(x, y, yaw)
             self._pose_override = {
-                'x': round(x, 3), 'y': round(y, 3), 'yaw': round(yaw, 3),
+                'x': round(x, 3), 'y': round(y, 3), 'z': 0.0, 'yaw': round(yaw, 3),
             }
             self._pose_override_until = time.time() + 2.5
             self._amcl_ok = True
@@ -1941,11 +2297,18 @@ class StudioBridge(Node):
             if not yaml_path.is_file():
                 raise FileNotFoundError(
                     f'No saved map for "{name}". Create/save a map first.')
+            if self.pm.stacks_alive().get('localize'):
+                return {
+                    'ok': True,
+                    'already': True,
+                    'message': 'localize already running',
+                    'map': str(yaml_path),
+                }
             self.session.update({
                 'map_name': name,
                 'robot': robot,
                 'mode': 'arena',
-                'phase': 'improve',
+                'phase': 'waypoints',
             })
             self._trail = []
             self._trail_last = (None, None)
@@ -1960,6 +2323,7 @@ class StudioBridge(Node):
                 f'pid={mp.popen.pid} log={mp.log_path} cmd={" ".join(mp.cmd)}')
             return {
                 'ok': True,
+                'already': False,
                 'map': str(yaml_path),
                 'pid': mp.popen.pid,
                 'log': mp.log_path,
@@ -1967,12 +2331,18 @@ class StudioBridge(Node):
             }
 
         if path == '/api/localize/stop':
+            if not self.pm.stacks_alive().get('localize'):
+                return {
+                    'ok': True,
+                    'already': True,
+                    'message': 'localize already stopped',
+                }
             self.get_logger().info('Localize STOP')
             self.pm.stop_localize()
             self._pose = None
             self._amcl_ok = False
             self._scan = []
-            return {'ok': True}
+            return {'ok': True, 'already': False}
 
         if path == '/api/camera/on':
             self._cam_ui = True
@@ -1992,7 +2362,7 @@ class StudioBridge(Node):
             self._cam_ui = False
             self._cam_need_last = None
             self._cam_log('UI camera OFF → /camera/toggle_color false')
-            self._toggle_orbbec(color=False)
+            self._toggle_orbbec(color=False, depth=False)
             return {'ok': True, 'on': False, 'stream': self._cam_stream}
 
         if path == '/api/camera/kill':
@@ -2002,6 +2372,7 @@ class StudioBridge(Node):
             self._cam_need_depth = False
             self._cam_need_last = None
             self._cam_deploy_requested = False
+            self._cam_in_nav_launch = False
             self._cam_forbid_autostart = True
             self._cam_log('UI Kill camera node — stopping Orbbec process')
             self._stop_orbbec()

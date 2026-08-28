@@ -119,8 +119,9 @@ const StudioMap = (() => {
   }
 
   function occupancyToGray(v) {
-    // OccupancyGrid: -1 unknown, 0 free, 100 occupied
-    if (v < 0) return 175;           // unknown — grey (PGM 205)
+    // OccupancyGrid: -1 unknown, 0 free, 100 occupied.
+    // 255 is int8 -1 if a publisher sent uint8; keep it grey, not black/white.
+    if (v < 0 || v > 100) return 175;
     if (v >= 65) return 0;           // occupied — black
     if (v <= 25) return 255;         // free — white
     return Math.round(255 - (v / 100) * 255);
@@ -921,15 +922,23 @@ const StudioMap = (() => {
       const sc = worldToScreen(wp.x, wp.y);
       const yaw = wp.yaw || 0;
       const deg = Math.round((yaw * 180) / Math.PI);
-      ctx.fillStyle = '#000080';
+      const sticker = String(wp.sticker || '').trim().toUpperCase();
+      const isPick = /^P\d+$/i.test(sticker);
+      const isDrop = /^D\d+$/i.test(sticker);
+      ctx.fillStyle = isPick ? '#1b7a3a' : (isDrop ? '#c45c12' : '#000080');
       ctx.beginPath();
-      ctx.arc(sc.x, sc.y, 7, 0, Math.PI * 2);
+      ctx.arc(sc.x, sc.y, sticker ? 10 : 7, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = '#fff';
-      ctx.font = '11px Outfit, sans-serif';
+      ctx.font = sticker ? 'bold 10px Outfit, sans-serif' : '11px Outfit, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(String(i + 1), sc.x, sc.y);
+      ctx.fillText(sticker || String(i + 1), sc.x, sc.y);
+      if (sticker) {
+        ctx.font = '9px Outfit, sans-serif';
+        ctx.fillStyle = '#000080';
+        ctx.fillText(String(i + 1), sc.x, sc.y + 16);
+      }
       const len = 0.35;
       const tip = headingTip(wp.x, wp.y, yaw, len);
       ctx.strokeStyle = '#FF9933';

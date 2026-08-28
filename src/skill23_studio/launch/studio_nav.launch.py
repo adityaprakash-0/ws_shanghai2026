@@ -24,13 +24,16 @@ from launch.actions import (
     DeclareLaunchArgument,
     ExecuteProcess,
     GroupAction,
+    IncludeLaunchDescription,
     OpaqueFunction,
     SetEnvironmentVariable,
     TimerAction,
 )
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
+from skill23_studio.detect_align_paths import detect_align_yaml_for_robot
 from skill23_studio.ekf_paths import ekf_yaml_for_robot
 
 
@@ -83,6 +86,7 @@ def _setup(context, *args, **kwargs):
     studica_share = get_package_share_directory('studica_control')
     hw_params = os.path.join(share, 'config', 'hw_params', f'hw_params_{robot}.yaml')
     amcl_params = os.path.join(share, 'config', 'amcl.yaml')
+    detect_yaml = detect_align_yaml_for_robot(robot, share)
     if not os.path.isfile(amcl_params):
         raise RuntimeError(f'Missing {amcl_params}')
 
@@ -207,6 +211,15 @@ def _setup(context, *args, **kwargs):
         _node('skill23_studio', 'cn_recovery', 'cn_recovery', **common),
         _node('skill23_studio', 'cn_mission', 'cn_mission', **common),
         _node('skill23_studio', 'cn_controller', 'cn_controller', **common),
+        _node(
+            'skill23_studio', 'studio_detect_align', 'detect_align',
+            parameters=[detect_yaml],
+            output='screen'),
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(os.path.join(
+                get_package_share_directory('oms'),
+                'launch', 'oms.launch.py')),
+        ),
     ]
     if enable_bridge:
         nav_nodes.append(

@@ -14,6 +14,7 @@
   <depend>studica_control</depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>
+  <exec_depend>joy</exec_depend>
   <exec_depend>ydlidar_ros2_driver</exec_depend>
   <exec_depend>allterrain</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>

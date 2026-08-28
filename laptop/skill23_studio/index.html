@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Sora:wght@400;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/style.css?v=20260823a" />
+  <link rel="stylesheet" href="css/style.css?v=20260827d" />
 </head>
 <body>
   <div class="tricolor"></div>
@@ -116,8 +116,8 @@
         <p class="hint" id="modeMapLabel"></p>
         <div class="mode-grid">
           <button class="mode-tile" id="btnModeArena">
-            <strong>Arena (live)</strong>
-            <span>Stop mapping is done — starts AMCL on this map: pose, lidar, teleop, waypoints</span>
+            <strong>Arena (localize)</strong>
+            <span>Opens the localize panel. Start/stop map_server + AMCL from there, then save x/y/z/yaw waypoints</span>
           </button>
           <button class="mode-tile" id="btnModeOffline">
             <strong>Offline</strong>
@@ -125,6 +125,25 @@
           </button>
         </div>
         <button class="btn btn-ghost" data-go="home">Home</button>
+      </div>
+    </section>
+
+    <!-- DEPLOY MODULE PICK (after arena / offline waypoints) -->
+    <section class="view" id="view-deploy-pick">
+      <div class="wizard">
+        <h2>Choose deploy</h2>
+        <p class="hint" id="deployPickHint">After marking waypoints, pick a module.</p>
+        <div class="mode-grid">
+          <button class="mode-tile" id="btnPickNav">
+            <strong>Navigation and localisation</strong>
+            <span>Nav2 drive. Per waypoint: Wait, Align (saved yaw vs YAML), or Align + distance. No camera, no YOLO.</span>
+          </button>
+          <button class="mode-tile" id="btnPickCommission">
+            <strong>Commissioning module</strong>
+            <span>Nav2 + camera (streams off until needed). Pick/drop stickers (P1, D1). Wait or Detect+Align at each waypoint.</span>
+          </button>
+        </div>
+        <button class="btn btn-ghost" id="btnDeployPickBack">Back to waypoints</button>
       </div>
     </section>
 
@@ -147,6 +166,8 @@
           <button class="btn btn-ghost" id="btnClearTrail">Clear path trail</button>
           <button class="btn btn-primary" id="btnSaveMap">Save Map</button>
           <button class="btn btn-danger" id="btnStopMapping">Stop SLAM</button>
+          <h5 class="log-title">SLAM output</h5>
+          <pre class="log-box side-log" id="logSlam">—</pre>
         </div>
 
         <div class="side-block" id="blockImprove">
@@ -187,13 +208,26 @@
             <button class="tool" data-tool="pose">Set pose</button>
           </div>
           <button class="btn btn-primary" id="btnToWaypoints">Next: Waypoints</button>
-          <button class="btn btn-ghost" id="btnSkipWaypoints" title="Open the deploy view; nav is started from there">Skip waypoints → Open deploy</button>
-          <button class="btn btn-saffron" id="btnFinishImprove" title="Save, stop localization and open the deploy view">Save &amp; open deploy (stop robot)</button>
+          <button class="btn btn-ghost" id="btnSkipWaypoints" title="Open deploy module picker; nav is started from there">Skip waypoints → Choose deploy</button>
+          <button class="btn btn-saffron" id="btnFinishImprove" title="Save, stop localization and choose a deploy module">Save &amp; choose deploy (stop robot)</button>
         </div>
 
         <div class="side-block" id="blockWaypoints">
           <h3>Waypoints</h3>
-          <p class="hint" id="wpHint">Arena: drive then Save. Offline: click-drag yaw on map.</p>
+          <div id="localizeControls" hidden>
+            <h4>Localize</h4>
+            <p class="hint" id="locHint">Localize: stopped</p>
+            <div class="tool-row">
+              <button class="btn btn-primary" id="btnStartLocalize">Start localize</button>
+              <button class="btn btn-danger" id="btnStopLocalize" disabled>Stop localize</button>
+            </div>
+            <h5 class="log-title">Localize output</h5>
+            <pre class="log-box side-log" id="logLocalize">—</pre>
+          </div>
+          <p class="hint" id="wpHint">Arena: drive then Save waypoint at robot pose. Offline: click-drag yaw on map.</p>
+          <div class="tool-row" id="wpPoseRow" style="display:none">
+            <button class="tool" data-tool="pose">Set pose</button>
+          </div>
           <div class="wp-input-modes" id="wpInputModes">
             <div class="wp-input-title">Waypoint input</div>
             <div class="wp-input-buttons">
@@ -205,8 +239,8 @@
           <button class="btn btn-ghost" id="btnClearWp">Clear list</button>
           <button class="btn btn-ghost" id="btnReloadWp">Reload saved waypoints</button>
           <ol id="wpList" class="wp-list"></ol>
-          <button class="btn btn-primary" id="btnToDeploy" title="Save waypoints and open the deploy view; nav is started from there">Done — save &amp; open deploy</button>
-          <button class="btn btn-ghost" id="btnSkipWpToDeploy" title="Open the deploy view with saved waypoints; nav is started from there">Skip editing → Open deploy (keep saved)</button>
+          <button class="btn btn-primary" id="btnToDeploy" title="Save waypoints and choose a deploy module">Done — save &amp; choose deploy</button>
+          <button class="btn btn-ghost" id="btnSkipWpToDeploy" title="Open deploy picker with saved waypoints">Skip editing → Choose deploy (keep saved)</button>
         </div>
 
         <!-- Deploy controls live in the map HUD (4 docks); keep a hook for battery. -->
@@ -244,7 +278,10 @@
                 <div class="battery-bar"><div class="fill" id="batteryFillDeploy" style="width:0%"></div></div>
               </div>
               <div class="deploy-top-row">
+                <span class="deploy-module-badge" id="deployModuleBadge">Navigation</span>
                 <button class="btn btn-saffron" id="btnDeployNav2" title="ROS 2 Nav2 (clearance planner + RPP)">Start Nav2</button>
+                <button class="btn btn-primary" id="btnDeployNav2Cam" title="Nav2 + Gemini E (streams off) + Detect+Align">Start Nav2+camera</button>
+                <button class="btn btn-ghost" id="btnChangeModule" title="Switch Navigation / Commissioning">Change module</button>
                 <button class="btn btn-primary" id="btnMissionStart">Start mission</button>
                 <button class="btn btn-ghost" id="btnMissionStop">Stop mission</button>
                 <button class="btn btn-ghost" id="btnClearCostmaps" title="Clear local + global Nav2 costmaps">Clear costmaps</button>
@@ -291,6 +328,23 @@
           </div>
 
           <div class="deploy-dock deploy-dock-right">
+            <aside class="detect-align-panel" id="detectAlignPanel" hidden>
+              <h4>Detect + Align</h4>
+              <dl class="da-stats">
+                <div><dt>Status</dt><dd id="daState">idle</dd></div>
+                <div><dt>Aligned</dt><dd id="daAligned">—</dd></div>
+                <div><dt>OMS</dt><dd id="daOms">—</dd></div>
+                <div><dt>Object</dt><dd id="daObject">—</dd></div>
+                <div><dt>Gripper</dt><dd id="daGrip">—</dd></div>
+                <div><dt>Center</dt><dd id="daCenter">—</dd></div>
+                <div><dt>u</dt><dd id="daU">—</dd></div>
+                <div><dt>Confirm</dt><dd id="daConfirm">—</dd></div>
+                <div><dt>Depth</dt><dd id="daDepth">—</dd></div>
+                <div><dt>Result</dt><dd id="daResult">—</dd></div>
+              </dl>
+              <p class="hint" id="daHint">Snapshot YOLO + OMS rotate until a Detect+Align waypoint</p>
+              <pre class="log-box side-log" id="daLog">—</pre>
+            </aside>
             <aside class="node-status-panel" id="nodeStatusPanel" hidden>
               <h4 id="nodeStatusTitle">Stack status</h4>
               <ul id="nodeStatusList"></ul>
@@ -355,20 +409,16 @@
                   <pre class="log-box" id="logNav">—</pre>
                 </div>
                 <div>
+                  <h5 class="log-title">detect+align</h5>
+                  <pre class="log-box" id="logDetectAlign">—</pre>
+                </div>
+                <div>
                   <h5 class="log-title">camera</h5>
                   <pre class="log-box" id="logCamera">—</pre>
                 </div>
                 <div>
                   <h5 class="log-title">orbbec</h5>
                   <pre class="log-box" id="logOrbbec">—</pre>
-                </div>
-                <div>
-                  <h5 class="log-title">localize</h5>
-                  <pre class="log-box" id="logLocalize">—</pre>
-                </div>
-                <div>
-                  <h5 class="log-title">slam</h5>
-                  <pre class="log-box" id="logSlam">—</pre>
                 </div>
               </div>
             </div>
@@ -379,8 +429,8 @@
   </main>
 
   <!-- Bump ?v= whenever these change so browsers cannot serve a stale build. -->
-  <script src="js/api.js?v=20260823a"></script>
-  <script src="js/map.js?v=20260823a"></script>
-  <script src="js/app.js?v=20260823a"></script>
+  <script src="js/api.js?v=20260827d"></script>
+  <script src="js/map.js?v=20260827d"></script>
+  <script src="js/app.js?v=20260827d"></script>
 </body>
 </html>

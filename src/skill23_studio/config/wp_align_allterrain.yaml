@@ -1,0 +1,50 @@
+# AllTerrain — TUNED (bench 2026-08-26). Titan /cmd_vel is duty (−1…1).
+# Dashboard Deploy loads this file when robot=allterrain.
+#
+# timeout_sec            max time for ONE align attempt. Then retries (if any).
+# timeout_align_move_sec max time for ONE align+move attempt.
+# retries                extra tries after timeout (0 = give up after first).
+# retry_pause_sec        sit still between attempts.
+# pause_after_align_sec  brief stop between yaw and lidar drive (align+move only).
+# hold_after_done_sec    sit still after success, then send done → next waypoint.
+
+align:
+  ros__parameters:
+    pose_source: amcl
+    pose_topic: /amcl_pose
+    cmd_vel_topic: /cmd_vel
+    cmd_topic: /studio/align/cmd
+    result_topic: /studio/align/result
+    cancel_topic: /studio/align/cancel
+    scan_topic: /scan/front
+    scan_topic_alt: /scan_front
+    scan_angle_deg: 0.0
+    scan_window_deg: 3.0
+    control_rate_hz: 20.0
+    yaw_tolerance_deg: 2.5
+    confirm_frames: 10
+    timeout_sec: 20.0
+    timeout_align_move_sec: 40.0
+    retries: 2
+    retry_pause_sec: 0.4
+    pause_after_align_sec: 2.0
+    hold_after_done_sec: 2.0
+    yaw_kp: 1.4
+    yaw_ki: 0.05
+    yaw_kd: 0.12
+    yaw_i_limit: 0.4
+    yaw_duty_min: 0.20
+    yaw_duty_max: 0.25
+    angular_sign: 1.0
+    dist_tolerance_m: 0.015
+    dist_confirm_frames: 10
+    lin_kp: 4.0
+    lin_ki: 0.05
+    lin_kd: 0.15
+    lin_i_limit: 0.3
+    forward_duty_min: 0.08
+    forward_duty_max: 0.14
+    backward_duty_min: 0.08
+    backward_duty_max: 0.14
+    linear_sign: 1.0
+    log_hz: 2.0

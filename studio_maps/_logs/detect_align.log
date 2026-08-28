@@ -1,0 +1,72 @@
+10:57:44 [info] ==== detect_align start 2026-08-28 10:57:44 color=/camera/color/image_raw,/camera/camera/color/image_raw depth=/camera/depth/image_raw target=Cylinder log=/home/vmx/skill23_ws/studio_maps/_logs/detect_align.log
+11:02:09 [info] cmd id=nav2_2_0_1787895129963 {'cmd_id': 'nav2_2_0_1787895129963', 'mode': 'detect_align'}
+11:02:11 [info] color ON requested topics=/camera/color/image_raw,/camera/camera/color/image_raw frames_so_far=0 camera_nodes=['camera_container', 'camera'] image_topics=['/camera/camera/color/image_raw', '/camera/camera/depth/image_raw', '/camera/color/image_raw', '/camera/depth/image_raw', '/color/image_raw', '/depth/image_raw'] color_n=0
+11:02:11 [info] waiting for first color 0/15s /camera/color/image_raw camera_nodes=['camera_container', 'camera'] image_topics=['/camera/camera/color/image_raw', '/camera/camera/depth/image_raw', '/camera/color/image_raw', '/camera/depth/image_raw', '/color/image_raw', '/depth/image_raw'] color_n=0
+11:02:12 [info] waiting for first color 1/15s /camera/color/image_raw camera_nodes=['camera_container', 'camera'] image_topics=['/camera/camera/color/image_raw', '/camera/camera/depth/image_raw', '/camera/color/image_raw', '/camera/depth/image_raw', '/color/image_raw', '/depth/image_raw'] color_n=0
+11:02:13 [info] waiting for first color 2/15s /camera/color/image_raw camera_nodes=['camera_container', 'camera'] image_topics=['/camera/camera/color/image_raw', '/camera/camera/depth/image_raw', '/camera/color/image_raw', '/camera/depth/image_raw', '/color/image_raw', '/depth/image_raw'] color_n=0
+11:02:14 [info] waiting for first color 3/15s /camera/color/image_raw camera_nodes=['camera_container', 'camera'] image_topics=['/camera/camera/color/image_raw', '/camera/camera/depth/image_raw', '/camera/color/image_raw', '/camera/depth/image_raw', '/color/image_raw', '/depth/image_raw'] color_n=0
+11:02:15 [info] waiting for first color 4/15s /camera/color/image_raw camera_nodes=['camera_container', 'camera'] image_topics=['/camera/camera/color/image_raw', '/camera/camera/depth/image_raw', '/camera/color/image_raw', '/camera/depth/image_raw', '/color/image_raw', '/depth/image_raw'] color_n=0
+11:02:16 [info] waiting for first color 5/15s /camera/color/image_raw camera_nodes=['camera_container', 'camera'] image_topics=['/camera/camera/color/image_raw', '/camera/camera/depth/image_raw', '/camera/color/image_raw', '/camera/depth/image_raw', '/color/image_raw', '/depth/image_raw'] color_n=0
+11:02:17 [info] waiting for first color 6/15s /camera/color/image_raw camera_nodes=['camera_container', 'camera'] image_topics=['/camera/camera/color/image_raw', '/camera/camera/depth/image_raw', '/camera/color/image_raw', '/camera/depth/image_raw', '/color/image_raw', '/depth/image_raw'] color_n=0
+11:02:18 [info] waiting for first color 7/15s /camera/color/image_raw camera_nodes=['camera_container', 'camera'] image_topics=['/camera/camera/color/image_raw', '/camera/camera/depth/image_raw', '/camera/color/image_raw', '/camera/depth/image_raw', '/color/image_raw', '/depth/image_raw'] color_n=0
+11:02:19 [info] waiting for first color 8/15s /camera/color/image_raw camera_nodes=['camera_container', 'camera'] image_topics=['/camera/camera/color/image_raw', '/camera/camera/depth/image_raw', '/camera/color/image_raw', '/camera/depth/image_raw', '/color/image_raw', '/depth/image_raw'] color_n=0
+11:02:20 [info] waiting for first color 9/15s /camera/color/image_raw camera_nodes=['camera_container', 'camera'] image_topics=['/camera/camera/color/image_raw', '/camera/camera/depth/image_raw', '/camera/color/image_raw', '/camera/depth/image_raw', '/color/image_raw', '/depth/image_raw'] color_n=0
+11:02:21 [info] waiting for first color 10/15s /camera/color/image_raw camera_nodes=['camera_container', 'camera'] image_topics=['/camera/camera/color/image_raw', '/camera/camera/depth/image_raw', '/camera/color/image_raw', '/camera/depth/image_raw', '/color/image_raw', '/depth/image_raw'] color_n=0
+11:02:22 [info] waiting for first color 11/15s /camera/color/image_raw camera_nodes=['camera_container', 'camera'] image_topics=['/camera/camera/color/image_raw', '/camera/camera/depth/image_raw', '/camera/color/image_raw', '/camera/depth/image_raw', '/color/image_raw', '/depth/image_raw'] color_n=0
+11:02:23 [info] waiting for first color 12/15s /camera/color/image_raw camera_nodes=['camera_container', 'camera'] image_topics=['/camera/camera/color/image_raw', '/camera/camera/depth/image_raw', '/camera/color/image_raw', '/camera/depth/image_raw', '/color/image_raw', '/depth/image_raw'] color_n=0
+11:02:24 [info] waiting for first color 13/15s /camera/color/image_raw camera_nodes=['camera_container', 'camera'] image_topics=['/camera/camera/color/image_raw', '/camera/camera/depth/image_raw', '/camera/color/image_raw', '/camera/depth/image_raw', '/color/image_raw', '/depth/image_raw'] color_n=0
+11:02:25 [info] waiting for first color 14/15s /camera/color/image_raw camera_nodes=['camera_container', 'camera'] image_topics=['/camera/camera/color/image_raw', '/camera/camera/depth/image_raw', '/camera/color/image_raw', '/camera/depth/image_raw', '/color/image_raw', '/depth/image_raw'] color_n=0
+11:02:26 [error] no color frame after 15s (0 frames on /camera/color/image_raw; camera_nodes=['camera_container', 'camera'] image_topics=['/camera/camera/color/image_raw', '/camera/camera/depth/image_raw', '/camera/color/image_raw', '/camera/depth/image_raw', '/color/image_raw', '/depth/image_raw'] color_n=0)
+11:02:26 [error] result ok=False no color frame after 15s (0 frames on /camera/color/image_raw; camera_nodes=['camera_container', 'camera'] image_topics=['/camera/camera/color/image_raw', '/camera/camera/depth/image_raw', '/camera/color/image_raw', '/camera/depth/image_raw', '/color/image_raw', '/depth/image_raw'] color_n=0)
+11:38:27 [info] ==== detect_align start 2026-08-28 11:38:27 color=/camera/color/image_raw,/camera/camera/color/image_raw,/color/image_raw depth=/camera/depth/image_raw target=Cylinder log=/home/vmx/skill23_ws/studio_maps/_logs/detect_align.log
+11:44:03 [info] cmd id=nav2_2_0_1787897643555 {'cmd_id': 'nav2_2_0_1787897643555', 'mode': 'detect_align'}
+11:44:05 [info] toggle_color services=['/camera/camera/toggle_color', '/camera/toggle_color', '/toggle_color']
+11:44:06 [info] /camera/toggle_color ON ok=True color ON
+11:44:06 [info] color ON requested topics=/camera/color/image_raw,/camera/camera/color/image_raw,/color/image_raw frames_so_far=0 camera_nodes=['camera_container', 'camera'] image_topics=['/camera/camera/color/image_raw', '/camera/camera/depth/image_raw', '/camera/color/image_raw', '/camera/depth/image_raw', '/color/image_raw', '/depth/image_raw'] color_n=0
+11:44:06 [info] waiting for first color 0/15s /camera/color/image_raw camera_nodes=['camera_container', 'camera'] image_topics=['/camera/camera/color/image_raw', '/camera/camera/depth/image_raw', '/camera/color/image_raw', '/camera/depth/image_raw', '/color/image_raw', '/depth/image_raw'] color_n=0
+11:44:07 [info] waiting for first color 1/15s /camera/color/image_raw camera_nodes=['camera_container', 'camera'] image_topics=['/camera/camera/color/image_raw', '/camera/camera/depth/image_raw', '/camera/color/image_raw', '/camera/depth/image_raw', '/color/image_raw', '/depth/image_raw'] color_n=0
+11:44:07 [info] first color 640x360 enc=rgb8 topic=/camera/color/image_raw camera_nodes=['camera_container', 'camera'] image_topics=['/camera/camera/color/image_raw', '/camera/camera/depth/image_raw', '/camera/color/image_raw', '/camera/depth/image_raw', '/color/image_raw', '/depth/image_raw'] color_n=1
+11:44:07 [info] color ready 640x360 enc=rgb8 n=1
+11:44:07 [info] attempt 1/3 detect_wait=8.0s color_n=1
+11:44:29 [warn] attempt 1/3 failed: align timeout u_norm=-0.055
+11:44:30 [info] attempt 2/3 detect_wait=8.0s color_n=97
+11:44:50 [warn] attempt 2/3 failed: align timeout u_norm=-0.009
+11:44:51 [info] attempt 3/3 detect_wait=8.0s color_n=172
+11:45:03 [info] toggle_color services=['/camera/camera/toggle_color', '/camera/toggle_color', '/toggle_color']
+11:45:03 [info] /camera/toggle_color ON ok=True color Already ON
+11:45:03 [info] toggle_depth services=['/camera/camera/toggle_depth', '/camera/toggle_depth', '/toggle_depth']
+11:45:04 [info] /camera/toggle_depth ON ok=True depth ON
+11:45:06 [info] toggle_color services=['/camera/camera/toggle_color', '/camera/toggle_color', '/toggle_color']
+11:45:14 [warn] /camera/toggle_color call timeout
+11:45:18 [error] toggle_color=OFF FAILED (no ready service; camera_nodes=['camera_container', 'camera'] image_topics=['/camera/camera/color/image_raw', '/camera/camera/depth/image_raw', '/camera/color/image_raw', '/camera/depth/image_raw', '/color/image_raw', '/depth/image_raw'] color_n=230)
+11:45:18 [info] toggle_depth services=['/camera/camera/toggle_depth', '/camera/toggle_depth', '/toggle_depth']
+11:45:18 [info] /camera/toggle_depth OFF ok=True depth Already OFF
+11:45:19 [info] toggle_color services=['/camera/camera/toggle_color', '/camera/toggle_color', '/toggle_color']
+11:45:19 [info] /camera/toggle_color OFF ok=True color Already OFF
+11:45:19 [info] toggle_depth services=['/camera/camera/toggle_depth', '/camera/toggle_depth', '/toggle_depth']
+11:45:19 [info] /camera/toggle_depth OFF ok=True depth Already OFF
+11:45:19 [info] result ok=True aligned depth=0.666m horizontal=0.546m
+11:49:53 [info] ==== detect_align start 2026-08-28 11:49:53 color=/camera/color/image_raw,/camera/camera/color/image_raw,/color/image_raw depth=/camera/depth/image_raw target=Cylinder log=/home/vmx/skill23_ws/studio_maps/_logs/detect_align.log
+11:52:06 [info] cmd id=nav2_6_0_1787898126384 {'cmd_id': 'nav2_6_0_1787898126384', 'mode': 'detect_align'}
+11:52:07 [info] toggle_color services=['/camera/camera/toggle_color', '/camera/toggle_color', '/toggle_color']
+11:52:08 [info] /camera/toggle_color ON ok=True color ON
+11:52:08 [info] color ON requested topics=/camera/color/image_raw,/camera/camera/color/image_raw,/color/image_raw frames_so_far=0 camera_nodes=['camera_container', 'camera'] image_topics=['/camera/camera/color/image_raw', '/camera/camera/depth/image_raw', '/camera/color/image_raw', '/camera/depth/image_raw', '/color/image_raw', '/depth/image_raw'] color_n=0
+11:52:08 [info] waiting for first color 0/15s /camera/color/image_raw camera_nodes=['camera_container', 'camera'] image_topics=['/camera/camera/color/image_raw', '/camera/camera/depth/image_raw', '/camera/color/image_raw', '/camera/depth/image_raw', '/color/image_raw', '/depth/image_raw'] color_n=0
+11:52:09 [info] waiting for first color 1/15s /camera/color/image_raw camera_nodes=['camera_container', 'camera'] image_topics=['/camera/camera/color/image_raw', '/camera/camera/depth/image_raw', '/camera/color/image_raw', '/camera/depth/image_raw', '/color/image_raw', '/depth/image_raw'] color_n=0
+11:52:10 [info] first color 640x360 enc=rgb8 topic=/camera/color/image_raw camera_nodes=['camera_container', 'camera'] image_topics=['/camera/camera/color/image_raw', '/camera/camera/depth/image_raw', '/camera/color/image_raw', '/camera/depth/image_raw', '/color/image_raw', '/depth/image_raw'] color_n=1
+11:52:10 [info] color ready 640x360 enc=rgb8 n=1
+11:52:10 [info] attempt 1/3 detect_wait=8.0s color_n=1
+11:52:31 [warn] attempt 1/3 failed: align timeout u_norm=-0.030
+11:52:32 [info] attempt 2/3 detect_wait=8.0s color_n=87
+11:52:53 [warn] attempt 2/3 failed: align timeout u_norm=-0.158
+11:52:54 [info] attempt 3/3 detect_wait=8.0s color_n=144
+11:53:14 [warn] attempt 3/3 failed: align timeout u_norm=-0.121
+11:53:15 [info] toggle_color services=['/camera/camera/toggle_color', '/camera/toggle_color', '/toggle_color']
+11:53:16 [info] /camera/toggle_color OFF ok=True color Already OFF
+11:53:16 [info] toggle_depth services=['/camera/camera/toggle_depth', '/camera/toggle_depth', '/toggle_depth']
+11:53:16 [info] /camera/toggle_depth OFF ok=True depth Already OFF
+11:53:16 [info] toggle_color services=['/camera/camera/toggle_color', '/camera/toggle_color', '/toggle_color']
+11:53:16 [info] /camera/toggle_color OFF ok=True color Already OFF
+11:53:16 [info] toggle_depth services=['/camera/camera/toggle_depth', '/camera/toggle_depth', '/toggle_depth']
+11:53:16 [info] /camera/toggle_depth OFF ok=True depth Already OFF
+11:53:16 [error] result ok=False align timeout u_norm=-0.121

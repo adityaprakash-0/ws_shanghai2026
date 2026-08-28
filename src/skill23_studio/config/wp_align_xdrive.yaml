@@ -1,0 +1,44 @@
+# XDrive — UNTUNED starter. Titan /cmd_vel is duty (−1…1).
+# Bench: ros2 launch skill23_studio test_wp_align.launch.py robot:=xdrive mode:=align
+# Dashboard Deploy loads this file when robot=xdrive.
+
+align:
+  ros__parameters:
+    pose_source: amcl
+    pose_topic: /amcl_pose
+    cmd_vel_topic: /cmd_vel
+    cmd_topic: /studio/align/cmd
+    result_topic: /studio/align/result
+    cancel_topic: /studio/align/cancel
+    scan_topic: /scan/front
+    scan_topic_alt: /scan_front
+    scan_angle_deg: 0.0
+    scan_window_deg: 3.0
+    control_rate_hz: 20.0
+    yaw_tolerance_deg: 2.5
+    confirm_frames: 8
+    timeout_sec: 20.0
+    timeout_align_move_sec: 40.0
+    retries: 2
+    retry_pause_sec: 0.4
+    pause_after_align_sec: 0.5
+    hold_after_done_sec: 2.0
+    yaw_kp: 1.4
+    yaw_ki: 0.05
+    yaw_kd: 0.12
+    yaw_i_limit: 0.4
+    yaw_duty_min: 0.12
+    yaw_duty_max: 0.35
+    angular_sign: 1.0
+    dist_tolerance_m: 0.015
+    dist_confirm_frames: 8
+    lin_kp: 4.0
+    lin_ki: 0.05
+    lin_kd: 0.15
+    lin_i_limit: 0.3
+    forward_duty_min: 0.12
+    forward_duty_max: 0.28
+    backward_duty_min: 0.12
+    backward_duty_max: 0.28
+    linear_sign: 1.0
+    log_hz: 2.0

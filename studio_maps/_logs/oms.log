@@ -1,0 +1,137 @@
+16:27:25 [info] start ticks/deg=22.550 duty=0.10
+16:27:28 [error] vertical down failed (is /vertical_servo/set_servo up?)
+16:27:28 [warn] result ok=False boot home failed
+16:27:28 [info] home search duty=+0.10
+16:27:28 [warn] home search stalled — reverse
+16:27:29 [warn] home search stalled — reverse
+16:27:30 [warn] home search stalled — reverse
+16:27:31 [warn] home search stalled — reverse
+16:27:32 [warn] home search stalled — reverse
+16:27:33 [warn] home search stalled — reverse
+16:27:34 [warn] home search stalled — reverse
+16:27:35 [warn] home search stalled — reverse
+16:27:36 [warn] home search stalled — reverse
+16:27:37 [warn] home search stalled — reverse
+16:27:37 [warn] home search stalled — reverse
+16:27:38 [warn] home search stalled — reverse
+16:27:39 [warn] home search stalled — reverse
+16:27:40 [warn] home search stalled — reverse
+16:27:41 [warn] home search stalled — reverse
+16:27:42 [warn] home search stalled — reverse
+16:27:43 [warn] home search stalled — reverse
+16:27:44 [warn] home search stalled — reverse
+16:27:45 [warn] home search stalled — reverse
+16:27:46 [warn] home search stalled — reverse
+16:27:46 [warn] home search stalled — reverse
+16:27:47 [warn] home search stalled — reverse
+16:27:48 [warn] home search stalled — reverse
+16:27:50 [warn] home search stalled — reverse
+16:27:51 [warn] home search stalled — reverse
+16:27:52 [warn] home search stalled — reverse
+16:27:53 [warn] home search stalled — reverse
+16:27:53 [warn] result ok=False boot home failed
+16:31:21 [info] start ticks/deg=22.550 duty=0.10
+16:31:21 [info] home search duty=+0.20  switch=False ticks=0.0
+16:31:22 [warn] stall ticks=0.0 (no change ≥6 in 0.70s) duty=+0.20
+16:31:22 [warn] home search stalled — reverse (1)
+16:31:22 [info] vertical down → -40°
+16:31:22 [info] result ok=True homed down
+16:31:26 [warn] stall ticks=0.0 (no change ≥6 in 0.70s) duty=-0.20
+16:31:26 [warn] home search stalled — reverse (2)
+16:31:27 [warn] stall ticks=0.0 (no change ≥6 in 0.70s) duty=+0.20
+16:31:27 [warn] home search stalled — reverse (3)
+16:31:29 [warn] stall ticks=0.0 (no change ≥6 in 0.70s) duty=-0.20
+16:31:29 [warn] home search stalled — reverse (4)
+16:31:29 [error] encoder not moving on M2 in either direction — check Titan1 M2 / raise home_duty / watch /titan1/m_2/encoder and /titan1/m_0/limit_rev
+16:31:29 [warn] result ok=False boot home failed
+16:36:26 [info] start ticks/deg=22.550 duty=0.10
+16:36:26 [info] home search duty=+0.20  switch=False ticks=0.0
+16:36:28 [info] vertical down → -40°
+16:36:28 [info] result ok=True homed down
+16:36:32 [warn] stall ticks=-1594.0 (no change ≥6 in 0.70s) duty=+0.20
+16:36:32 [warn] home search stalled — reverse (1)
+16:36:33 [warn] stall ticks=-1585.0 (no change ≥6 in 0.70s) duty=-0.20
+16:36:33 [warn] home search stalled — reverse (2)
+16:36:34 [warn] stall ticks=-1587.0 (no change ≥6 in 0.70s) duty=+0.20
+16:36:34 [warn] home search stalled — reverse (3)
+16:36:36 [warn] stall ticks=-1585.0 (no change ≥6 in 0.70s) duty=-0.20
+16:36:36 [warn] home search stalled — reverse (4)
+16:36:36 [error] encoder not moving on M2 in either direction — check Titan1 M2 / raise home_duty / watch /titan1/m_2/encoder and /titan1/m_0/limit_rev
+16:36:36 [warn] result ok=False boot home failed
+16:45:50 [info] start ticks/deg=22.550 duty=0.10
+16:45:50 [info] home search duty=+0.20  switch=False ticks=0.0
+16:45:51 [info] vertical down → -40°
+16:45:51 [info] result ok=True homed down
+16:45:51 [info] homed ticks=0.0
+16:45:51 [info] result ok=True homed
+16:46:59 [info] start ticks/deg=22.550 duty=0.10
+16:47:00 [info] vertical down → -40°
+16:47:00 [info] result ok=True homed down
+16:47:01 [info] homed ticks=0.0
+16:47:01 [info] result ok=True homed
+16:47:45 [info] goto +30.00° from +0.00°
+16:47:53 [info] result ok=True ok
+17:27:20 [info] start ticks/deg=22.550 duty=0.10
+17:27:21 [info] homed ticks=0.0
+17:27:21 [info] result ok=True homed
+17:27:21 [info] vertical down → -40°
+17:27:21 [info] result ok=True homed down
+17:28:21 [info] goto +90.00° from +0.00°
+17:28:34 [warn] stall — reverse to home switch
+17:28:38 [info] homed ticks=0.0
+17:28:38 [info] result ok=True rehomed
+17:29:09 [info] goto +90.00° from -3.37°
+17:29:22 [warn] stall — reverse to home switch
+17:29:27 [info] homed ticks=-1.0
+17:29:27 [info] result ok=True rehomed
+18:07:31 [info] start ticks/deg=22.550 duty=0.10
+18:07:32 [info] homed ticks=0.0
+18:07:32 [info] result ok=True homed
+18:07:32 [info] vertical down → -40°
+18:07:32 [info] result ok=True homed down
+18:07:47 [info] goto +90.00° from +0.00°
+18:08:01 [warn] stall at software +77.0° ticks=1737 (started +0.0° ticks=0.0) target +90.0° traveled=77.0°
+18:08:01 [warn] mechanical end stop — not rehoming. If this pose is physically 90°, measure ticks and set ticks_per_deg = abs(ticks)/90 in oms.yaml
+18:08:01 [info] result ok=True at_stop
+18:09:09 [info] goto +30.00° from +76.94°
+18:09:15 [info] result ok=True ok
+18:09:33 [info] goto +70.00° from +31.04°
+18:09:38 [warn] stall at software +45.1° ticks=1017 (started +31.0° ticks=700.0) target +70.0° traveled=14.1°
+18:09:38 [warn] stall — reverse to home switch
+18:09:41 [info] homed ticks=-1.0
+18:09:41 [info] result ok=True rehomed
+18:09:53 [info] goto +40.00° from +0.00°
+18:10:03 [info] result ok=True ok
+18:10:15 [info] goto +90.00° from +38.80°
+18:10:23 [warn] stall at software +76.5° ticks=1725 (started +38.8° ticks=874.0) target +90.0° traveled=37.7°
+18:10:23 [warn] mechanical end stop — not rehoming. If this pose is physically 90°, measure ticks and set ticks_per_deg = abs(ticks)/90 in oms.yaml
+18:10:23 [info] result ok=True at_stop
+18:11:43 [info] start ticks/deg=22.550 duty=0.10
+18:11:43 [info] home search duty=+0.20  switch=False ticks=0.0
+18:11:44 [info] vertical down → -40°
+18:11:44 [info] result ok=True homed down
+18:11:47 [info] homed ticks=-1.0
+18:11:47 [info] result ok=True homed
+18:12:25 [info] goto +90.00° from +0.00°
+18:12:39 [warn] stall at software +77.3° ticks=1741 (started +0.0° ticks=-1.0) target +90.0° traveled=77.3°
+18:12:39 [warn] mechanical end stop — not rehoming. If this pose is physically 90°, measure ticks and set ticks_per_deg = abs(ticks)/90 in oms.yaml
+18:12:39 [info] result ok=True at_stop
+18:13:14 [info] goto +0.00° from +77.21°
+18:13:24 [info] result ok=True ok
+18:13:50 [info] goto -90.00° from +1.02°
+18:14:05 [warn] stall at software -84.1° ticks=-1898 (started +1.0° ticks=22.0) target -90.0° traveled=85.1°
+18:14:05 [warn] mechanical end stop — not rehoming. If this pose is physically 90°, measure ticks and set ticks_per_deg = abs(ticks)/90 in oms.yaml
+18:14:05 [info] result ok=True at_stop
+18:14:19 [info] goto +0.00° from -84.12°
+18:14:31 [info] result ok=True ok
+18:36:22 [info] start ticks/deg=17.800 duty=0.10
+18:36:23 [info] homed ticks=0.0
+18:36:23 [info] result ok=True homed
+18:36:24 [info] vertical down → -40°
+18:36:24 [info] result ok=True homed down
+18:36:42 [info] goto +90.00° from +0.00°
+18:36:53 [info] result ok=True ok
+18:37:03 [info] goto -90.00° from +88.93°
+18:37:23 [info] result ok=True ok
+18:37:30 [info] goto +0.00° from -89.27°
+18:37:40 [info] result ok=True ok
