@@ -1,10 +1,16 @@
-# OMS rotation — same mechanism on every robot.
-#
-# Titan1 M2 = rotation (Studica Maverick 71.2:1 + encoder).
-# 32T pinion walks around a stationary 120T gear (Ø 122 mm).
-# Home switch: Titan1 M0 lim_rev = 0° (front).
-# Range: +90° ACW / −90° CW (ROS). Mechanical stops at ±90°.
-# duty_sign -1: negative duty = ACW = +deg (same as mypackage oms_node Q).
+# OMS — all mechanisms. Boot homing via oms_home (sequence below).
+# Teleop reference: mypackage oms_node (Q/E R/F T/G Y/H U/J I/K).
+# IMPORTANT: all numeric ros__parameters that nodes declare as float MUST use
+# a decimal (e.g. -90.0 not -90) or rclpy raises InvalidParameterTypeException.
+
+oms_home:
+  ros__parameters:
+    # false = idle at launch; home only when Studio Home is pressed.
+    auto_home: false
+    startup_delay_sec: 2.0
+    step_timeout_sec: 60.0
+    inter_step_sec: 0.5
+    sequence: [rotation, lift, linear, vertical, rotation_servo, gripper]
 
 oms_rotation:
   ros__parameters:
@@ -13,26 +19,29 @@ oms_rotation:
     encoder_topic: /titan1/m_2/encoder
     cmd_topic: /titan1/m_2/cmd
     home_limit_topic: /titan1/m_0/limit_rev
-    duty: 0.10
-    duty_min: 0.06
+    duty: 0.12
+    duty_min: 0.07
     home_duty: 0.20
     duty_sign: -1.0
     ticks_sign: 1.0
     min_deg: -90.0
     max_deg: 90.0
-    angle_tol_deg: 1.5
+    angle_tol_deg: 1.0
     settle_sec: 0.25
     goto_timeout_sec: 20.0
     home_timeout_sec: 25.0
-    stall_sec: 0.70
+    stall_sec: 1.0
     stall_ticks: 6.0
     stall_travel_deg: 25.0
     motion_log: /home/vmx/skill23_ws/studio_maps/_logs/oms_motion.csv
-    motion_log_hz: 10.0
+    motion_log_hz: 5.0
     control_hz: 20.0
-    auto_home: true
+    status_hz_active: 10.0
+    status_hz_idle: 2.5
+    duty_step: 0.01
+    auto_home: false
     home_search_sign: 1.0
-    kp: 0.08
+    kp: 0.12
     ki: 0.0
     kd: 0.0
     i_limit: 0.2
@@ -41,17 +50,156 @@ oms_rotation:
     gearbox_ratio: 71.2
     sun_teeth: 120.0
     pinion_teeth: 32.0
-    # 0 = use formula (6408 ticks/rev → 17.80 ticks/deg). Set >0 only after
-    # Section 6 calibration if bench differs from 6408 counts per 360°.
     ticks_per_deg: 0.0
 
-# Vertical servo — same as mypackage oms_node Y/H.
-# Home is always down. Node forces down on start.
+oms_lift:
+  ros__parameters:
+    titan_service: /titan1/titan_cmd
+    lift_motor: 1
+    encoder_topic: /titan1/m_1/encoder
+    cmd_topic: /titan1/m_1/cmd
+    up_limit_topic: /titan1/m_1/limit_fwd
+    down_limit_topic: /titan1/m_1/limit_rev
+    duty: 0.5
+    duty_down: 0.3
+    home_duty: 0.5
+    # +1: positive PID error (need to go down) → +duty = teleop F.
+    # −1 was wrong and drove UP on every down command.
+    duty_sign: 1.0
+    ticks_sign: 1.0
+    # Lift odometry frame (chain travel, NOT ground height directly):
+    #   0 mm = UP limit (upper plate on switch) — reference ~390 mm above ground.
+    #   +mm = downward chain travel.  lift 100 → 100 mm down from home (~290 mm ground).
+    #   max = DOWN limit (lower plate on switch) — 250 mm travel (390−140 cm).
+    # Calibrate ticks_per_mm on bench (see comment at sprocket_teeth); 0 = use formula.
+    min_mm: 0.0
+    max_mm: 500.0
+    pos_tol_mm: 2.0
+    settle_sec: 0.25
+    goto_timeout_sec: 30.0
+    home_timeout_sec: 35.0
+    stall_sec: 0.70
+    stall_ticks: 6.0
+    motion_log: /home/vmx/skill23_ws/studio_maps/_logs/oms_lift_motion.csv
+    motion_log_hz: 5.0
+    control_hz: 20.0
+    status_hz_active: 10.0
+    status_hz_idle: 2.5
+    duty_step: 0.01
+    auto_home: false
+    home_search_sign: -1.0
+    kp: 0.04
+    ki: 0.0
+    kd: 0.0
+    i_limit: 0.3
+    encoder_cpr: 6.0
+    quadrature: 4.0
+    gearbox_ratio: 99.5
+    bevel_pinion_teeth: 13.0
+    bevel_gear_teeth: 26.0
+    spur_pinion_teeth: 32.0
+    spur_gear_teeth: 64.0
+    # OMS Lift Odometry: height = ticks×(p×N×k)/T_rev,  T_rev=9552,  p×N×k=152.4 (24T)
+    #   100 mm → 6268 ticks   250 mm → 15669 ticks   TICKS_PER_MM ≈ 62.677
+    # chain_stages: 1 = direct clamp, 2 = cascading (doubles travel per tick).
+    sprocket_teeth: 24.0
+    chain_pitch_mm: 6.35
+    chain_stages: 1.0
+    # 0 = use formula above; set after bench calibration if needed.
+    ticks_per_mm: 0.0
+
+# Linear — Cypher Max on M3, Smart Servo 200 on /linear_servo/cmd.
+# Home = M0 limit_fwd (rear). 0 mm = home. +mm = forward (teleop T).
+oms_linear:
+  ros__parameters:
+    titan_service: /titan1/titan_cmd
+    encoder_motor: 3
+    encoder_topic: /titan1/m_3/encoder
+    linear_cmd_topic: /linear_servo/cmd
+    home_limit_topic: /titan1/m_0/limit_fwd
+    speed: 10.0
+    speed_min: 12.0
+    home_speed: 15.0
+    speed_sign: -1.0
+    ticks_sign: 1.0
+    min_mm: 0.0
+    max_mm: 100.0
+    pos_tol_mm: 3.0
+    settle_sec: 0.40
+    goto_timeout_sec: 40.0
+    home_timeout_sec: 40.0
+    stall_sec: 0.80
+    stall_ticks: 6.0
+    motion_log: /home/vmx/skill23_ws/studio_maps/_logs/oms_linear_motion.csv
+    motion_log_hz: 5.0
+    control_hz: 20.0
+    status_hz_active: 10.0
+    status_hz_idle: 2.5
+    duty_step: 0.01
+    auto_home: false
+    kp: 0.10
+    ki: 0.0
+    kd: 0.0
+    i_limit: 0.4
+    # Cypher M3 glitch filter + goto coast (software home_ticks is authoritative).
+    enc_max_jump_ticks: 80.0
+    pos_filter_alpha: 0.35
+    approach_mm: 8.0
+    encoder_cpr: 512.0
+    quadrature: 4.0
+    mm_per_rev: 50.0
+    ticks_per_mm: 0.0
+
 oms_vertical:
   ros__parameters:
     service: /vertical_servo/set_servo
-    up_deg: 50.0
+    up_deg: 60.0
     down_deg: -40.0
     settle_sec: 0.8
-    auto_home: true
+    auto_home: false
 
+oms_rotation_servo:
+  ros__parameters:
+    service: /rotation_servo/set_servo
+    home_deg: 0.0
+    alt_deg: 110.0
+    alt_mode: in
+    settle_sec: 0.8
+    auto_home: false
+
+oms_gripper:
+  ros__parameters:
+    service: /gripper_servo/set_servo
+    home_deg: 150.0      # close
+    alt_deg: -80.0       # open
+    alt_mode: open
+    settle_sec: 0.8
+    auto_home: false
+
+# Visual / analysis frame used by OMS Software (not a ROS node).
+# Ground-measured heights (same reference point on the moving stack every time):
+#   UP limit (lift_mm=0):   390 mm above ground (upper plate on switch).
+#   DOWN limit (lift_mm=250): 140 mm above ground (lower plate on switch).
+#   3 cm gap between upper/lower plates — limits sit on different plates; encoder
+#   tracks total chain travel (250 mm), not plate gap.
+# lift_mm = down from upper home.  ground_height = lift_upper_z_mm − lift_mm.
+oms_viz:
+  ros__parameters:
+    lift_upper_z_mm: 390.0
+    lift_lower_z_mm: 140.0
+    lift_travel_mm: 250.0
+    z_top_mm: 390.0
+    z_floor_mm: 140.0
+    linear_travel_mm: 110.0
+    linear_home_x_mm: 220.0
+    linear_max_extension_mm: 110.0
+    linear_max_reach_mm: 330.0
+    linear_ref_z_lower_lift_mm: 110.0
+    linear_ref_z_upper_lift_mm: 375.0
+    total_oms_height_mm: 575.0
+    rail_height_mm: 575.0
+    turntable_diameter_mm: 180.0
+    camera_tilt_deg: 35.0
+    camera_tz_mm: 435.0
+    gripper_servo_mm: 110.0
+    gripper_length_mm: 200.0

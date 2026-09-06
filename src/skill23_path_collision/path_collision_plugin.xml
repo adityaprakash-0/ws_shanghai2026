@@ -1,0 +1,12 @@
+<library path="path_collision_plugin">
+  <class
+    name="skill23_path_collision/PathAheadCollisionController"
+    type="skill23_path_collision::PathAheadCollisionController"
+    base_class_type="nav2_core::Controller">
+    <description>
+      Wraps an inner controller (default RPP). Before each command, samples the
+      global path ahead for lookahead_time on the local costmap; aborts FollowPath
+      if the robot footprint would touch lethal (254).
+    </description>
+  </class>
+</library>

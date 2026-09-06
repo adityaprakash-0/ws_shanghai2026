@@ -1,0 +1,12 @@
+{
+  "robot": "allterrain",
+  "mode": "offline",
+  "created_at": 1785337564.3930852,
+  "name": "all_terrain_test",
+  "updated_at": 1785337564.393757,
+  "resolution": 0.03,
+  "max_laser_range": 10.0,
+  "min_laser_range": 0.05,
+  "phase": "mode",
+  "saved_at": 1785337548.9195633
+}

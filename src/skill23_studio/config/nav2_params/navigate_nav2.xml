@@ -1,52 +1,79 @@
 <!--
   Studio Nav2 — NavigateToPose
 
-  Planning recovery (PlanWithRecovery — unchanged):
+  Planner failure (PlanWithRecovery):
     1) GridBased (0–252)
-    2) clear costmaps → GridBased
-    3) clear costmaps → GridBasedNarrow
-    → all fail = that plan attempt fails
+    2–6) clear costmaps → Wait 2s → GridBased  (5 clear+replan retries)
+    No GridBasedNarrow (heavy EDT / CPU spike on Pi).
 
-  Collision recovery (FollowPath failure only — each collision starts fresh):
-    Escape cascade (first success wins):
-      BackUp 0.15 m → else DriveOnHeading 0.10 m → else Spin +45° → else Spin −45°
-    then Wait → PlanWithRecovery
-    If that full attempt fails, retry the same cascade from BackUp (up to 4 times).
-    Only after 4 consecutive failed recovery attempts → Goal failed.
+  FollowPath recovery (3 layers, 2 retries each):
+    1) Wait 1s → clear local+global → Wait 2s → replan → resume FollowPath
+    2) BackUp 0.15 m (else DriveOnHeading 0.10 m) → Wait 1s → clear → Wait 2s → replan
+       then retry layer 1 + FollowPath
+    3) Wait 1s → clear → Wait 2s → replan → retry layers 1–2 + FollowPath
+    Then Goal failed.
 
-  After any successful escape + replan, FollowPath resumes. A later collision
-  resets to BackUp again (independent of which escape worked last time).
+  Note (Humble): FollowPath aborts do not expose collision vs progress-checker
+    error codes to the BT, so wait+clear+replan runs first for any FollowPath failure.
 -->
 <root main_tree_to_execute="MainTree">
   <BehaviorTree ID="PlanWithRecovery">
     <Fallback name="PlanAttempts">
       <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
-      <Sequence name="ClearThenFreePlan">
-        <ClearEntireCostmap name="ClearLocalCostmap-Free" service_name="local_costmap/clear_entirely_local_costmap"/>
-        <ClearEntireCostmap name="ClearGlobalCostmap-Free" service_name="global_costmap/clear_entirely_global_costmap"/>
-        <Wait wait_duration="1"/>
+      <Sequence name="ClearThenFreePlan1">
+        <ClearEntireCostmap name="ClearLocal-1" service_name="local_costmap/clear_entirely_local_costmap"/>
+        <ClearEntireCostmap name="ClearGlobal-1" service_name="global_costmap/clear_entirely_global_costmap"/>
+        <Wait wait_duration="2"/>
         <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
       </Sequence>
-      <Sequence name="ClearThenNarrowPlan">
-        <ClearEntireCostmap name="ClearLocalCostmap-Narrow" service_name="local_costmap/clear_entirely_local_costmap"/>
-        <ClearEntireCostmap name="ClearGlobalCostmap-Narrow" service_name="global_costmap/clear_entirely_global_costmap"/>
-        <Wait wait_duration="1"/>
-        <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBasedNarrow"/>
+      <Sequence name="ClearThenFreePlan2">
+        <ClearEntireCostmap name="ClearLocal-2" service_name="local_costmap/clear_entirely_local_costmap"/>
+        <ClearEntireCostmap name="ClearGlobal-2" service_name="global_costmap/clear_entirely_global_costmap"/>
+        <Wait wait_duration="2"/>
+        <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
+      </Sequence>
+      <Sequence name="ClearThenFreePlan3">
+        <ClearEntireCostmap name="ClearLocal-3" service_name="local_costmap/clear_entirely_local_costmap"/>
+        <ClearEntireCostmap name="ClearGlobal-3" service_name="global_costmap/clear_entirely_global_costmap"/>
+        <Wait wait_duration="2"/>
+        <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
+      </Sequence>
+      <Sequence name="ClearThenFreePlan4">
+        <ClearEntireCostmap name="ClearLocal-4" service_name="local_costmap/clear_entirely_local_costmap"/>
+        <ClearEntireCostmap name="ClearGlobal-4" service_name="global_costmap/clear_entirely_global_costmap"/>
+        <Wait wait_duration="2"/>
+        <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
+      </Sequence>
+      <Sequence name="ClearThenFreePlan5">
+        <ClearEntireCostmap name="ClearLocal-5" service_name="local_costmap/clear_entirely_local_costmap"/>
+        <ClearEntireCostmap name="ClearGlobal-5" service_name="global_costmap/clear_entirely_global_costmap"/>
+        <Wait wait_duration="2"/>
+        <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
       </Sequence>
     </Fallback>
   </BehaviorTree>
 
-  <!-- One recovery attempt: escape cascade → wait → replan -->
-  <BehaviorTree ID="OneCollisionRecovery">
-    <Sequence name="OneRecoveryAttempt">
+  <!-- Layer 1 / 3: wait → clear → wait for costmap restore → replan -->
+  <BehaviorTree ID="ObstacleClearReplan">
+    <Sequence name="WaitClearPlan">
+      <Wait wait_duration="1"/>
+      <ClearEntireCostmap name="ClearLocal-Obstacle" service_name="local_costmap/clear_entirely_local_costmap"/>
+      <ClearEntireCostmap name="ClearGlobal-Obstacle" service_name="global_costmap/clear_entirely_global_costmap"/>
+      <Wait wait_duration="2"/>
+      <SubTree ID="PlanWithRecovery" __shared_blackboard="true"/>
+    </Sequence>
+  </BehaviorTree>
+
+  <!-- Layer 2: back → else drive → clear → wait → replan -->
+  <BehaviorTree ID="ProgressStuckRecovery">
+    <Sequence name="BackOrDriveThenReplan">
       <Fallback name="EscapeMotions">
         <BackUp backup_dist="0.15" backup_speed="0.10" time_allowance="15.0"/>
         <DriveOnHeading dist_to_travel="0.10" speed="0.10" time_allowance="15.0"/>
-        <Fallback name="SpinEitherWay">
-          <Spin spin_dist="0.785398" time_allowance="15.0"/>
-          <Spin spin_dist="-0.785398" time_allowance="15.0"/>
-        </Fallback>
       </Fallback>
+      <Wait wait_duration="1"/>
+      <ClearEntireCostmap name="ClearLocal-Progress" service_name="local_costmap/clear_entirely_local_costmap"/>
+      <ClearEntireCostmap name="ClearGlobal-Progress" service_name="global_costmap/clear_entirely_global_costmap"/>
       <Wait wait_duration="2"/>
       <SubTree ID="PlanWithRecovery" __shared_blackboard="true"/>
     </Sequence>
@@ -55,14 +82,16 @@
   <BehaviorTree ID="MainTree">
     <Sequence name="NavigateRoot">
       <SubTree ID="PlanWithRecovery" __shared_blackboard="true"/>
-      <RecoveryNode number_of_retries="6" name="FollowCollisionRecovery">
-        <FollowPath path="{path}" controller_id="FollowPath"/>
-        <Fallback name="CollisionRecoveryAttempts">
-          <SubTree ID="OneCollisionRecovery" __shared_blackboard="true"/>
-          <SubTree ID="OneCollisionRecovery" __shared_blackboard="true"/>
-          <SubTree ID="OneCollisionRecovery" __shared_blackboard="true"/>
-          <SubTree ID="OneCollisionRecovery" __shared_blackboard="true"/>
-        </Fallback>
+
+      <RecoveryNode number_of_retries="2" name="FinalWaitClearReplan">
+        <RecoveryNode number_of_retries="2" name="ProgressLastResort">
+          <RecoveryNode number_of_retries="2" name="FollowObstacleClearReplan">
+            <FollowPath path="{path}" controller_id="FollowPath"/>
+            <SubTree ID="ObstacleClearReplan" __shared_blackboard="true"/>
+          </RecoveryNode>
+          <SubTree ID="ProgressStuckRecovery" __shared_blackboard="true"/>
+        </RecoveryNode>
+        <SubTree ID="ObstacleClearReplan" __shared_blackboard="true"/>
       </RecoveryNode>
     </Sequence>
   </BehaviorTree>

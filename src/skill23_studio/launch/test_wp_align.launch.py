@@ -1,7 +1,15 @@
 """Bench Align / Align+Move — hardware + IMU (+ front lidar), no Nav2/AMCL.
 
-Starts: control_server, drive, IMU (inside control_server), one align node.
-Align+Move also starts the front YDLidar only.
+Two skill23_studio executables (both are real; rebuild if missing):
+
+  studio_align       ← skill23_studio/nav/align_yaw_node.py
+                       Does the yaw PID / Align+distance drive. Idle until a cmd.
+  studio_align_test  ← skill23_studio/nav/align_test_trigger_node.py
+                       One-shot: waits for IMU + align subscriber, then publishes
+                       JSON on /studio/align/cmd (then exits after result).
+
+Also starts: control_server (sudo inside), drive node, robot_state_publisher.
+Align+Move also starts the front YDLidar → /scan/front.
 
 Heading comes from /imu (NavX), not /amcl_pose. PID/duty come from
 config/wp_align_<robot>.yaml (same file Deploy loads for that robot).
@@ -9,17 +17,30 @@ config/wp_align_<robot>.yaml (same file Deploy loads for that robot).
 Do NOT wrap this launch in sudo — control_server is already sudo -E inside.
 Stop localize / Nav2 first (duplicate Titan / lidar).
 
-  # Turn 90° from wherever the IMU is now:
+Usage (from workspace, after source install/setup.bash):
+
+  # Align only — turn +90° relative to current IMU heading:
   ros2 launch skill23_studio test_wp_align.launch.py robot:=allterrain \\
     mode:=align yaw_deg:=90
 
-  # Tune duty / PID:
+  # Align + distance — yaw then front-lidar standoff (put a wall in front):
+  ros2 launch skill23_studio test_wp_align.launch.py robot:=allterrain \\
+    mode:=align_move yaw_deg:=0 distance_m:=0.10
+
+  # Tune duty / PID without editing YAML:
   ros2 launch skill23_studio test_wp_align.launch.py robot:=allterrain \\
     mode:=align yaw_deg:=90 yaw_kp:=1.6 yaw_duty_min:=0.12 yaw_duty_max:=0.28
 
-  # Then standoff on front lidar 0° beam:
+  # Start HW+align only; send the cmd yourself later:
   ros2 launch skill23_studio test_wp_align.launch.py robot:=allterrain \\
-    mode:=align_move yaw_deg:=0 distance_m:=0.10
+    mode:=align_move send:=false
+  # then e.g.:
+  #   ros2 run skill23_studio studio_align_test --ros-args \\
+  #     -p mode:=align_move -p yaw_deg:=0.0 -p distance_m:=0.10 \\
+  #     -p relative:=true -p auto_send:=true -p pose_source:=imu -p pose_topic:=/imu
+
+If ros2 run cannot find studio_align / studio_align_test:
+  cd ~/skill23_ws && colcon build --packages-select skill23_studio && source install/setup.bash
 """
 
 from __future__ import annotations
@@ -33,13 +54,13 @@ from launch.actions import (
     ExecuteProcess,
     LogInfo,
     OpaqueFunction,
-    SetEnvironmentVariable,
     TimerAction,
 )
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 from skill23_studio.align_paths import align_yaml_for_robot
+from skill23_studio.ros_dds import studio_dds_launch_actions
 
 
 def _node(package, executable, name, **kwargs):
@@ -154,7 +175,8 @@ def _setup(context, *args, **kwargs):
         LogInfo(msg=(
             f'[test_wp_align] robot={robot} mode={mode} yaw_deg='
             f'{trigger["yaw_deg"]:g} relative={relative}  yaml={yaml_path}  '
-            'HW+IMU, no Nav2/AMCL. Do not sudo this launch.')),
+            'HW+IMU, no Nav2/AMCL. Do not sudo this launch. '
+            'Nodes: studio_align (controller) + studio_align_test (cmd trigger).')),
         ExecuteProcess(cmd=_control_server_cmd(exec_path, hw_params), output='screen'),
         _node(drive[0], drive[1], drive[2]),
     ]
@@ -179,7 +201,7 @@ def _setup(context, *args, **kwargs):
 
     worker_delay = 3.0
     actions.append(TimerAction(period=worker_delay, actions=[
-        LogInfo(msg='[test_wp_align] align node on /imu'),
+        LogInfo(msg='[test_wp_align] studio_align ← align_yaw_node.py'),
         _node('skill23_studio', 'studio_align', 'align', parameters=align_params),
     ]))
 
@@ -187,7 +209,7 @@ def _setup(context, *args, **kwargs):
         actions.append(TimerAction(
             period=delay,
             actions=[
-                LogInfo(msg='[test_wp_align] sending test command'),
+                LogInfo(msg='[test_wp_align] studio_align_test ← align_test_trigger_node.py'),
                 _node(
                     'skill23_studio', 'studio_align_test', 'align_test_trigger',
                     parameters=[trigger]),
@@ -201,7 +223,7 @@ def generate_launch_description():
         return DeclareLaunchArgument(name, default_value=default, description=desc)
 
     return LaunchDescription([
-        SetEnvironmentVariable('FASTDDS_BUILTIN_TRANSPORTS', 'UDPv4'),
+        *studio_dds_launch_actions(),
         _arg('robot', 'allterrain', 'allterrain | mecanum | xdrive | grip'),
         _arg('mode', 'align', 'align | align_move'),
         _arg('yaw_deg', '90.0', 'Turn this many degrees from current IMU (if relative)'),

@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Sora:wght@400;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="css/style.css?v=20260827d" />
+  <link rel="stylesheet" href="css/style.css?v=20260829oms2" />
 </head>
 <body>
   <div class="tricolor"></div>
@@ -37,12 +37,13 @@
         <div class="hero-actions">
           <button class="btn btn-primary" data-go="create">Create New Map</button>
           <button class="btn btn-ghost" data-go="import">Import Map</button>
+          <button class="btn btn-saffron" id="btnOpenOms" type="button">OMS Software</button>
         </div>
       </div>
       <div class="connect-card">
         <label>Pi Bridge URL</label>
         <div class="row">
-          <input type="text" id="piUrl" placeholder="http://10.42.0.1:8083" />
+          <input type="text" id="piUrl" placeholder="http://10.42.0.1:8083" value="http://10.42.0.1:8083" />
           <button class="btn btn-saffron" id="btnConnect">Connect</button>
         </div>
         <p class="hint">On Pi: <code>ros2 launch skill23_studio studio.launch.py</code> · port 8083</p>
@@ -67,12 +68,8 @@
           <button type="button" class="chip" data-robot="xdrive">xdrive</button>
         </div>
         <label>Map resolution (m/cell)</label>
-        <select id="mapResolution">
-          <option value="0.02">0.02 — fine</option>
-          <option value="0.03" selected>0.03 — default (slam_toolbox)</option>
-          <option value="0.05">0.05 — lighter on Pi</option>
-          <option value="0.10">0.10 — coarse</option>
-        </select>
+        <input type="number" id="mapResolution" value="0.03" min="0.01" max="0.2" step="0.01" />
+        <p class="hint">Typical: 0.02–0.05. Allowed range 0.01–0.20 m/cell.</p>
         <label>Max laser range (m)</label>
         <input type="number" id="mapMaxRange" value="10" min="1" max="30" step="0.5" />
         <label>Min laser range (m)</label>
@@ -140,7 +137,7 @@
           </button>
           <button class="mode-tile" id="btnPickCommission">
             <strong>Commissioning module</strong>
-            <span>Nav2 + camera (streams off until needed). Pick/drop stickers (P1, D1). Wait or Detect+Align at each waypoint.</span>
+            <span>Nav2 + camera + OMS. Detect+Align at waypoints. Open OMS Software in a new tab to jog the mechanism.</span>
           </button>
         </div>
         <button class="btn btn-ghost" id="btnDeployPickBack">Back to waypoints</button>
@@ -236,6 +233,7 @@
             </div>
           </div>
           <button class="btn btn-saffron" id="btnSaveWp">Save waypoint</button>
+          <button class="btn btn-primary" id="btnSaveToPi" title="Write waypoints.json + sequences.json under studio_maps on the Pi">Save to Pi</button>
           <button class="btn btn-ghost" id="btnClearWp">Clear list</button>
           <button class="btn btn-ghost" id="btnReloadWp">Reload saved waypoints</button>
           <ol id="wpList" class="wp-list"></ol>
@@ -280,7 +278,8 @@
               <div class="deploy-top-row">
                 <span class="deploy-module-badge" id="deployModuleBadge">Navigation</span>
                 <button class="btn btn-saffron" id="btnDeployNav2" title="ROS 2 Nav2 (clearance planner + RPP)">Start Nav2</button>
-                <button class="btn btn-primary" id="btnDeployNav2Cam" title="Nav2 + Gemini E (streams off) + Detect+Align">Start Nav2+camera</button>
+                <button class="btn btn-primary" id="btnDeployNav2Cam" title="Nav2 + Gemini E (streams off) + Detect+Align + OMS">Start Nav2+camera</button>
+                <button class="btn btn-saffron" id="btnOpenOmsDeploy" type="button" title="Open OMS Software in a new tab">OMS Software</button>
                 <button class="btn btn-ghost" id="btnChangeModule" title="Switch Navigation / Commissioning">Change module</button>
                 <button class="btn btn-primary" id="btnMissionStart">Start mission</button>
                 <button class="btn btn-ghost" id="btnMissionStop">Stop mission</button>
@@ -310,20 +309,55 @@
               <button class="btn btn-ghost" id="btnClearMeasuresDeploy">Clear measures</button>
               <button class="btn btn-ghost" id="btnClearTrailDeploy">Clear trail</button>
             </div>
-            <div class="deploy-dock-label">Mission</div>
-            <div id="deployWpStrip" class="seq-builder"></div>
-            <div class="deploy-inline-note">Seq <strong id="seqChainPreview">—</strong></div>
-            <div class="deploy-grid deploy-grid-2 deploy-grid-compact">
+            <aside class="commission-panel" id="commissionPanel" hidden>
+              <h4>Commissioning</h4>
+              <p class="hint commission-hint">
+                Mark each WP as <strong>Pick</strong>, <strong>Drop</strong>, or <strong>Home</strong>.
+                Set visit count + lift (mm) on picks. Assign objects → drops. Start Nav2+camera, then Start mission.
+              </p>
+              <label class="hint" style="display:flex;align-items:center;gap:0.4rem;margin:0.35rem 0 0.5rem">
+                <input type="checkbox" id="chkAutoDetectAlign" checked>
+                Auto-start Detect+Align with stack
+              </label>
+              <div id="commissionStickerSummary" class="commission-summary"></div>
+              <div class="deploy-dock-label commission-subhead">Object → drop</div>
+              <div id="commissionDropAssign" class="commission-assign"></div>
+              <div class="deploy-grid deploy-grid-2 deploy-grid-compact" style="margin-top:0.35rem">
+                <button type="button" class="btn btn-ghost btn-compact" id="btnCommissionSave">Save</button>
+                <button type="button" class="btn btn-saffron btn-compact" id="btnCommissionHomeOms"
+                  title="Full OMS home sequence">Home OMS</button>
+              </div>
+              <dl class="commission-stats">
+                <div><dt>Phase</dt><dd id="cmPhase">idle</dd></div>
+                <div><dt>Pick</dt><dd id="cmPick">—</dd></div>
+                <div><dt>Left</dt><dd id="cmRemaining">—</dd></div>
+                <div><dt>Lift</dt><dd id="cmLift">—</dd></div>
+                <div><dt>Object</dt><dd id="cmDetected">—</dd></div>
+                <div><dt>Drop</dt><dd id="cmDrop">—</dd></div>
+              </dl>
+            </aside>
+            <div class="deploy-dock-label deploy-mission-seq" id="deployMissionSeq">Mission</div>
+            <div id="deployWpStrip" class="seq-builder deploy-mission-seq"></div>
+            <div class="deploy-inline-note deploy-mission-seq">Seq <strong id="seqChainPreview">—</strong></div>
+            <div class="deploy-grid deploy-grid-2 deploy-grid-compact deploy-mission-seq">
               <button class="btn btn-ghost" id="btnSeqUndo">Undo</button>
               <button class="btn btn-ghost" id="btnSeqClear">Clear</button>
             </div>
-            <input type="text" id="seqName" placeholder="Sequence name" />
-            <div class="deploy-grid deploy-grid-2 deploy-grid-compact">
+            <input type="text" id="seqName" class="deploy-mission-seq" placeholder="Sequence name" />
+            <div class="deploy-grid deploy-grid-2 deploy-grid-compact deploy-mission-seq">
               <button class="btn btn-ghost" id="btnSeqSave">Save seq</button>
               <button class="btn btn-ghost" id="btnSeqDelete">Delete</button>
             </div>
-            <select id="seqSelect"></select>
-            <div class="deploy-dock-label">WP tasks</div>
+            <select id="seqSelect" class="deploy-mission-seq"></select>
+            <button class="btn btn-primary btn-compact deploy-mission-seq" id="btnSaveToPiDeploy"
+              type="button" title="Write waypoints + sequences to studio_maps on the Pi"
+              style="width:100%;margin:0.35rem 0">Save WPs + sequences to Pi</button>
+            <div class="deploy-dock-label deploy-wp-tasks-label" id="deployWpTasksLabel">WP tasks</div>
+            <label class="hint deploy-mission-seq" id="navAlignRow"
+              style="display:flex;align-items:center;gap:0.4rem;margin:0.25rem 0 0.35rem">
+              <input type="checkbox" id="chkStartAlignNav" checked>
+              Start Nav2 with Align node
+            </label>
             <div id="wpTaskList" class="wp-task-list"></div>
           </div>
 
@@ -345,10 +379,22 @@
               <p class="hint" id="daHint">Snapshot YOLO + OMS rotate until a Detect+Align waypoint</p>
               <pre class="log-box side-log" id="daLog">—</pre>
             </aside>
-            <aside class="node-status-panel" id="nodeStatusPanel" hidden>
-              <h4 id="nodeStatusTitle">Stack status</h4>
-              <ul id="nodeStatusList"></ul>
-            </aside>
+            <div class="deploy-dock-label deploy-logs-label">Logs</div>
+            <p class="hint" id="logRunning">running: —</p>
+            <div class="deploy-side-logs">
+              <div class="deploy-side-log" id="sideLogNavWrap">
+                <h5 class="log-title">nav</h5>
+                <pre class="log-box side-log-tall" id="logNav">—</pre>
+              </div>
+              <div class="deploy-side-log" id="sideLogDaWrap">
+                <h5 class="log-title">detect+align</h5>
+                <pre class="log-box side-log-tall" id="logDetectAlign">—</pre>
+              </div>
+              <div class="deploy-side-log deploy-bottom-cam-log" id="sideLogCamWrap">
+                <h5 class="log-title">camera / orbbec</h5>
+                <pre class="log-box side-log-tall" id="logOrbbec">—</pre>
+              </div>
+            </div>
             <div class="deploy-dock-label">Relocalize</div>
             <p class="hint" id="relocHint">Reloc: idle</p>
             <div class="deploy-grid deploy-grid-3 deploy-grid-compact">
@@ -362,8 +408,21 @@
             </div>
             <div class="deploy-dock-label">Simulate</div>
             <p class="hint" id="simHint">Two map points → path preview</p>
+            <button class="btn btn-saffron" id="btnGcPlannerStart" type="button"
+              title="Map server + global costmap (static + inflation) + planner only — no Nav2 stack">
+              Start GC+Planner
+            </button>
+            <button class="btn btn-ghost" id="btnGcPlannerStop" type="button" hidden>Stop GC+Planner</button>
+            <p class="hint" id="gcPlannerHint">Lightweight planner preview — open RViz2 (map + /global_costmap/costmap) on the Pi.</p>
             <button class="btn btn-ghost" id="btnSimEnter">Enter sim</button>
             <div id="simControls" hidden>
+              <label class="hint" for="simPlannerSelect" style="display:block;margin:0.25rem 0 0.15rem">Planner</label>
+              <select id="simPlannerSelect" style="width:100%" title="ClearancePlanner plugin">
+                <option value="GridBased" selected>GridBased (free 0–252)</option>
+              </select>
+              <p class="hint" id="simPlannerActive">Active planner: GridBased</p>
+              <button class="btn btn-ghost btn-compact" id="btnSimChoosePlanner" type="button"
+                style="width:100%;margin:0.25rem 0">Choose planner</button>
               <select id="simStyle" style="width:100%">
                 <option value="planned" selected>Planned</option>
                 <option value="smoothed">Smoothed</option>
@@ -401,27 +460,10 @@
               </div>
               <p class="hint" id="camHint">Camera: idle</p>
             </div>
-            <div class="deploy-bottom-logs">
-              <p class="hint" id="logRunning">running: —</p>
-              <div class="deploy-log-grid">
-                <div>
-                  <h5 class="log-title">nav</h5>
-                  <pre class="log-box" id="logNav">—</pre>
-                </div>
-                <div>
-                  <h5 class="log-title">detect+align</h5>
-                  <pre class="log-box" id="logDetectAlign">—</pre>
-                </div>
-                <div>
-                  <h5 class="log-title">camera</h5>
-                  <pre class="log-box" id="logCamera">—</pre>
-                </div>
-                <div>
-                  <h5 class="log-title">orbbec</h5>
-                  <pre class="log-box" id="logOrbbec">—</pre>
-                </div>
-              </div>
-            </div>
+            <aside class="node-status-panel" id="nodeStatusPanel" hidden>
+              <h4 id="nodeStatusTitle">Nav2 status</h4>
+              <ul id="nodeStatusList"></ul>
+            </aside>
           </div>
         </div>
       </div>
@@ -429,8 +471,8 @@
   </main>
 
   <!-- Bump ?v= whenever these change so browsers cannot serve a stale build. -->
-  <script src="js/api.js?v=20260827d"></script>
-  <script src="js/map.js?v=20260827d"></script>
-  <script src="js/app.js?v=20260827d"></script>
+  <script src="js/api.js?v=20260905navdash1"></script>
+  <script src="js/map.js?v=20260905navdash1"></script>
+  <script src="js/app.js?v=20260905navdash1"></script>
 </body>
 </html>

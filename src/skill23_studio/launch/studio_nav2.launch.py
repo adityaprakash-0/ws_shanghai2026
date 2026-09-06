@@ -28,6 +28,8 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
+from skill23_studio.ros_dds import studio_dds_launch_actions
+
 from skill23_studio.align_paths import align_yaml_for_robot
 from skill23_studio.detect_align_paths import detect_align_yaml_for_robot
 from skill23_studio.ekf_paths import ekf_yaml_for_robot
@@ -99,6 +101,10 @@ def _setup(context, *args, **kwargs):
         '1', 'true', 'yes', 'on')
     with_align = LaunchConfiguration('with_align').perform(context).lower() in (
         '1', 'true', 'yes', 'on')
+    with_detect_align = LaunchConfiguration('with_detect_align').perform(
+        context).lower() in ('1', 'true', 'yes', 'on')
+    # Detect+Align only makes sense with the camera stack.
+    with_detect_align = with_detect_align and with_camera
     try:
         camera_stabilize = float(
             LaunchConfiguration('camera_stabilize_sec').perform(context))
@@ -210,9 +216,13 @@ def _setup(context, *args, **kwargs):
             ],
         ))
     if with_camera:
-        actions.append(TimerAction(
-            period=detect_delay,
-            actions=[
+        # Camera + OMS (+ optional Detect+Align via with_detect_align)
+        da_actions = [
+            LogInfo(msg=f'[studio_nav2] camera stack (detect_align='
+                        f'{"on" if with_detect_align else "off"})'),
+        ]
+        if with_detect_align:
+            da_actions.extend([
                 LogInfo(msg=f'[studio_nav2] detect_align yaml={detect_yaml} (idle until WP)'),
                 _node(
                     'skill23_studio', 'studio_detect_align', 'detect_align',
@@ -221,13 +231,21 @@ def _setup(context, *args, **kwargs):
                     emulate_tty=True,
                     additional_env={'PYTHONUNBUFFERED': '1'},
                 ),
-                LogInfo(msg='[studio_nav2] OMS rotation (Titan1 M2)'),
-                IncludeLaunchDescription(
-                    PythonLaunchDescriptionSource(os.path.join(
-                        get_package_share_directory('oms'),
-                        'launch', 'oms.launch.py')),
-                ),
-            ],
+            ])
+        else:
+            da_actions.append(LogInfo(
+                msg='[studio_nav2] Detect+Align node skipped (with_detect_align:=false)'))
+        da_actions.extend([
+            LogInfo(msg='[studio_nav2] OMS rotation (Titan1 M2)'),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(os.path.join(
+                    get_package_share_directory('oms'),
+                    'launch', 'oms.launch.py')),
+            ),
+        ])
+        actions.append(TimerAction(
+            period=detect_delay,
+            actions=da_actions,
         ))
         overlay = prefer_workspace_orbbec()
         dabai_launch = orbbec_launch_path()
@@ -302,7 +320,7 @@ def _setup(context, *args, **kwargs):
 def generate_launch_description():
     default_map = os.path.expanduser('~/skill23_ws/test_map10.yaml')
     return LaunchDescription([
-        SetEnvironmentVariable('FASTDDS_BUILTIN_TRANSPORTS', 'UDPv4'),
+        *studio_dds_launch_actions(),
         DeclareLaunchArgument(
             'robot', default_value='grip',
             description='Robot platform: allterrain | mecanum | xdrive | grip'),
@@ -314,10 +332,13 @@ def generate_launch_description():
             description='Start dual YDLidar + merger publishing /scan'),
         DeclareLaunchArgument(
             'with_camera', default_value='false',
-            description='Commissioning: Gemini E (streams off) + Detect+Align node'),
+            description='Commissioning: Gemini E (streams off) + OMS'),
         DeclareLaunchArgument(
             'with_align', default_value='true',
             description='Navigation module: yaw Align / Align+Move node (no camera)'),
+        DeclareLaunchArgument(
+            'with_detect_align', default_value='true',
+            description='With camera: also start Detect+Align node (idle until WP cmd)'),
         DeclareLaunchArgument(
             'camera_stabilize_sec', default_value='12.0',
             description='Seconds after camera node before Nav2 starts'),

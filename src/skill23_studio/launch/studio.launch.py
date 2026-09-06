@@ -7,10 +7,12 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, LogInfo, RegisterEventHandler, SetEnvironmentVariable
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, LogInfo, RegisterEventHandler
 from launch.event_handlers import OnShutdown
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+
+from skill23_studio.ros_dds import studio_dds_launch_actions
 
 
 def generate_launch_description():
@@ -21,7 +23,7 @@ def generate_launch_description():
         stop_sh = os.path.expanduser(
             '~/skill23_ws/src/skill23_studio/scripts/stop_studio_stack.sh')
     return LaunchDescription([
-        SetEnvironmentVariable('FASTDDS_BUILTIN_TRANSPORTS', 'UDPv4'),
+        *studio_dds_launch_actions(),
         DeclareLaunchArgument('http_port', default_value='8083'),
         Node(
             package='skill23_studio',
@@ -32,7 +34,6 @@ def generate_launch_description():
                 'http_port': http_port,
             }],
         ),
-        # Waypoint wait tasks run inside cn_mission; no action helper is needed.
         # There is no camera relay node: Orbbec publishes on /camera/* and
         # consumers (laptop vision) subscribe to those topics directly.
         RegisterEventHandler(OnShutdown(on_shutdown=[

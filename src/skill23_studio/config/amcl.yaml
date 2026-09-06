@@ -1,11 +1,9 @@
-# Shared AMCL configuration for every Skill23 Studio robot.
-# Tuned for a Raspberry Pi under custom-nav load: fewer particles and a
-# larger transform tolerance so brief EKF lag does not drop every scan.
+# Shared AMCL configuration for Skill23 Studio localization / Nav2 deploy.
 amcl:
   ros__parameters:
     use_sim_time: false
-    wait_for_world_ready: true
-    world_ready_topic: "/custom_nav/world/ready"
+    wait_for_world_ready: false
+    world_ready_topic: "/map"
     set_initial_pose: true
     initial_pose:
       x: 0.0

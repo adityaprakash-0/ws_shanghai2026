@@ -10,7 +10,7 @@ Default Linux DualShock 4 (PS4):
   D-pad U/D   lift up / down      titan1 m_1
   L1 / Share  linear fwd / back   /linear_servo/cmd
   Options     stop rotate+lift+linear   ← this is “Start”
-  Square / Triangle  rotation horiz / vert
+  Square / Triangle  rotation in / out
   Cross / Circle     gripper open / close
   L3 / R3     vertical down / up
 
@@ -51,8 +51,11 @@ class OmsJoyNode(Node):
         self.declare_parameter('linear_speed', 30.0)
         self.declare_parameter('vertical_up_deg', 50.0)
         self.declare_parameter('vertical_down_deg', -40.0)
-        self.declare_parameter('rotation_horizontal_deg', 70.0)
-        self.declare_parameter('rotation_vertical_deg', 170.0)
+        self.declare_parameter('rotation_in_deg', 110.0)
+        self.declare_parameter('rotation_out_deg', 0.0)
+        # Legacy aliases
+        self.declare_parameter('rotation_horizontal_deg', 110.0)
+        self.declare_parameter('rotation_vertical_deg', 0.0)
         self.declare_parameter('gripper_open_deg', 100.0)
         self.declare_parameter('gripper_close_deg', -100.0)
         self.declare_parameter('dpad_threshold', 0.5)
@@ -71,8 +74,11 @@ class OmsJoyNode(Node):
         self.declare_parameter('button_stop', 9)            # Options = SPACE
         self.declare_parameter('button_vertical_up', 12)    # R3 = Y
         self.declare_parameter('button_vertical_down', 11)  # L3 = H
-        self.declare_parameter('button_rotation_horiz', 3)  # Square = U
-        self.declare_parameter('button_rotation_vert', 2)   # Triangle = J
+        self.declare_parameter('button_rotation_in', 3)     # Square = U
+        self.declare_parameter('button_rotation_out', 2)    # Triangle = J
+        # Legacy aliases
+        self.declare_parameter('button_rotation_horiz', 3)
+        self.declare_parameter('button_rotation_vert', 2)
         self.declare_parameter('button_gripper_open', 0)    # Cross = I
         self.declare_parameter('button_gripper_close', 1)   # Circle = K
 
@@ -84,10 +90,15 @@ class OmsJoyNode(Node):
             self.get_parameter('linear_speed').value))))
         self.vertical_up = float(self.get_parameter('vertical_up_deg').value)
         self.vertical_down = float(self.get_parameter('vertical_down_deg').value)
-        self.rotation_horizontal = float(
-            self.get_parameter('rotation_horizontal_deg').value)
-        self.rotation_vertical = float(
-            self.get_parameter('rotation_vertical_deg').value)
+        self.rotation_in = float(self.get_parameter('rotation_in_deg').value)
+        self.rotation_out = float(self.get_parameter('rotation_out_deg').value)
+        # Prefer explicit in/out; fall back if someone only set legacy names.
+        if abs(self.rotation_in - 110.0) < 1e-9:
+            self.rotation_in = float(
+                self.get_parameter('rotation_horizontal_deg').value)
+        if abs(self.rotation_out - 0.0) < 1e-9:
+            self.rotation_out = float(
+                self.get_parameter('rotation_vertical_deg').value)
         self.gripper_open = float(self.get_parameter('gripper_open_deg').value)
         self.gripper_close = float(self.get_parameter('gripper_close_deg').value)
         self.dpad_threshold = float(self.get_parameter('dpad_threshold').value)
@@ -105,11 +116,17 @@ class OmsJoyNode(Node):
             'stop': int(self.get_parameter('button_stop').value),
             'vertical_up': int(self.get_parameter('button_vertical_up').value),
             'vertical_down': int(self.get_parameter('button_vertical_down').value),
-            'rotation_horiz': int(self.get_parameter('button_rotation_horiz').value),
-            'rotation_vert': int(self.get_parameter('button_rotation_vert').value),
+            'rotation_in': int(self.get_parameter('button_rotation_in').value),
+            'rotation_out': int(self.get_parameter('button_rotation_out').value),
             'gripper_open': int(self.get_parameter('button_gripper_open').value),
             'gripper_close': int(self.get_parameter('button_gripper_close').value),
         }
+        if self.btn['rotation_in'] < 0:
+            self.btn['rotation_in'] = int(
+                self.get_parameter('button_rotation_horiz').value)
+        if self.btn['rotation_out'] < 0:
+            self.btn['rotation_out'] = int(
+                self.get_parameter('button_rotation_vert').value)
 
         self.titan_cli = self.create_client(
             SetData, str(self.get_parameter('titan_service').value))
@@ -136,7 +153,7 @@ class OmsJoyNode(Node):
             f'  D-pad L/R  rotate ACW / CW   (titan1 m_{self.rotate_motor})\n'
             f'  D-pad U/D  lift up / down    (titan1 m_{self.lift_motor})\n'
             '  L1 / Share linear fwd / back (/linear_servo/cmd)\n'
-            '  Square / Triangle  rotation horiz / vert\n'
+            '  Square / Triangle  rotation in / out\n'
             '  Cross / Circle     gripper open / close\n'
             '  L3 / R3    vertical down / up\n'
             '  Options    stop rotate+lift+linear (this is Start)\n'
@@ -178,10 +195,10 @@ class OmsJoyNode(Node):
             self._servo(self.vertical_cli, self.vertical_up, 'vertical up')
         elif pressed('vertical_down'):
             self._servo(self.vertical_cli, self.vertical_down, 'vertical down')
-        elif pressed('rotation_horiz'):
-            self._servo(self.rotation_cli, self.rotation_horizontal, 'rotation horizontal')
-        elif pressed('rotation_vert'):
-            self._servo(self.rotation_cli, self.rotation_vertical, 'rotation vertical')
+        elif pressed('rotation_in'):
+            self._servo(self.rotation_cli, self.rotation_in, 'rotation in')
+        elif pressed('rotation_out'):
+            self._servo(self.rotation_cli, self.rotation_out, 'rotation out')
         elif pressed('gripper_open'):
             self._servo(self.gripper_cli, self.gripper_open, 'gripper open')
         elif pressed('gripper_close'):

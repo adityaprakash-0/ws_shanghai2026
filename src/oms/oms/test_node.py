@@ -1,23 +1,38 @@
 #!/usr/bin/env python3
-"""OMS bench CLI — rotation + vertical from a second terminal.
+"""OMS bench CLI — rotation, lift, linear, vertical, rotation servo, gripper.
+
+Home sequence (allhome / dashboard Home): rotation → lift → linear → vertical
+→ rotation_servo (out 0°) → gripper.
 
 Terminal 1:  ros2 launch oms test_oms.launch.py
 Terminal 2:  ros2 run oms oms_test
 
 Type:
-  30        rotate OMS to +30° (ACW) from home
-  -45       rotate to −45° (CW)
-  0         back to home angle via PID
-  home      search the rotate limit switch and mark 0°
-  up        vertical servo up (50°, same as teleop Y)
-  down      vertical servo down / home (−40°, same as teleop H)
-  stop      zero rotate duty
-  q         quit
+  30              rotate OMS to +30° (ACW) from home
+  -45             rotate to −45° (CW)
+  0               rotate back to home angle
+  home            search rotate limit switch and mark 0°
+  lift 50         chain lift to 50 mm down from up limit (0 = home/up)
+  lift 0          lift to home (up limit)
+  lift home       search up limit and reset encoder
+  ldown           drive to lower limit (floor)
+  lstop           stop lift motor
+  linear 70       linear axis to 70 mm forward from home (max 100 mm)
+  linear 30       linear axis to 30 mm forward from home
+  linear home     backward to M0 limit_fwd, reset M3 encoder once
+  linear stop     stop linear servo
+  up / down       vertical servo (60° / −40°)
+  in / out        rotation servo in / out (110° / 0°)
+  open / close    gripper open / closed (−150° / 150°)
+  allhome         full boot home sequence
+  stop            zero rotate duty
+  q               quit
 
 One-shot:
-  ros2 run oms oms_test -- 30
-  ros2 run oms oms_test -- up
-  ros2 run oms oms_test -- down
+  ros2 run oms oms_test -- linear 70
+  ros2 run oms oms_test -- linear home
+  ros2 run oms oms_test -- lift 100
+  ros2 run oms oms_test -- allhome
 """
 
 from __future__ import annotations
@@ -57,24 +72,64 @@ class OmsTestNode(Node):
         self._homed = False
         self._state = ''
         self._vert_pose = ''
+        self._lift_pos = None
+        self._lift_state = ''
+        self._linear_pos = None
+        self._linear_state = ''
+        self._rot_servo_pose = ''
+        self._gripper_pose = ''
         self._last_result = None
         self._cmd_pub = self.create_publisher(String, '/oms/rotation/cmd', 10)
+        self._lift_pub = self.create_publisher(String, '/oms/lift/cmd', 10)
+        self._linear_pub = self.create_publisher(String, '/oms/linear/cmd', 10)
         self._vert_pub = self.create_publisher(String, '/oms/vertical/cmd', 10)
+        self._rot_servo_pub = self.create_publisher(String, '/oms/rotation_servo/cmd', 10)
+        self._gripper_pub = self.create_publisher(String, '/oms/gripper/cmd', 10)
+        self._home_pub = self.create_publisher(String, '/oms/home/cmd', 10)
         self.create_subscription(
             String, '/oms/rotation/status', self._on_status, 10)
         self.create_subscription(
             String, '/oms/rotation/result', self._on_result, 10)
         self.create_subscription(
+            String, '/oms/lift/status', self._on_lift_status, 10)
+        self.create_subscription(
+            String, '/oms/lift/result', self._on_result, 10)
+        self.create_subscription(
+            String, '/oms/linear/status', self._on_linear_status, 10)
+        self.create_subscription(
+            String, '/oms/linear/result', self._on_result, 10)
+        self.create_subscription(
             String, '/oms/vertical/status', self._on_vert_status, 10)
         self.create_subscription(
             String, '/oms/vertical/result', self._on_result, 10)
         self.create_subscription(
+            String, '/oms/rotation_servo/status', self._on_rot_servo_status, 10)
+        self.create_subscription(
+            String, '/oms/rotation_servo/result', self._on_result, 10)
+        self.create_subscription(
+            String, '/oms/gripper/status', self._on_gripper_status, 10)
+        self.create_subscription(
+            String, '/oms/gripper/result', self._on_result, 10)
+        self.create_subscription(
+            String, '/oms/home/result', self._on_result, 10)
+        self.create_subscription(
             Float64, '/oms/rotation/angle_deg', self._on_angle, 10)
+        self.create_subscription(
+            Float64, '/oms/lift/pos_mm', self._on_lift_pos, 10)
+        self.create_subscription(
+            Float64, '/oms/linear/pos_mm', self._on_linear_pos, 10)
         self.get_logger().info(
-            'OMS test — angle | home | up | down | stop | q')
+            'OMS test — angle | home | lift | linear | up/down | '
+            'in/out | open/close | allhome | stop | q')
 
     def _on_angle(self, msg: Float64) -> None:
         self._angle = float(msg.data)
+
+    def _on_lift_pos(self, msg: Float64) -> None:
+        self._lift_pos = float(msg.data)
+
+    def _on_linear_pos(self, msg: Float64) -> None:
+        self._linear_pos = float(msg.data)
 
     def _on_status(self, msg: String) -> None:
         try:
@@ -91,6 +146,34 @@ class OmsTestNode(Node):
             except (TypeError, ValueError):
                 pass
 
+    def _on_lift_status(self, msg: String) -> None:
+        try:
+            data = json.loads(msg.data)
+        except Exception:
+            return
+        if not isinstance(data, dict):
+            return
+        self._lift_state = str(data.get('state') or '')
+        if data.get('pos_mm') is not None:
+            try:
+                self._lift_pos = float(data['pos_mm'])
+            except (TypeError, ValueError):
+                pass
+
+    def _on_linear_status(self, msg: String) -> None:
+        try:
+            data = json.loads(msg.data)
+        except Exception:
+            return
+        if not isinstance(data, dict):
+            return
+        self._linear_state = str(data.get('state') or '')
+        if data.get('pos_mm') is not None:
+            try:
+                self._linear_pos = float(data['pos_mm'])
+            except (TypeError, ValueError):
+                pass
+
     def _on_vert_status(self, msg: String) -> None:
         try:
             data = json.loads(msg.data)
@@ -98,6 +181,22 @@ class OmsTestNode(Node):
             return
         if isinstance(data, dict):
             self._vert_pose = str(data.get('pose') or '')
+
+    def _on_rot_servo_status(self, msg: String) -> None:
+        try:
+            data = json.loads(msg.data)
+        except Exception:
+            return
+        if isinstance(data, dict):
+            self._rot_servo_pose = str(data.get('pose') or '')
+
+    def _on_gripper_status(self, msg: String) -> None:
+        try:
+            data = json.loads(msg.data)
+        except Exception:
+            return
+        if isinstance(data, dict):
+            self._gripper_pose = str(data.get('pose') or '')
 
     def _on_result(self, msg: String) -> None:
         try:
@@ -109,10 +208,17 @@ class OmsTestNode(Node):
         self._last_result = data
         ok = bool(data.get('success'))
         ang = data.get('angle_deg')
+        pos = data.get('pos_mm')
         pose = data.get('pose')
         extra = ''
         if ang is not None:
             extra += f'  angle={float(ang):+.2f}°'
+        if pos is not None:
+            mode = str(data.get('mode') or '')
+            if mode == 'linear':
+                extra += f'  linear={float(pos):.1f}mm'
+            else:
+                extra += f'  lift={float(pos):.1f}mm'
         if pose:
             extra += f'  pose={pose}'
         self.get_logger().info(
@@ -135,26 +241,93 @@ class OmsTestNode(Node):
         if low in ('stop', 'cancel'):
             self._send(self._cmd_pub, {'mode': 'stop'})
             return True
+        if low in ('lstop', 'lift stop'):
+            self._send(self._lift_pub, {'mode': 'stop'})
+            return True
+        if low in ('linear stop', 'linstop'):
+            self._send(self._linear_pub, {'mode': 'stop'})
+            return True
         if low == 'home':
             self._send(self._cmd_pub, {'mode': 'home'})
             return True
+        if low in ('allhome', 'home all', 'boot home'):
+            self._send(self._home_pub, {'mode': 'home'})
+            return True
+        if low in ('lift home', 'lhome'):
+            self._send(self._lift_pub, {'mode': 'home'})
+            return True
+        if low in ('ldown', 'lift down'):
+            self._send(self._lift_pub, {'mode': 'down'})
+            return True
+        if low in ('linear home', 'lhome linear'):
+            self._send(self._linear_pub, {'mode': 'home'})
+            return True
         if low in ('up', 'down'):
             self._send(self._vert_pub, {'mode': low})
+            return True
+        if low in ('in', 'i', 'horiz', 'horizontal', 'h'):
+            self._send(self._rot_servo_pub, {'mode': 'in'})
+            return True
+        if low in ('out', 'o', 'vert', 'vertical', 'v'):
+            self._send(self._rot_servo_pub, {'mode': 'out'})
+            return True
+        if low in ('open', 'grip open', 'gripper open'):
+            self._send(self._gripper_pub, {'mode': 'open'})
+            return True
+        if low in ('close', 'grip close', 'gripper close'):
+            self._send(self._gripper_pub, {'mode': 'close'})
+            return True
+        if low.startswith('lift '):
+            arg = line[5:].strip()
+            if arg.lower() in ('home', 'up'):
+                self._send(self._lift_pub, {'mode': 'home'})
+                return True
+            if arg.lower() == 'down':
+                self._send(self._lift_pub, {'mode': 'down'})
+                return True
+            try:
+                pos = float(arg)
+            except ValueError:
+                self.get_logger().warn(f'bad lift target {arg!r}')
+                return True
+            self._send(self._lift_pub, {'mode': 'goto', 'pos_mm': pos})
+            return True
+        if low.startswith('linear '):
+            arg = line[7:].strip()
+            if arg.lower() in ('home', 'back'):
+                self._send(self._linear_pub, {'mode': 'home'})
+                return True
+            if arg.lower() == 'stop':
+                self._send(self._linear_pub, {'mode': 'stop'})
+                return True
+            try:
+                pos = float(arg)
+            except ValueError:
+                self.get_logger().warn(f'bad linear target {arg!r}')
+                return True
+            self._send(self._linear_pub, {'mode': 'goto', 'pos_mm': pos})
             return True
         try:
             angle = float(line)
         except ValueError:
             self.get_logger().warn(
-                f'unknown command {line!r} — angle, home, up, down, stop, q')
+                f'unknown command {line!r} — angle, home, lift, linear, '
+                'up/down, in/out, open/close, allhome, stop, q')
             return True
         self._send(self._cmd_pub, {'mode': 'goto', 'angle_deg': angle})
         return True
 
     def _print_status(self) -> None:
         ang = '—' if self._angle is None else f'{self._angle:+.2f}°'
+        lift = '—' if self._lift_pos is None else f'{self._lift_pos:.1f}mm'
+        linear = '—' if self._linear_pos is None else f'{self._linear_pos:.1f}mm'
         self.get_logger().info(
-            f'rotate state={self._state or "?"} homed={self._homed} '
-            f'angle={ang}  vertical={self._vert_pose or "?"}')
+            f'rotate state={self._state or "?"} homed={self._homed} angle={ang}  '
+            f'lift state={self._lift_state or "?"} pos={lift}  '
+            f'linear state={self._linear_state or "?"} pos={linear}  '
+            f'vertical={self._vert_pose or "?"}  '
+            f'rot_servo={self._rot_servo_pose or "?"}  '
+            f'gripper={self._gripper_pose or "?"}')
 
     def wait_result(self, timeout: float) -> bool:
         t0 = time.time()
@@ -170,8 +343,8 @@ class OmsTestNode(Node):
 def _prompt_loop(node: OmsTestNode) -> None:
     time.sleep(0.4)
     print(
-        'OMS test  angle | home | up | down | stop | q     '
-        '(empty line = status)',
+        'OMS test  angle | home | lift | linear | up/down | '
+        'in/out | open/close | allhome | stop | q',
         flush=True)
     while rclpy.ok():
         try:
@@ -197,7 +370,10 @@ def main(args=None) -> None:
             time.sleep(0.3)
             if not node.handle_line(oneshot):
                 return
-            node.wait_result(30.0)
+            timeout = 120.0 if oneshot.lower().startswith('allhome') else 60.0
+            if oneshot.lower().startswith('linear'):
+                timeout = 90.0
+            node.wait_result(timeout)
         else:
             _prompt_loop(node)
     finally:

@@ -28,6 +28,8 @@ from launch.actions import (
     TimerAction,
 )
 from launch.substitutions import LaunchConfiguration
+
+from skill23_studio.ros_dds import studio_dds_launch_actions
 from launch_ros.actions import Node
 
 from skill23_studio.ekf_paths import ekf_yaml_for_robot
@@ -218,7 +220,7 @@ def _setup(context, *args, **kwargs):
 
 def generate_launch_description():
     return LaunchDescription([
-        SetEnvironmentVariable('FASTDDS_BUILTIN_TRANSPORTS', 'UDPv4'),
+        *studio_dds_launch_actions(),
         DeclareLaunchArgument(
             'robot', default_value='grip',
             description='Robot platform: allterrain | mecanum | xdrive | grip'),

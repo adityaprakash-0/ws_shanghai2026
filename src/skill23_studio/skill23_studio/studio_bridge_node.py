@@ -34,12 +34,90 @@ from std_srvs.srv import SetBool
 from tf2_ros import Buffer, TransformException, TransformListener
 
 from skill23_studio import map_pipeline as maps
+from skill23_studio.commission_mission import (
+    COMMISSION_OBJECTS,
+    default_config,
+    drop_sticker_for_object,
+    index_waypoints,
+    next_pick_index,
+    normalize_config,
+    normalize_object_name,
+    remaining_after_visit,
+    resolve_drop_wp,
+)
 from skill23_studio.process_manager import ProcessManager
 from skill23_studio.nav.utils import pose_cov_to_stamped, quat_from_yaw, yaw_from_quat
 
 
+OMS_HARDWARE = [
+    {
+        'name': 'Rotation',
+        'axis': 'rotation',
+        'hw': 'Titan1 M2 Maverick 71.2:1',
+        'topics': '/titan1/m_2/cmd  /titan1/m_2/encoder',
+        'home': 'Titan1 M0 limit_rev = 0° (front / +X)',
+        'range': '−90° CW … +90° ACW',
+    },
+    {
+        'name': 'Lift',
+        'axis': 'lift',
+        'hw': 'Titan1 M1 Maverick 99.5:1 + GT2 belt',
+        'topics': '/titan1/m_1/cmd  /titan1/m_1/encoder',
+        'home': 'M1 limit_fwd = up (0 mm). limit_rev = floor',
+        'range': '0 mm (top) … 250 mm down, X=0 Y=0, Z only',
+    },
+    {
+        'name': 'Linear',
+        'axis': 'linear',
+        'hw': 'Cypher Max on Titan1 M3 + Smart Servo 200',
+        'topics': '/linear_servo/cmd  /titan1/m_3/encoder',
+        'home': 'Titan1 M0 limit_fwd (rear). Encoder reset on home',
+        'range': '0 mm retracted … +X forward. Y fixed, Z follows lift',
+    },
+    {
+        'name': 'Vertical servo',
+        'axis': 'vertical',
+        'hw': 'VMX pin 13 /vertical_servo/set_servo',
+        'topics': '/oms/vertical/cmd',
+        'home': 'down −40°',
+        'range': 'down −40° / up 60°',
+    },
+    {
+        'name': 'Rotation servo',
+        'axis': 'rotation_servo',
+        'hw': 'VMX pin 14 /rotation_servo/set_servo',
+        'topics': '/oms/rotation_servo/cmd',
+        'home': 'out 0°',
+        'range': 'out 0° (home) / in 110°',
+    },
+    {
+        'name': 'Gripper',
+        'axis': 'gripper',
+        'hw': 'VMX pin 15 /gripper_servo/set_servo',
+        'topics': '/oms/gripper/cmd',
+        'home': 'closed 150°',
+        'range': 'closed 150° / open −150°',
+    },
+]
+
+
 # Plenty for the ~40 lines the dashboard shows, without reading whole logs.
 _LOG_TAIL_BYTES = 16_384
+
+
+def _ros_string(data: Any) -> str:
+    """Strip embedded nulls from std_msgs/String (avoids DDS deserialize warnings)."""
+    if data is None:
+        return ''
+    text = data if isinstance(data, str) else str(data)
+    return text.split('\0', 1)[0]
+
+
+def _json_from_ros_string(data: Any) -> Any:
+    text = _ros_string(data).strip()
+    if not text:
+        return None
+    return json.loads(text)
 
 
 def _yaw_of(ps: PoseStamped) -> float:
@@ -70,7 +148,7 @@ class StudioBridge(Node):
             'robot': 'grip',
             'mode': 'offline',  # arena | offline
             'phase': 'idle',    # idle|mapping|improve|waypoints|deploy
-            'nav_stack': 'custom',  # custom | nav2
+            'nav_stack': 'nav2',  # nav2 | gc_planner
             'deploy_module': 'nav',  # nav | commission
             'warnings': [],
             'slam': {
@@ -84,6 +162,11 @@ class StudioBridge(Node):
         self._pose_override: Optional[Dict[str, float]] = None
         self._pose_override_until: float = 0.0
         self._odom_pose: Optional[PoseStamped] = None
+        self._odom_stamp = 0.0
+        self._odom_speed = 0.0
+        self._odom_frame = ''
+        self._scan_raw_count = 0
+        self._scan_valid_count = 0
         self._map: Optional[OccupancyGrid] = None
         self._map_seq = 0
         self._map_built: Optional[Dict[str, Any]] = None
@@ -91,14 +174,7 @@ class StudioBridge(Node):
         self._map_payload_last: Optional[Dict[str, Any]] = None
         self._map_rev = 0
         self._path: Optional[Path] = None
-        self._planner_path: Optional[Path] = None
-        self._smoothed_path: Optional[Path] = None
         self._mission: Dict[str, Any] = {}
-        self._recovery: Dict[str, Any] = {}
-        self._collision: Dict[str, Any] = {}
-        self._nodes: Dict[str, Any] = {}
-        self._goal_status = 'NOT_REACHED'
-        self._world_ready = False
         self._amcl_ok = False
         self._amcl_cov: float = 99.0
         self._scan: list = []
@@ -116,7 +192,6 @@ class StudioBridge(Node):
         self._reloc_start_after: Optional[float] = None
         self._reloc_pending_wps: Optional[list] = None
         self._reloc_result = ''  # '', 'running', 'ok', 'failed'
-        self._path_style = 'smoothed'
         self._amcl_stamp = 0.0
         self._scan_stamp = 0.0
         self._scan_msg_stamp: Optional[Time] = None
@@ -136,7 +211,6 @@ class StudioBridge(Node):
         self._cam_deploy_launch_after = 0.0
         self._cam_in_nav_launch = False
         self._sim_path: Optional[Path] = None
-        self._sim_path_smooth: Optional[Path] = None
         self._sim_result: Dict[str, Any] = {}
         self._sim_req_id = 0
         self._pending_nav2_wps: Optional[list] = None
@@ -148,7 +222,7 @@ class StudioBridge(Node):
         self._hw_stop_prev = False
         self._hw_start_cool = 0.0
         self._hw_stop_cool = 0.0
-        self._NAV2_WP_TRIES = 2
+        self._NAV2_WP_TRIES = 4
         self._nav2_seq_gen = 0
         self._nav2_seq_active = False
         self._nav2_seq_wps: List[dict] = []
@@ -178,11 +252,32 @@ class StudioBridge(Node):
             'last_ok': None,
             'last_result': '',
         }
+        self._commission: Dict[str, Any] = self._commission_idle_state()
         self._oms: Dict[str, Any] = {
-            'angle_deg': None,
-            'homed': False,
-            'state': 'offline',
-            'home_switch': False,
+            'ready': False,
+            'source': 'none',
+            'standalone': False,
+            'rotation': {
+                'angle_deg': None, 'homed': False, 'state': 'offline',
+                'home_switch': False,
+            },
+            'lift': {
+                'pos_mm': None, 'homed': False, 'state': 'offline',
+                'up_sw': False, 'down_sw': False,
+            },
+            'linear': {
+                'pos_mm': None, 'homed': False, 'state': 'offline',
+                'home_switch': False,
+            },
+            'vertical': {'pose': '', 'angle_deg': None, 'homed': False, 'state': 'offline'},
+            'rotation_servo': {
+                'pose': '', 'angle_deg': None, 'homed': False, 'state': 'offline'},
+            'gripper': {
+                'pose': '', 'angle_deg': None, 'homed': False, 'state': 'offline'},
+            'home': {'state': 'idle'},
+            'last_result': {},
+            'pose': {'x_m': 0.0, 'y_m': 0.0, 'z_m': 0.0, 'yaw_deg': 0.0},
+            'stamp': 0.0,
         }
 
         qos = QoSProfile(
@@ -195,26 +290,7 @@ class StudioBridge(Node):
         self.create_subscription(Odometry, '/odometry/filtered', self._on_odom, 10)
         self.create_subscription(Odometry, '/odom', self._on_odom, 10)
         self.create_subscription(OccupancyGrid, '/map', self._on_map, qos)
-        self.create_subscription(Path, '/custom_nav/path', self._on_path, 10)
         self.create_subscription(Path, '/plan', self._on_path, 10)
-        self.create_subscription(Path, '/custom_nav/planner_path', self._on_planner, 10)
-        self.create_subscription(Path, '/custom_nav/smoothed_path', self._on_smoothed, 10)
-        self.create_subscription(Path, '/custom_nav/sim/path', self._on_sim_path, 10)
-        self.create_subscription(
-            Path, '/custom_nav/sim/path_smooth', self._on_sim_path_smooth, 10)
-        self.create_subscription(String, '/custom_nav/sim/result', self._on_sim_result, 10)
-        self.create_subscription(String, '/custom_nav/mission/status', self._on_mission, 10)
-        self.create_subscription(String, '/custom_nav/recovery', self._on_recovery, 10)
-        self.create_subscription(String, '/custom_nav/collision', self._on_collision, 10)
-        self.create_subscription(String, '/custom_nav/goal_status', self._on_goal_status, 10)
-        self.create_subscription(
-            String, '/custom_nav/node_status', self._on_node_status,
-            QoSProfile(
-                depth=20,
-                reliability=ReliabilityPolicy.RELIABLE,
-                durability=DurabilityPolicy.TRANSIENT_LOCAL,
-            ))
-        self.create_subscription(Bool, '/custom_nav/world/ready', self._on_ready, qos)
         self.create_subscription(BatteryState, '/battery_state', self._on_battery, 10)
         self.create_subscription(
             LaserScan, str(self.get_parameter('scan_topic').value),
@@ -222,7 +298,6 @@ class StudioBridge(Node):
 
         self._initialpose = self.create_publisher(
             PoseWithCovarianceStamped, '/initialpose', 10)
-        self._goal_pub = self.create_publisher(PoseStamped, '/custom_nav/goal', 10)
         self._goal_pose_pub = self.create_publisher(PoseStamped, '/goal_pose', 10)
         self._nav_to_pose = ActionClient(self, NavigateToPose, 'navigate_to_pose')
         self._nav_through = ActionClient(
@@ -233,21 +308,7 @@ class StudioBridge(Node):
         self._clear_global_cli = self.create_client(
             ClearEntireCostmap, 'global_costmap/clear_entirely_global_costmap')
         self._nav2_goal_handle = None
-        self._goals_pub = self.create_publisher(String, '/custom_nav/goals', 10)
-        self._start_pub = self.create_publisher(Empty, '/custom_nav/mission/start', 10)
-        self._stop_pub = self.create_publisher(Empty, '/custom_nav/mission/stop', 10)
-        self._map_load = self.create_publisher(String, '/custom_nav/map/load', 10)
         self._cmd_vel = self.create_publisher(Twist, '/cmd_vel', 10)
-        self._ctrl_pub = self.create_publisher(
-            Bool, '/custom_nav/controller/enable',
-            QoSProfile(
-                depth=1,
-                reliability=ReliabilityPolicy.RELIABLE,
-                durability=DurabilityPolicy.TRANSIENT_LOCAL,
-            ))
-        self._path_style_pub = self.create_publisher(String, '/custom_nav/path_style', 10)
-        self._sim_req_pub = self.create_publisher(
-            String, '/custom_nav/sim/plan_request', 10)
         # Public intent signal: subscribers (laptop vision) can use it to know
         # when Studio wants frames. Studio itself never subscribes to images.
         self._cam_need_pub = self.create_publisher(Bool, '/studio/camera/need', 10)
@@ -296,6 +357,46 @@ class StudioBridge(Node):
             String, '/oms/rotation/status', self._on_oms_status, 10)
         self.create_subscription(
             Float64, '/oms/rotation/angle_deg', self._on_oms_angle, 10)
+        self.create_subscription(
+            String, '/oms/lift/status',
+            lambda m: self._on_oms_axis_status('lift', m), 10)
+        self.create_subscription(
+            Float64, '/oms/lift/pos_mm',
+            lambda m: self._on_oms_mm('lift', m), 10)
+        self.create_subscription(
+            String, '/oms/linear/status',
+            lambda m: self._on_oms_axis_status('linear', m), 10)
+        self.create_subscription(
+            Float64, '/oms/linear/pos_mm',
+            lambda m: self._on_oms_mm('linear', m), 10)
+        self.create_subscription(
+            String, '/oms/vertical/status',
+            lambda m: self._on_oms_axis_status('vertical', m), 10)
+        self.create_subscription(
+            String, '/oms/rotation_servo/status',
+            lambda m: self._on_oms_axis_status('rotation_servo', m), 10)
+        self.create_subscription(
+            String, '/oms/gripper/status',
+            lambda m: self._on_oms_axis_status('gripper', m), 10)
+        self.create_subscription(
+            String, '/oms/home/status',
+            lambda m: self._on_oms_axis_status('home', m), 10)
+        self._oms_cmd_pubs = {
+            'rotation': self.create_publisher(String, '/oms/rotation/cmd', 10),
+            'lift': self.create_publisher(String, '/oms/lift/cmd', 10),
+            'linear': self.create_publisher(String, '/oms/linear/cmd', 10),
+            'vertical': self.create_publisher(String, '/oms/vertical/cmd', 10),
+            'rotation_servo': self.create_publisher(
+                String, '/oms/rotation_servo/cmd', 10),
+            'gripper': self.create_publisher(String, '/oms/gripper/cmd', 10),
+            'home': self.create_publisher(String, '/oms/home/cmd', 10),
+        }
+        for axis in (
+                'rotation', 'lift', 'linear', 'vertical',
+                'rotation_servo', 'gripper', 'home'):
+            self.create_subscription(
+                String, f'/oms/{axis}/result',
+                lambda m, a=axis: self._on_oms_result(a, m), 10)
 
         self.create_timer(0.1, self._reloc_tick)
         self.create_timer(0.1, self._nav2_seq_tick)
@@ -323,6 +424,11 @@ class StudioBridge(Node):
         ps.header = msg.header
         ps.pose = msg.pose.pose
         self._odom_pose = ps
+        self._odom_stamp = time.time()
+        # Lightweight motion signal for EKF health (no extra pubs).
+        tw = msg.twist.twist
+        self._odom_speed = math.hypot(float(tw.linear.x), float(tw.linear.y))
+        self._odom_frame = str(msg.header.frame_id or '')
 
     def _append_trail(self, x: float, y: float) -> None:
         lx, ly = self._trail_last
@@ -338,57 +444,13 @@ class StudioBridge(Node):
 
     def _clear_nav_paths(self) -> None:
         self._path = None
-        self._planner_path = None
-        self._smoothed_path = None
 
     def _on_path(self, msg: Path) -> None:
         self._path = msg
 
-    def _on_planner(self, msg: Path) -> None:
-        if self._using_nav2():
-            return
-        self._planner_path = msg
-
-    def _on_smoothed(self, msg: Path) -> None:
-        if self._using_nav2():
-            return
-        self._smoothed_path = msg
-
-    def _on_sim_path(self, msg: Path) -> None:
-        self._sim_path = msg
-
-    def _on_sim_path_smooth(self, msg: Path) -> None:
-        self._sim_path_smooth = msg
-
-    def _on_sim_result(self, msg: String) -> None:
-        try:
-            self._sim_result = json.loads(msg.data)
-        except Exception:
-            pass
-
-    def _on_mission(self, msg: String) -> None:
-        try:
-            self._mission = json.loads(msg.data)
-        except Exception:
-            pass
-
-    def _on_recovery(self, msg: String) -> None:
-        try:
-            self._recovery = json.loads(msg.data)
-        except Exception:
-            pass
-
-    def _on_collision(self, msg: String) -> None:
-        try:
-            self._collision = json.loads(msg.data)
-        except Exception:
-            pass
-
-    def _on_goal_status(self, msg: String) -> None:
-        self._goal_status = msg.data
-
     def _using_nav2(self) -> bool:
-        return str(self.session.get('nav_stack') or '') == 'nav2'
+        stack = str(self.session.get('nav_stack') or '')
+        return stack in ('nav2', 'gc_planner')
 
     def _nav2_compute_path_sync(
         self,
@@ -399,14 +461,19 @@ class StudioBridge(Node):
         gy: float,
         gyaw: float,
         *,
+        planner_id: str = 'GridBased',
         timeout_sec: float = 12.0,
     ) -> Dict[str, Any]:
-        """One-shot Theta* preview via Nav2 compute_path_to_pose."""
+        """One-shot ClearancePlanner preview via Nav2 compute_path_to_pose."""
         if not self._compute_path.wait_for_server(timeout_sec=2.0):
             return {'ok': False, 'detail': 'compute_path_to_pose not ready', 'points': 0}
 
+        pid = str(planner_id or 'GridBased').strip()
+        if pid not in ('GridBased',):
+            pid = 'GridBased'
+
         goal = ComputePathToPose.Goal()
-        goal.planner_id = 'GridBased'
+        goal.planner_id = pid
         goal.use_start = True
         stamp = Time().to_msg()
 
@@ -463,11 +530,12 @@ class StudioBridge(Node):
             return {'ok': False, 'detail': str(box['error']), 'points': 0}
         path = box['path']
         if path is None or len(path.poses) < 2:
-            return {'ok': False, 'detail': 'no path', 'points': 0}
+            return {'ok': False, 'detail': 'no path', 'points': 0, 'planner_id': pid}
         return {
             'ok': True,
-            'detail': f'Nav2 Theta* ({len(path.poses)} pts)',
+            'detail': f'{pid} ({len(path.poses)} pts)',
             'points': len(path.poses),
+            'planner_id': pid,
             'path': path,
         }
 
@@ -489,6 +557,7 @@ class StudioBridge(Node):
 
     def _cancel_nav2(self) -> None:
         """Stop the whole Nav2 mission sequence and cancel the active goal."""
+        self._commission_reset()
         self._nav2_seq_active = False
         self._nav2_seq_gen += 1
         self._nav2_wait_until = 0.0
@@ -604,6 +673,8 @@ class StudioBridge(Node):
         wps = self._nav2_seq_wps
         idx = self._nav2_seq_index
         if idx >= len(wps):
+            if self._commission.get('active'):
+                return
             self._nav2_seq_active = False
             self._nav2_wait_until = 0.0
             self._nav2_action_cmd_id = ''
@@ -734,6 +805,9 @@ class StudioBridge(Node):
             f'Waypoint {reached_idx + 1}/{n} reached — {detail} (YAML timeouts)')
 
     def _nav2_finish_action_then_next(self, reason: str) -> None:
+        if self._commission.get('active'):
+            self._commission_on_action_done(reason)
+            return
         self._nav2_wait_until = 0.0
         self._nav2_action_cmd_id = ''
         self._nav2_action_deadline = 0.0
@@ -743,7 +817,7 @@ class StudioBridge(Node):
 
     def _on_studio_detect_align_status(self, msg: String) -> None:
         try:
-            data = json.loads(msg.data)
+            data = _json_from_ros_string(msg.data)
         except Exception:
             return
         if not isinstance(data, dict):
@@ -785,29 +859,203 @@ class StudioBridge(Node):
 
     def _on_oms_angle(self, msg: Float64) -> None:
         try:
-            self._oms['angle_deg'] = round(float(msg.data), 2)
+            self._oms['rotation']['angle_deg'] = round(float(msg.data), 2)
+            self._oms['stamp'] = time.time()
+            self._refresh_oms_pose()
         except (TypeError, ValueError):
             pass
 
-    def _on_oms_status(self, msg: String) -> None:
+    def _on_oms_mm(self, axis: str, msg: Float64) -> None:
         try:
-            data = json.loads(msg.data)
+            self._oms[axis]['pos_mm'] = round(float(msg.data), 1)
+            self._oms['stamp'] = time.time()
+            self._refresh_oms_pose()
+        except (TypeError, ValueError, KeyError):
+            pass
+
+    def _on_oms_axis_status(self, axis: str, msg: String) -> None:
+        try:
+            data = _json_from_ros_string(msg.data)
         except Exception:
             return
         if not isinstance(data, dict):
             return
+        slot = self._oms.setdefault(axis, {})
         if data.get('angle_deg') is not None:
             try:
-                self._oms['angle_deg'] = round(float(data['angle_deg']), 2)
+                slot['angle_deg'] = round(float(data['angle_deg']), 2)
             except (TypeError, ValueError):
                 pass
-        self._oms['homed'] = bool(data.get('homed'))
-        self._oms['state'] = str(data.get('state') or self._oms.get('state') or '')
-        self._oms['home_switch'] = bool(data.get('home_switch'))
+        if data.get('pos_mm') is not None:
+            try:
+                slot['pos_mm'] = round(float(data['pos_mm']), 1)
+            except (TypeError, ValueError):
+                pass
+        if 'homed' in data:
+            slot['homed'] = bool(data.get('homed'))
+        if data.get('state') is not None:
+            slot['state'] = str(data.get('state') or '')
+        if data.get('pose') is not None:
+            slot['pose'] = str(data.get('pose') or '')
+        if 'home_switch' in data:
+            slot['home_switch'] = bool(data.get('home_switch'))
+        if 'up_sw' in data or 'up_switch' in data:
+            slot['up_sw'] = bool(data.get('up_sw', data.get('up_switch')))
+        if 'down_sw' in data or 'down_switch' in data:
+            slot['down_sw'] = bool(data.get('down_sw', data.get('down_switch')))
+        if axis == 'home':
+            if isinstance(data.get('steps'), dict):
+                slot['steps'] = data['steps']
+            if data.get('sequence') is not None:
+                slot['sequence'] = data.get('sequence')
+            if data.get('current') is not None:
+                slot['current'] = str(data.get('current') or '')
+            if data.get('failed_step') is not None:
+                slot['failed_step'] = str(data.get('failed_step') or '')
+            if data.get('message') is not None:
+                slot['message'] = str(data.get('message') or '')
+        self._oms['stamp'] = time.time()
+        if axis in ('rotation', 'lift', 'linear'):
+            self._refresh_oms_pose()
+
+    def _on_oms_result(self, axis: str, msg: String) -> None:
+        try:
+            data = _json_from_ros_string(msg.data)
+        except Exception:
+            data = {'raw': _ros_string(msg.data)}
+        if not isinstance(data, dict):
+            data = {'raw': _ros_string(msg.data)}
+        slot = self._oms.setdefault('last_result', {})
+        slot[axis] = data
+        self._oms['stamp'] = time.time()
+
+    def _on_oms_status(self, msg: String) -> None:
+        self._on_oms_axis_status('rotation', msg)
+
+    def _refresh_oms_pose(self) -> None:
+        rot = self._oms.get('rotation') or {}
+        lift = self._oms.get('lift') or {}
+        linear = self._oms.get('linear') or {}
+        yaw = float(rot.get('angle_deg') or 0.0)
+        lift_mm = float(lift.get('pos_mm') or 0.0)
+        lin_mm = float(linear.get('pos_mm') or 0.0)
+        try:
+            from oms.kinematics import oms_analysis
+            viz = getattr(self, '_oms_viz_cache', None)
+            if viz is None:
+                try:
+                    from oms.config_io import public_config
+                    viz = public_config().get('oms_viz') or {}
+                    self._oms_viz_cache = viz
+                except Exception:
+                    viz = {}
+            self._oms['pose'] = oms_analysis(
+                yaw, lift_mm, lin_mm,
+                lift_travel_mm=float(viz.get('lift_travel_mm') or 300.0),
+                linear_home_x_mm=float(viz.get('linear_home_x_mm') or 220.0),
+                linear_travel_mm=float(viz.get('linear_travel_mm') or 110.0),
+                linear_max_reach_mm=float(viz.get('linear_max_reach_mm') or 330.0),
+                z_top_mm=float(viz.get('z_top_mm') or 455.0),
+                z_floor_mm=float(viz.get('z_floor_mm') or 155.0),
+            )
+        except Exception:
+            import math
+            r = (220.0 + lin_mm) / 1000.0
+            rad = math.radians(yaw)
+            z = max(0.155, (455.0 - lift_mm) / 1000.0)
+            self._oms['pose'] = {
+                'x_m': round(r * math.cos(rad), 4),
+                'y_m': round(r * math.sin(rad), 4),
+                'z_m': round(z, 4),
+                'x_mm': round(r * math.cos(rad) * 1000.0, 1),
+                'y_mm': round(r * math.sin(rad) * 1000.0, 1),
+                'z_mm': round(z * 1000.0, 1),
+                'yaw_deg': round(yaw, 2),
+                'lift_mm': round(lift_mm, 1),
+                'linear_mm': round(lin_mm, 1),
+                'front': '+X',
+            }
+
+    def _oms_snapshot(self) -> Dict[str, Any]:
+        standalone = bool(self.pm.oms_standalone_alive())
+        nodes = bool(self.pm.oms_nodes_alive())
+        fresh = (time.time() - float(self._oms.get('stamp') or 0.0)) < 3.0
+        ready = nodes or fresh
+        if standalone:
+            source = 'standalone'
+        elif self.pm.stacks_alive().get('nav') and (nodes or fresh):
+            source = 'commission'
+        elif ready:
+            source = 'external'
+        else:
+            source = 'none'
+        payload = dict(self._oms)
+        payload['ready'] = ready
+        payload['source'] = source
+        payload['standalone'] = standalone
+        # Keep old keys so Detect+Align HUD still works.
+        rot = self._oms.get('rotation') or {}
+        payload['angle_deg'] = rot.get('angle_deg')
+        payload['homed'] = bool(rot.get('homed'))
+        payload['state'] = str(rot.get('state') or '')
+        payload['home_switch'] = bool(rot.get('home_switch'))
+        payload['hardware'] = OMS_HARDWARE
+        return payload
+
+    def _oms_api_status(self) -> Dict[str, Any]:
+        return {
+            'ok': True,
+            'stacks': self.pm.stacks_alive(),
+            'oms': self._oms_snapshot(),
+        }
+
+    def _oms_config(self) -> Dict[str, Any]:
+        try:
+            from oms.config_io import public_config, yaml_paths
+            return {
+                'ok': True,
+                'config': public_config(),
+                'paths': [str(p) for p in yaml_paths()],
+            }
+        except Exception as exc:
+            return {'ok': False, 'error': str(exc), 'config': {}}
+
+    def _oms_send_cmd(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        axis = str(body.get('axis') or body.get('mode') or '').strip().lower()
+        aliases = {
+            'rotate': 'rotation', 'yaw': 'rotation',
+            'belt': 'lift',
+            'slide': 'linear',
+            'vert': 'vertical',
+            'wrist': 'rotation_servo', 'rot_servo': 'rotation_servo',
+            'grip': 'gripper',
+            'allhome': 'home', 'boot': 'home',
+        }
+        axis = aliases.get(axis, axis)
+        if axis not in self._oms_cmd_pubs:
+            raise ValueError(
+                f'unknown axis {axis!r}. Use rotation, lift, linear, '
+                'vertical, rotation_servo, gripper, home')
+        payload = dict(body)
+        payload.pop('axis', None)
+        mode = str(payload.get('mode') or 'goto').strip().lower()
+        payload['mode'] = mode
+        payload.setdefault('cmd_id', f'studio_{axis}_{int(time.time() * 1000)}')
+        if axis == 'rotation' and mode == 'goto' and 'angle_deg' not in payload:
+            raise ValueError('rotation goto needs angle_deg')
+        if axis in ('lift', 'linear') and mode == 'goto' and 'pos_mm' not in payload:
+            raise ValueError(f'{axis} goto needs pos_mm')
+        if axis in ('vertical', 'rotation_servo', 'gripper') and mode == 'goto':
+            if 'angle_deg' not in payload:
+                raise ValueError(f'{axis} goto needs angle_deg')
+        self._oms_cmd_pubs[axis].publish(String(data=json.dumps(payload)))
+        self.get_logger().info(f'OMS cmd {axis} {payload}')
+        return {'ok': True, 'axis': axis, 'sent': payload}
+
 
     def _on_studio_detect_align_result(self, msg: String) -> None:
         try:
-            data = json.loads(msg.data)
+            data = _json_from_ros_string(msg.data)
         except Exception:
             data = {}
         if isinstance(data, dict):
@@ -831,11 +1079,31 @@ class StudioBridge(Node):
         self._on_studio_align_result(msg)
 
     def _on_studio_align_result(self, msg: String) -> None:
-        if not self._nav2_seq_active or not self._nav2_action_cmd_id:
-            return
         try:
-            data = json.loads(msg.data)
+            data = _json_from_ros_string(msg.data)
         except Exception:
+            return
+        if self._commission.get('active'):
+            if not self._nav2_action_cmd_id:
+                return
+            if str(data.get('cmd_id', '')) != self._nav2_action_cmd_id:
+                return
+            ok = bool(data.get('success'))
+            mode = str(data.get('mode') or 'align')
+            text = str(data.get('message') or '')
+            if mode in ('detect_align', 'oms_pick'):
+                self._commission['last_detect_ok'] = ok
+                if data.get('class_name'):
+                    self._commission['detected_object'] = normalize_object_name(
+                        data.get('class_name'))
+            if mode == 'oms_drop':
+                self._commission['last_detect_ok'] = ok
+            self.get_logger().info(
+                f'commission {mode} result ok={ok} {text}')
+            self._commission_on_action_done(
+                f'{mode} {"ok" if ok else "failed"}')
+            return
+        if not self._nav2_seq_active or not self._nav2_action_cmd_id:
             return
         if str(data.get('cmd_id', '')) != self._nav2_action_cmd_id:
             return
@@ -848,6 +1116,11 @@ class StudioBridge(Node):
             f'{mode} {"ok" if ok else "failed"}')
 
     def _nav2_begin_wait_then_next(self, reached_idx: int) -> None:
+        if self._commission.get('active'):
+            self._nav2_seq_index = reached_idx + 1
+            self._nav2_seq_attempt = 1
+            self._commission_on_nav_reached(reached_idx)
+            return
         wp = self._nav2_seq_wps[reached_idx]
         self._nav2_seq_index = reached_idx + 1
         self._nav2_seq_attempt = 1
@@ -973,18 +1246,6 @@ class StudioBridge(Node):
                 f'Nav2 costmap clear partial/failed local={local_ok} global={global_ok}')
         return {'ok': ok, 'local': local_ok, 'global': global_ok}
 
-    def _on_node_status(self, msg: String) -> None:
-        try:
-            data = json.loads(msg.data)
-            name = str(data.get('node', ''))
-            if name:
-                self._nodes[name] = data
-        except Exception:
-            pass
-
-    def _on_ready(self, msg: Bool) -> None:
-        self._world_ready = bool(msg.data)
-
     def _on_battery(self, msg: BatteryState) -> None:
         v = float(msg.voltage)
         p = float(msg.percentage)
@@ -1014,6 +1275,8 @@ class StudioBridge(Node):
         self.get_logger().info(f'[camera] {line}')
 
     def _mission_active(self) -> bool:
+        if self._commission.get('active'):
+            return True
         if self._nav2_seq_active:
             return True
         st = str((self._mission or {}).get('state', '')).lower()
@@ -1027,8 +1290,464 @@ class StudioBridge(Node):
         self._hw_alert = ''
         return len(wps)
 
+    # ── Module G commissioning mission ─────────────────────────────────────
+
+    def _commission_idle_state(self) -> Dict[str, Any]:
+        return {
+            'active': False,
+            'phase': 'idle',
+            'pick_index': 0,
+            'pick_retries': 0,
+            'pick_total': 0,
+            'current_pick': '',
+            'detected_object': '',
+            'target_drop': '',
+            'last_detect_ok': False,
+            'remaining': {},
+            'lift_mm': 0.0,
+            'nav_paused': False,
+            'config': default_config(),
+            'indexed': {},
+            'events': [],
+            'detail': '',
+        }
+
+    def _commission_reset(self) -> None:
+        if self._commission.get('active'):
+            self.get_logger().info('[commission] reset')
+        if self._commission.get('nav_paused'):
+            self._nav2_lifecycle_set(True)
+        self._commission = self._commission_idle_state()
+
+    def _commission_snapshot(self) -> Dict[str, Any]:
+        snap = dict(self._commission)
+        snap['objects'] = list(COMMISSION_OBJECTS)
+        return snap
+
+    def _commission_log(self, msg: str) -> None:
+        events = list(self._commission.get('events') or [])
+        events.append(f'{time.strftime("%H:%M:%S")} {msg}')
+        if len(events) > 40:
+            events = events[-30:]
+        self._commission['events'] = events
+        self.get_logger().info(f'[commission] {msg}')
+
+    def _commission_set_phase(self, phase: str, detail: str = '') -> None:
+        self._commission['phase'] = phase
+        self._commission['detail'] = detail
+        label = f'commission {phase}'
+        if detail:
+            label += f': {detail}'
+        self._nav2_set_mission('running', label)
+
+    def _commission_yaw_tol(self) -> float:
+        cfg = self._commission.get('config') or {}
+        try:
+            return float(cfg.get('yaw_tolerance_deg', 1.0))
+        except (TypeError, ValueError):
+            return 1.0
+
+    def _commission_max_retries(self) -> int:
+        cfg = self._commission.get('config') or {}
+        try:
+            return max(1, int(cfg.get('detect_retries', 3)))
+        except (TypeError, ValueError):
+            return 3
+
+    def _nav2_lifecycle_set(self, activate: bool) -> None:
+        """Pause/resume heavy Nav2 nodes at pick/drop to save CPU."""
+        try:
+            from lifecycle_msgs.msg import Transition
+            from lifecycle_msgs.srv import ChangeState
+        except Exception as exc:
+            self._commission_log(f'lifecycle msgs unavailable: {exc}')
+            return
+        nodes = (
+            'controller_server',
+            'planner_server',
+            'bt_navigator',
+        )
+        transition_id = (
+            Transition.TRANSITION_ACTIVATE if activate
+            else Transition.TRANSITION_DEACTIVATE)
+        label = 'activate' if activate else 'deactivate'
+        for name in nodes:
+            srv = f'/{name}/change_state'
+            cli = self.create_client(ChangeState, srv)
+            if not cli.wait_for_service(timeout_sec=0.8):
+                self._commission_log(f'{label} skip {name} (no service)')
+                continue
+            req = ChangeState.Request()
+            req.transition.id = transition_id
+            try:
+                fut = cli.call_async(req)
+                t0 = time.time()
+                while not fut.done() and time.time() - t0 < 2.0:
+                    time.sleep(0.02)
+                ok = bool(fut.done() and fut.result() and fut.result().success)
+                self._commission_log(
+                    f'Nav2 {label} {name}: {"ok" if ok else "fail"}')
+            except Exception as exc:
+                self._commission_log(f'Nav2 {label} {name} error: {exc}')
+        self._commission['nav_paused'] = not activate
+
+    def _commission_pause_nav(self) -> None:
+        if self._commission.get('nav_paused'):
+            return
+        self._cancel_nav2_goal_only()
+        self._commission_log('Pause Nav2 planner/controller (CPU save)')
+        self._nav2_lifecycle_set(False)
+
+    def _commission_resume_nav(self) -> None:
+        if not self._commission.get('nav_paused'):
+            return
+        self._commission_log('Resume Nav2 planner/controller')
+        self._nav2_lifecycle_set(True)
+        time.sleep(0.4)
+
+    def _commission_current_pick_wp(self) -> Optional[dict]:
+        indexed = self._commission.get('indexed') or {}
+        picks = indexed.get('picks') or []
+        idx = int(self._commission.get('pick_index') or 0)
+        if 0 <= idx < len(picks):
+            return picks[idx]
+        return None
+
+    def _commission_current_label(self) -> str:
+        indexed = self._commission.get('indexed') or {}
+        labels = indexed.get('pick_labels') or []
+        idx = int(self._commission.get('pick_index') or 0)
+        if 0 <= idx < len(labels):
+            return str(labels[idx])
+        return str(self._commission.get('current_pick') or '')
+
+    def _commission_nav_to(self, wp: dict) -> None:
+        self._commission_resume_nav()
+        self._nav2_seq_wps = [wp]
+        self._nav2_seq_index = 0
+        self._nav2_seq_attempt = 1
+        self._nav2_wait_until = 0.0
+        self._nav2_action_cmd_id = ''
+        self._nav2_action_deadline = 0.0
+        self._nav2_action_kind = ''
+        self._nav2_seq_active = True
+        self._send_nav2_seq_pose()
+
+    def _commission_begin_pick(self) -> None:
+        indexed = self._commission.get('indexed') or {}
+        picks = indexed.get('picks') or []
+        labels = indexed.get('pick_labels') or []
+        remaining = dict(self._commission.get('remaining') or {})
+        idx = int(self._commission.get('pick_index') or 0)
+        if idx < 0 or idx >= len(picks):
+            idx2 = next_pick_index(labels, remaining, -1)
+            if idx2 is None:
+                self._commission_go_home()
+                return
+            idx = idx2
+            self._commission['pick_index'] = idx
+        label = labels[idx] if idx < len(labels) else f'pick{idx + 1}'
+        if int(remaining.get(label, 0)) <= 0:
+            nxt = next_pick_index(labels, remaining, idx)
+            if nxt is None:
+                self._commission_go_home()
+                return
+            self._commission['pick_index'] = nxt
+            self._commission_begin_pick()
+            return
+        lifts = indexed.get('pick_lifts_mm') or {}
+        try:
+            lift_mm = float(lifts.get(label, 0.0))
+        except (TypeError, ValueError):
+            lift_mm = 0.0
+        self._commission['current_pick'] = label
+        self._commission['lift_mm'] = lift_mm
+        self._commission['pick_retries'] = 0
+        self._commission['yaw_retries'] = 0
+        self._commission['detected_object'] = ''
+        self._commission['target_drop'] = ''
+        self._commission['last_detect_ok'] = False
+        left = int(remaining.get(label, 0))
+        self._commission_log(
+            f'Navigate to {label} (left {left}, lift {lift_mm:.0f}mm)')
+        self._commission_set_phase('nav_pick', label)
+        self._commission_nav_to(picks[idx])
+
+    def _commission_on_nav_reached(self, reached_idx: int) -> None:
+        del reached_idx
+        phase = str(self._commission.get('phase') or '')
+        if phase == 'nav_pick':
+            self._commission_pause_nav()
+            self._commission_start_yaw_align(kind='pick')
+        elif phase == 'nav_drop':
+            self._commission_pause_nav()
+            self._commission_start_yaw_align(kind='drop')
+        elif phase == 'nav_home':
+            self._commission_finish()
+        else:
+            self._commission_log(f'unexpected nav reach in phase {phase}')
+            self._commission_finish()
+
+    def _commission_start_yaw_align(self, kind: str = 'pick') -> None:
+        if kind == 'drop':
+            indexed = self._commission.get('indexed') or {}
+            drop_sticker = str(self._commission.get('target_drop') or '')
+            wp = resolve_drop_wp(indexed.get('drops') or {}, drop_sticker)
+            phase = 'yaw_drop'
+            tag = drop_sticker or 'drop'
+        else:
+            wp = self._commission_current_pick_wp()
+            phase = 'yaw_pick'
+            tag = str(self._commission.get('current_pick') or 'pick')
+        if wp is None:
+            self._commission_skip_pick('no waypoint for yaw align')
+            return
+        self._commission_set_phase(phase, tag)
+        try:
+            yaw = float(wp.get('yaw', 0.0) or 0.0)
+        except (TypeError, ValueError):
+            yaw = 0.0
+        cmd_id = f'cm_{self._nav2_seq_gen}_{phase}_{int(time.time() * 1000)}'
+        payload: Dict[str, Any] = {
+            'cmd_id': cmd_id,
+            'mode': 'align',
+            'yaw': yaw,
+            'yaw_tolerance_deg': self._commission_yaw_tol(),
+        }
+        timeout = self._nav2_action_timeout('align', {})
+        self._align_cmd_pub.publish(String(data=json.dumps(payload)))
+        self._nav2_action_cmd_id = cmd_id
+        self._nav2_action_kind = 'align'
+        self._nav2_action_deadline = time.time() + timeout + 15.0
+        self._commission_log(
+            f'{tag} yaw align {math.degrees(yaw):.1f}° '
+            f'(±{self._commission_yaw_tol():.1f}°)')
+
+    def _commission_start_oms_pick(self) -> None:
+        wp = self._commission_current_pick_wp()
+        if wp is None:
+            self._commission_skip_pick('no pick waypoint')
+            return
+        pick = str(self._commission.get('current_pick') or '')
+        lift_mm = float(self._commission.get('lift_mm') or 0.0)
+        attempt = int(self._commission.get('pick_retries') or 0) + 1
+        self._commission_set_phase('oms_pick', f'{pick} try {attempt}')
+        self._commission['last_detect_ok'] = False
+        cmd_id = f'cm_pick_{self._nav2_seq_gen}_{int(time.time() * 1000)}'
+        payload = {
+            'cmd_id': cmd_id,
+            'mode': 'oms_pick',
+            'lift_mm': lift_mm,
+            'timeout_sec': 180.0,
+        }
+        self._detect_cmd_pub.publish(String(data=json.dumps(payload)))
+        self._nav2_action_cmd_id = cmd_id
+        self._nav2_action_kind = 'oms_pick'
+        self._nav2_action_deadline = time.time() + 200.0
+        self._commission_log(
+            f'OMS pick at {pick} lift={lift_mm:.0f}mm (try {attempt})')
+
+    def _commission_start_oms_drop(self) -> None:
+        drop = str(self._commission.get('target_drop') or 'drop')
+        self._commission_set_phase('oms_drop', drop)
+        cmd_id = f'cm_drop_{self._nav2_seq_gen}_{int(time.time() * 1000)}'
+        payload = {
+            'cmd_id': cmd_id,
+            'mode': 'oms_drop',
+            'timeout_sec': 180.0,
+        }
+        self._detect_cmd_pub.publish(String(data=json.dumps(payload)))
+        self._nav2_action_cmd_id = cmd_id
+        self._nav2_action_kind = 'oms_drop'
+        self._nav2_action_deadline = time.time() + 200.0
+        self._commission_log(
+            f'Drop at {drop} — yaw done, OMS home stub '
+            f'(see oms_drop_sequence.py)')
+
+    def _commission_go_to_drop(self) -> None:
+        indexed = self._commission.get('indexed') or {}
+        drop_sticker = str(self._commission.get('target_drop') or '')
+        drop_wp = resolve_drop_wp(indexed.get('drops') or {}, drop_sticker)
+        if drop_wp is None:
+            self._commission_skip_pick(f'no waypoint for {drop_sticker or "?"}')
+            return
+        self._commission_set_phase('nav_drop', drop_sticker)
+        self._commission_log(f'Navigate to {drop_sticker}')
+        self._commission_nav_to(drop_wp)
+
+    def _commission_skip_pick(self, reason: str) -> None:
+        pick = str(self._commission.get('current_pick') or '')
+        self._commission_log(f'Skip {pick}: {reason}')
+        labels = (self._commission.get('indexed') or {}).get('pick_labels') or []
+        remaining = dict(self._commission.get('remaining') or {})
+        idx = int(self._commission.get('pick_index') or 0)
+        nxt = next_pick_index(labels, remaining, idx)
+        if nxt is None:
+            self._commission_go_home()
+            return
+        self._commission['pick_index'] = nxt
+        self._commission_begin_pick()
+
+    def _commission_after_drop_success(self) -> None:
+        label = self._commission_current_label()
+        remaining = remaining_after_visit(
+            dict(self._commission.get('remaining') or {}), label)
+        self._commission['remaining'] = remaining
+        left = int(remaining.get(label, 0))
+        self._commission_log(f'{label} done — remaining {left}')
+        labels = (self._commission.get('indexed') or {}).get('pick_labels') or []
+        idx = int(self._commission.get('pick_index') or 0)
+        nxt = next_pick_index(labels, remaining, idx)
+        if nxt is None:
+            self._commission_go_home()
+            return
+        self._commission['pick_index'] = nxt
+        self._commission_begin_pick()
+
+    def _commission_go_home(self) -> None:
+        indexed = self._commission.get('indexed') or {}
+        home = indexed.get('home')
+        if isinstance(home, dict):
+            self._commission_set_phase('nav_home', 'home')
+            self._commission_log('All pick counters done — return home')
+            self._commission_nav_to(home)
+        else:
+            self._commission_log('All pick counters done — no home waypoint')
+            self._commission_finish()
+
+    def _commission_finish(self) -> None:
+        self._commission_resume_nav()
+        self._commission_set_phase('done', 'complete')
+        self._commission_log('Module G complete')
+        self._nav2_seq_active = False
+        self._nav2_wait_until = 0.0
+        self._nav2_action_cmd_id = ''
+        self._nav2_action_deadline = 0.0
+        self._nav2_action_kind = ''
+        self._nav2_set_mission('done', 'commission complete')
+        self._commission['active'] = False
+
+    def _commission_on_action_done(self, reason: str) -> None:
+        phase = str(self._commission.get('phase') or '')
+        self._nav2_wait_until = 0.0
+        self._nav2_action_cmd_id = ''
+        self._nav2_action_deadline = 0.0
+        self._nav2_action_kind = ''
+
+        if phase == 'yaw_pick':
+            if 'failed' in reason.lower() or 'timeout' in reason.lower():
+                self._commission_log(f'Pick yaw align failed: {reason}')
+                # one retry then continue anyway so mission doesn't stick
+                retries = int(self._commission.get('yaw_retries') or 0)
+                if retries < 1:
+                    self._commission['yaw_retries'] = retries + 1
+                    self._commission_start_yaw_align(kind='pick')
+                    return
+            self._commission['yaw_retries'] = 0
+            self._commission_start_oms_pick()
+            return
+        if phase == 'yaw_drop':
+            if 'failed' in reason.lower() or 'timeout' in reason.lower():
+                retries = int(self._commission.get('yaw_retries') or 0)
+                if retries < 1:
+                    self._commission['yaw_retries'] = retries + 1
+                    self._commission_start_yaw_align(kind='drop')
+                    return
+            self._commission['yaw_retries'] = 0
+            self._commission_start_oms_drop()
+            return
+        if phase == 'oms_pick':
+            detect_ok = bool(self._commission.get('last_detect_ok'))
+            obj = str(self._commission.get('detected_object') or '')
+            if detect_ok and obj:
+                drop_sticker = drop_sticker_for_object(
+                    self._commission.get('config') or {}, obj)
+                self._commission['target_drop'] = drop_sticker
+                self._commission_log(
+                    f'Picked {obj} → route to {drop_sticker or "?"}')
+                if not drop_sticker:
+                    self._commission_skip_pick('no drop assigned for object')
+                    return
+                indexed = self._commission.get('indexed') or {}
+                if resolve_drop_wp(indexed.get('drops') or {}, drop_sticker) is None:
+                    self._commission_skip_pick(
+                        f'drop waypoint {drop_sticker} not on map')
+                    return
+                self._commission_go_to_drop()
+                return
+            retries = int(self._commission.get('pick_retries') or 0) + 1
+            self._commission['pick_retries'] = retries
+            max_r = self._commission_max_retries()
+            self._commission_log(f'Pick failed ({retries}/{max_r}): {reason}')
+            if retries < max_r:
+                self._commission_start_oms_pick()
+            else:
+                self._commission_skip_pick('pick failed after retries')
+            return
+        if phase == 'oms_drop':
+            self._commission_after_drop_success()
+            return
+        self._commission_log(f'action done in phase {phase}: {reason}')
+
+    def _start_commission_mission(self, source: str) -> Dict[str, Any]:
+        source = 'physical' if source == 'physical' else 'dashboard'
+        if self._estop:
+            raise RuntimeError('E-STOP active — release before start')
+        if self._mission_active():
+            return {
+                'ok': True,
+                'started': False,
+                'reason': 'already_running',
+                'source': self._mission_started_from,
+            }
+        name = self.session.get('map_name') or ''
+        if not name:
+            raise RuntimeError('No map loaded')
+        wps = maps.load_waypoints(name)
+        cfg = maps.load_commission_config(name)
+        indexed = index_waypoints(wps, cfg)
+        picks = indexed.get('picks') or []
+        if not picks:
+            msg = (
+                'No pick locations — mark waypoints as pick1, pick2, … '
+                'in commissioning mode')
+            self._hw_alert = msg
+            self._nav2_set_mission('idle', msg)
+            return {
+                'ok': False,
+                'started': False,
+                'reason': 'no_picks',
+                'error': msg,
+            }
+        self._hw_alert = ''
+        self._mission_started_from = source
+        self._armed_wps = []
+        self._armed_seq_name = 'commission'
+        self._commission_reset()
+        self._commission['active'] = True
+        self._commission['config'] = cfg
+        self._commission['indexed'] = indexed
+        self._commission['pick_total'] = len(picks)
+        self._commission['remaining'] = dict(indexed.get('pick_counts') or {})
+        self._commission['pick_index'] = 0
+        counts = self._commission['remaining']
+        self._commission_log(
+            f'Module G START from {source} — {len(picks)} pick(s) '
+            f'counts={counts}')
+        self._commission_begin_pick()
+        return {
+            'ok': True,
+            'started': True,
+            'source': source,
+            'mode': 'commission',
+            'picks': len(picks),
+            'remaining': counts,
+        }
+
     def _start_mission(self, source: str) -> Dict[str, Any]:
         """Start the armed mission. No-op if a mission is already running."""
+        if self.session.get('deploy_module') == 'commission':
+            return self._start_commission_mission(source)
         source = 'physical' if source == 'physical' else 'dashboard'
         if self._estop:
             raise RuntimeError('E-STOP active — release before start')
@@ -1059,14 +1778,7 @@ class StudioBridge(Node):
             }
         self._hw_alert = ''
         self._mission_started_from = source
-        if self._using_nav2():
-            self._send_nav2_through(wps)
-        else:
-            msg = String()
-            msg.data = json.dumps({'waypoints': wps})
-            self._goals_pub.publish(msg)
-            self._start_pub.publish(Empty())
-            self._nav2_set_mission('running', f'started from {source}')
+        self._send_nav2_through(wps)
         self.get_logger().info(
             f'Mission START from {source} — {len(wps)} waypoint(s) '
             f'seq={self._armed_seq_name or "(unnamed)"}')
@@ -1079,10 +1791,7 @@ class StudioBridge(Node):
         }
 
     def _stop_mission(self, source: str) -> Dict[str, Any]:
-        if self._using_nav2():
-            self._cancel_nav2()
-        self._stop_pub.publish(Empty())
-        self._enable_ctrl(False)
+        self._cancel_nav2()
         self._publish_cmd(0, 0, 0)
         self._hw_alert = ''
         self._nav2_set_mission('idle', f'stopped ({source})')
@@ -1133,7 +1842,7 @@ class StudioBridge(Node):
 
     def _on_vision_track(self, msg: String) -> None:
         try:
-            data = json.loads(msg.data)
+            data = _json_from_ros_string(msg.data)
         except Exception:
             return
         d = data.get('depth_cm')
@@ -1329,18 +2038,25 @@ class StudioBridge(Node):
                 self._toggle_orbbec(color=True)
 
     def _on_scan(self, msg: LaserScan) -> None:
+        # Keep a sparse point cloud for reloc freshness only — the dashboard
+        # no longer draws scans (saves SSE bandwidth on the Pi).
         pts = []
         angle = msg.angle_min
         step = max(1, len(msg.ranges) // 180)
+        valid = 0
         for i in range(0, len(msg.ranges), step):
             r = float(msg.ranges[i])
             if math.isfinite(r) and msg.range_min < r < msg.range_max:
-                pts.append({
-                    'x': round(r * math.cos(angle), 3),
-                    'y': round(r * math.sin(angle), 3),
-                })
+                valid += 1
+                if len(pts) < 32:
+                    pts.append({
+                        'x': round(r * math.cos(angle), 3),
+                        'y': round(r * math.sin(angle), 3),
+                    })
             angle += msg.angle_increment * step
         self._scan = pts
+        self._scan_raw_count = len(msg.ranges)
+        self._scan_valid_count = valid
         self._scan_stamp = time.time()
         self._scan_msg_stamp = Time.from_msg(msg.header.stamp)
 
@@ -1441,7 +2157,10 @@ class StudioBridge(Node):
             return
 
         amcl_fresh = (now - self._amcl_stamp) < 1.0
-        scan_fresh = (now - self._scan_stamp) < 1.0 and len(self._scan) >= 8
+        scan_fresh = (
+            (now - self._scan_stamp) < 1.0
+            and (self._scan_valid_count >= 8 or len(self._scan) >= 8)
+        )
         # xx+yy covariance; well-localized typically << 0.1
         cov_ok = self._amcl_ok and self._amcl_cov < 0.10
         good = cov_ok and amcl_fresh and scan_fresh
@@ -1513,9 +2232,7 @@ class StudioBridge(Node):
         self._cmd_vel.publish(tw)
 
     def _enable_ctrl(self, on: bool) -> None:
-        msg = Bool()
-        msg.data = bool(on)
-        self._ctrl_pub.publish(msg)
+        del on
 
     def _live_pose(self) -> Optional[Dict[str, float]]:
         # After Set pose, briefly prefer the clicked pose so the HUD does not
@@ -1554,13 +2271,35 @@ class StudioBridge(Node):
             for p in path.poses[:limit]
         ]
 
+    def _clear_live_map(self) -> None:
+        """Drop in-memory /map so the UI loads project files (full resolution)."""
+        self._map = None
+        self._map_built = None
+        self._map_built_seq = -1
+        self._map_payload_last = object()  # force map_rev bump on next snapshot
+
     def _map_payload(self) -> Optional[Dict[str, Any]]:
         """Build the UI map payload, reusing the last build when unchanged.
 
         Serialising the grid is by far the most expensive part of a telemetry
         frame, and the map only changes while SLAM is running.
+        Prefer live OccupancyGrid only while a mapping/localize/nav stack is
+        actually up — otherwise serve map.pgm so edits and Offline mode are
+        not overwritten by a stale downsampled live grid.
         """
-        if self._map is not None:
+        # Only SLAM's live OccupancyGrid is authoritative while mapping.
+        # During localize/nav the /map topic is map_server's static map, but we
+        # downsample it for SSE — painting against that half-res grid writes the
+        # wrong cells into map.pgm. Always serve the on-disk project file then.
+        stacks = self.pm.stacks_alive()
+        live_ok = (
+            self._map is not None
+            and (
+                stacks.get('slam')
+                or self.session.get('phase') == 'mapping'
+            )
+        )
+        if live_ok:
             if self._map_seq != self._map_built_seq:
                 self._map_built = self._build_live_map(self._map)
                 self._map_built_seq = self._map_seq
@@ -1613,6 +2352,45 @@ class StudioBridge(Node):
                 'Keep lidars clear of people and clutter',
                 'Loop-close corridors for a better map',
             ]
+        nodes = self.pm.nav2_component_status()
+        # Enrich lidar / EKF with live rates already tracked — no extra pubs.
+        scan_age = (
+            round(max(0.0, time.time() - self._scan_stamp), 2)
+            if self._scan_stamp else None)
+        odom_age = (
+            round(max(0.0, time.time() - self._odom_stamp), 2)
+            if self._odom_stamp else None)
+        lidar = nodes.get('lidar') or {}
+        if lidar.get('state') == 'ready' and self._scan_stamp:
+            lidar = {
+                **lidar,
+                'state': 'running' if (scan_age is not None and scan_age < 1.0) else 'stale',
+                'detail': (
+                    f'merger /scan beams={self._scan_raw_count} '
+                    f'valid≈{self._scan_valid_count} age={scan_age}s'
+                ),
+            }
+            nodes['lidar'] = lidar
+        elif lidar.get('state') == 'ready':
+            nodes['lidar'] = {**lidar, 'detail': 'drivers up · waiting for /scan'}
+        ekf = nodes.get('ekf') or {}
+        if ekf.get('state') == 'ready' and self._odom_stamp:
+            ekf = {
+                **ekf,
+                'state': 'running' if (odom_age is not None and odom_age < 1.0) else 'stale',
+                'detail': (
+                    f'/odometry/filtered age={odom_age}s '
+                    f'speed={self._odom_speed:.2f}m/s'
+                    + (f' frame={self._odom_frame}' if self._odom_frame else '')
+                ),
+            }
+            nodes['ekf'] = ekf
+        elif ekf.get('state') == 'ready':
+            nodes['ekf'] = {**ekf, 'detail': 'ekf up · waiting for odom'}
+
+        # Do not ship scan points / trail over SSE — UI draws map+path+WPs only.
+        phase = self.session.get('phase') or ''
+        send_overlay = phase == 'mapping'
         return {
             'ts': time.time(),
             'session': dict(self.session),
@@ -1625,32 +2403,24 @@ class StudioBridge(Node):
                 'age': round(max(0.0, time.time() - self._amcl_stamp), 2)
                 if self._amcl_stamp else None,
             },
-            'world_ready': (
-                True if (self._using_nav2() and self._map is not None)
-                else self._world_ready),
+            'world_ready': self._map is not None or bool(
+                self.session.get('map_name')),
             'map': map_payload,
             'map_rev': map_rev,
-            'scan': self._scan,
-            'scan_count': len(self._scan),
-            'scan_age': round(max(0.0, time.time() - self._scan_stamp), 2)
-            if self._scan_stamp else None,
-            'trail': self._trail[-500:],
-            'nav_stack': self.session.get('nav_stack', 'custom'),
+            'scan': self._scan if send_overlay else [],
+            'scan_count': self._scan_valid_count or len(self._scan),
+            'scan_raw_count': self._scan_raw_count,
+            'scan_age': scan_age,
+            'trail': self._trail[-500:] if send_overlay else [],
+            'nav_stack': self.session.get('nav_stack', 'nav2'),
             'path': self._path_pts(self._path),
-            'planner_path': (
-                [] if self._using_nav2() else self._path_pts(self._planner_path)
-            ),
-            'smoothed_path': (
-                [] if self._using_nav2() else self._path_pts(self._smoothed_path)
-            ),
+            'planner_path': [],
+            'smoothed_path': [],
             'sim': {
                 'path': self._path_pts(self._sim_path),
-                'path_smooth': (
-                    [] if self._using_nav2()
-                    else self._path_pts(self._sim_path_smooth)
-                ),
+                'path_smooth': [],
                 'result': dict(self._sim_result),
-                'stack': self.session.get('nav_stack', 'custom'),
+                'stack': self.session.get('nav_stack', 'nav2'),
             },
             'mission': {
                 **(self._mission or {}),
@@ -1659,14 +2429,15 @@ class StudioBridge(Node):
                 'armed_count': len(self._armed_wps),
                 'hw_alert': self._hw_alert,
             },
-            'recovery': self._recovery,
-            'collision': self._collision,
-            'goal_status': self._goal_status,
-            'nodes': (
-                self.pm.nav2_component_status()
-                if self._using_nav2()
-                else dict(self._nodes)
-            ),
+            'recovery': {},
+            'collision': {},
+            'collision_avoidance': {
+                'type': 'path_ahead_lethal',
+                'label': 'Path-ahead footprint (local cost ≥254)',
+                'controller': 'FollowPath / PathAheadCollision',
+            },
+            'goal_status': '',
+            'nodes': nodes,
             'battery': self._battery,
             'estop': self._estop,
             'reloc': {
@@ -1677,12 +2448,13 @@ class StudioBridge(Node):
                 if self._reloc_active and self._reloc_t0 else 0.0,
                 'then_task': self._reloc_then_task,
             },
-            'path_style': self._path_style,
+            'path_style': 'nav2',
             'warnings': warnings,
             'robot_dims': self._robot_dims(),
             'logs': self._process_logs(),
             'detect_align': dict(self._detect_align),
-            'oms': dict(self._oms),
+            'commission': self._commission_snapshot(),
+            'oms': self._oms_snapshot(),
             'camera': {
                 'on': self._cam_wanted(),
                 'ui': self._cam_ui,
@@ -1713,7 +2485,7 @@ class StudioBridge(Node):
     def _process_logs(self, max_lines: int = 40) -> Dict[str, str]:
         out: Dict[str, str] = {}
         log_dir = FsPath(os.path.expanduser('~/skill23_ws/studio_maps/_logs'))
-        for name in ('slam', 'nav', 'localize', 'camera', 'detect_align'):
+        for name in ('slam', 'nav', 'localize', 'camera', 'detect_align', 'oms'):
             path = log_dir / f'{name}.log'
             try:
                 # Read only the tail: nav.log grows to megabytes during a run
@@ -1732,6 +2504,16 @@ class StudioBridge(Node):
         running = self.pm.list_running()
         out['running'] = ', '.join(running) if running else '(none)'
         return out
+
+    def _append_oms_log(self, line: str) -> None:
+        path = FsPath(os.path.expanduser('~/skill23_ws/studio_maps/_logs/oms.log'))
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            stamp = time.strftime('%H:%M:%S')
+            with open(path, 'a', encoding='utf-8') as handle:
+                handle.write(f'{stamp} [studio] {line}\n')
+        except OSError:
+            pass
 
     # ── HTTP ─────────────────────────────────────────────────────────────
     def _run_http(self) -> None:
@@ -1805,6 +2587,16 @@ class StudioBridge(Node):
                 elif path == '/api/waypoints':
                     name = bridge.session.get('map_name') or ''
                     self._json(200, {'waypoints': maps.load_waypoints(name) if name else []})
+                elif path == '/api/sequences':
+                    name = bridge.session.get('map_name') or ''
+                    self._json(200, {
+                        'sequences': maps.load_sequences(name) if name else {},
+                    })
+                elif path == '/api/commission/config':
+                    name = bridge.session.get('map_name') or ''
+                    self._json(200, {
+                        'config': maps.load_commission_config(name) if name else default_config(),
+                    })
                 elif path == '/api/restrictions':
                     name = bridge.session.get('map_name') or ''
                     self._json(200, {
@@ -1812,6 +2604,10 @@ class StudioBridge(Node):
                     })
                 elif path == '/api/logs':
                     self._json(200, bridge._process_logs(80))
+                elif path in ('/api/oms', '/api/oms/status'):
+                    self._json(200, bridge._oms_api_status())
+                elif path == '/api/oms/config':
+                    self._json(200, bridge._oms_config())
                 else:
                     self._json(404, {'error': 'not found'})
 
@@ -1904,6 +2700,7 @@ class StudioBridge(Node):
 
         if path == '/api/mapping/stop':
             self.pm.stop_slam()
+            self._clear_live_map()
             self.session['phase'] = 'idle'
             return {'ok': True}
 
@@ -1953,6 +2750,7 @@ class StudioBridge(Node):
             maps.invalidate_base_snapshot(name)
             # Mapping session ends on save — free HW for Arena localize / Deploy
             self.pm.stop_slam()
+            self._clear_live_map()
             self.session['phase'] = 'mode'
             maps.write_meta(name, robot=self.session.get('robot'), saved_at=time.time(),
                             phase='mode')
@@ -2005,6 +2803,8 @@ class StudioBridge(Node):
         if path == '/api/map/edit':
             name = self.session.get('map_name') or ''
             maps.apply_occupancy_edits(name, list(body.get('ops') or []))
+            # Prefer fresh map.pgm over any leftover live OccupancyGrid.
+            self._clear_live_map()
             return {'ok': True}
 
         if path == '/api/map/restrictions':
@@ -2013,13 +2813,63 @@ class StudioBridge(Node):
             maps.save_restrictions(name, rects)
             if body.get('burn'):
                 maps.burn_restrictions_into_map(name)
+            self._clear_live_map()
             return {'ok': True}
 
         if path == '/api/waypoints':
             name = self.session.get('map_name') or ''
             wps = list(body.get('waypoints') or [])
             maps.save_waypoints(name, wps)
-            return {'ok': True, 'count': len(wps)}
+            return {'ok': True, 'count': len(wps), 'path': str(maps.project_dir(name) / 'waypoints.json')}
+
+        if path == '/api/sequences':
+            name = self.session.get('map_name') or ''
+            seqs = body.get('sequences') if isinstance(body.get('sequences'), dict) else body
+            path_out = maps.save_sequences(name, seqs or {})
+            return {
+                'ok': True,
+                'count': len(maps.load_sequences(name)),
+                'path': str(path_out),
+            }
+
+        if path == '/api/pi_save':
+            """Save waypoints + sequences to studio_maps/<map>/ for mission_runner."""
+            name = self.session.get('map_name') or ''
+            if not name:
+                raise ValueError('no map loaded')
+            wps = list(body.get('waypoints') or [])
+            seqs = body.get('sequences') if isinstance(body.get('sequences'), dict) else {}
+            # Default wait 3s on WPs that have no action (mission_runner friendly)
+            for i, wp in enumerate(wps):
+                if not isinstance(wp, dict):
+                    continue
+                if not wp.get('action'):
+                    wp['action'] = {'type': 'wait', 'seconds': 3.0}
+                if not wp.get('name'):
+                    wp['name'] = f'wp{i + 1}'
+            wp_path = maps.save_waypoints(name, wps)
+            seq_path = maps.save_sequences(name, seqs)
+            return {
+                'ok': True,
+                'map': name,
+                'waypoints': len(wps),
+                'sequences': len(maps.load_sequences(name)),
+                'waypoints_path': str(wp_path),
+                'sequences_path': str(seq_path),
+                'hint': (
+                    f'Copied on Pi under studio_maps/{name}/. '
+                    f'For skill23_mission: copy into src/skill23_mission/maps/<name>/ '
+                    f'or run mission with map:={name} (uses studio_maps).'
+                ),
+            }
+
+        if path == '/api/commission/config':
+            name = self.session.get('map_name') or ''
+            if not name:
+                raise ValueError('no map loaded')
+            cfg = normalize_config(body.get('config') or body)
+            maps.save_commission_config(name, cfg)
+            return {'ok': True, 'config': cfg}
 
         if path == '/api/deploy/start':
             name = self.session.get('map_name') or ''
@@ -2032,16 +2882,30 @@ class StudioBridge(Node):
                 module = 'commission'
             elif module in ('nav', 'navigation', 'localisation', 'localization'):
                 start_camera = False
-                with_align = True
+                # Dashboard checkbox: Start Nav2 with Align node (default on).
+                if 'with_align' in body:
+                    with_align = bool(body.get('with_align'))
+                else:
+                    with_align = True
                 module = 'nav'
             else:
                 module = 'commission' if start_camera else 'nav'
-                with_align = not start_camera
+                with_align = (
+                    bool(body.get('with_align'))
+                    if 'with_align' in body else (not start_camera))
+            if 'start_detect_align' in body:
+                with_detect_align = bool(body.get('start_detect_align'))
+            else:
+                with_detect_align = bool(start_camera)
+            with_detect_align = with_detect_align and start_camera
+            # Align node is only for nav (no camera); never with Detect+Align stack.
+            if start_camera:
+                with_align = False
             stack = 'nav2'
             yaml_path = maps.map_yaml_path(name)
             if not yaml_path.is_file():
                 raise FileNotFoundError(str(yaml_path))
-            # Nav module: Align YAML, no camera. Commissioning: camera + Detect+Align.
+            # Nav module: Align YAML, no camera. Commissioning: camera + optional Detect+Align.
             self._cam_deploy_requested = False
             if not start_camera:
                 self._cam_ui = False
@@ -2053,24 +2917,28 @@ class StudioBridge(Node):
                 maps.burn_restrictions_into_map(name)
             mp = self.pm.start_nav(
                 robot, str(yaml_path),
-                with_camera=start_camera, with_align=with_align, stack=stack)
+                with_camera=start_camera, with_align=with_align,
+                with_detect_align=with_detect_align, stack=stack)
             self.session['phase'] = 'deploy'
             self.session['mode'] = 'arena'
             self.session['nav_stack'] = stack
             self.session['deploy_module'] = module
             self._clear_nav_paths()
             self._sim_path = None
-            self._sim_path_smooth = None
             self._sim_result = {}
             self._cam_forbid_autostart = False
             self._cam_in_nav_launch = bool(start_camera)
             if start_camera:
+                da_msg = (
+                    'Detect+Align idle until waypoint'
+                    if with_detect_align else
+                    'Detect+Align node NOT started (checkbox off)')
                 self._cam_log(
-                    'Commissioning — Gemini E in launch (streams OFF); '
-                    'Detect+Align idle until waypoint')
+                    f'Commissioning — Gemini E in launch (streams OFF); {da_msg}')
             self.get_logger().info(
                 f'Deploy START module={module} stack={stack} robot={robot} '
-                f'camera={start_camera} align={with_align} map={yaml_path} '
+                f'camera={start_camera} align={with_align} '
+                f'detect_align={with_detect_align} map={yaml_path} '
                 f'pid={mp.popen.pid} log={mp.log_path} cmd={" ".join(mp.cmd)}')
             return {
                 'ok': True,
@@ -2078,6 +2946,8 @@ class StudioBridge(Node):
                 'module': module,
                 'map': str(yaml_path),
                 'camera': start_camera,
+                'with_align': with_align,
+                'with_detect_align': with_detect_align,
                 'camera_after_nav_startup': False,
                 'pid': mp.popen.pid,
                 'log': mp.log_path,
@@ -2152,24 +3022,14 @@ class StudioBridge(Node):
                     raise ValueError('waypoints must be a list')
                 seq = str(body.get('sequence') or '')
                 self._arm_mission(wps, seq)
-                if self._using_nav2():
-                    self.get_logger().info(
-                        f'Nav2 armed {len(self._armed_wps)} waypoint(s) '
-                        f'seq={self._armed_seq_name or "(unnamed)"} — '
-                        'Start mission / physical START to run')
-                else:
-                    msg = String()
-                    # Mission manager expects {"waypoints": [...]} (not a bare list)
-                    msg.data = json.dumps({'waypoints': wps})
-                    self._goals_pub.publish(msg)
-                    self.get_logger().info(f'Published {len(wps)} mission waypoint(s)')
+                self.get_logger().info(
+                    f'Nav2 armed {len(self._armed_wps)} waypoint(s) '
+                    f'seq={self._armed_seq_name or "(unnamed)"} — '
+                    'Start mission / physical START to run')
             else:
                 ps = self._pose_stamped(
                     float(body['x']), float(body['y']), float(body.get('yaw', 0)))
-                if self._using_nav2():
-                    self._send_nav2_pose(ps)
-                else:
-                    self._goal_pub.publish(ps)
+                self._send_nav2_pose(ps)
             return {'ok': True}
 
         if path == '/api/mission/arm':
@@ -2194,12 +3054,7 @@ class StudioBridge(Node):
             return self._stop_mission(str(body.get('source') or 'dashboard'))
 
         if path == '/api/path_style':
-            style = str(body.get('style', 'smoothed')).lower()
-            self._path_style = 'normal' if style in ('normal', 'raw', 'planner') else 'smoothed'
-            msg = String()
-            msg.data = self._path_style
-            self._path_style_pub.publish(msg)
-            return {'ok': True, 'style': self._path_style}
+            return {'ok': True, 'style': 'nav2'}
 
         if path == '/api/reloc/start':
             motion = str(body.get('motion', 'spin'))
@@ -2227,56 +3082,100 @@ class StudioBridge(Node):
             gx = float(body['gx'])
             gy = float(body['gy'])
             gyaw = float(body.get('gyaw', 0.0))
+            planner_id = str(body.get('planner_id') or 'GridBased').strip()
+            if planner_id not in ('GridBased',):
+                planner_id = 'GridBased'
             self._sim_req_id += 1
             req_id = self._sim_req_id
             self._sim_path = None
-            self._sim_path_smooth = None
+            stack_name = (
+                'gc_planner'
+                if str(self.session.get('nav_stack') or '') == 'gc_planner'
+                else 'nav2')
+            if not self._using_nav2():
+                self._sim_result = {
+                    'id': req_id,
+                    'ok': False,
+                    'detail': 'Start Nav2 or GC+Planner before simulating a path',
+                    'points': 0,
+                    'stack': stack_name,
+                    'planner_id': planner_id,
+                }
+                return {'ok': False, 'id': req_id, 'error': self._sim_result['detail']}
             self._sim_result = {
-                'id': req_id, 'ok': None, 'detail': 'planning…',
-                'stack': self.session.get('nav_stack', 'custom'),
+                'id': req_id, 'ok': None, 'detail': f'planning with {planner_id}…',
+                'stack': stack_name,
+                'planner_id': planner_id,
             }
-            if self._using_nav2():
-                out = self._nav2_compute_path_sync(
-                    sx, sy, float(body.get('syaw', 0.0)), gx, gy, gyaw)
-                if out.get('ok'):
-                    self._sim_path = out['path']
-                    self._sim_result = {
-                        'id': req_id,
-                        'ok': True,
-                        'detail': out['detail'],
-                        'points': out['points'],
-                        'points_smooth': 0,
-                        'stack': 'nav2',
-                    }
-                else:
-                    self._sim_result = {
-                        'id': req_id,
-                        'ok': False,
-                        'detail': out.get('detail', 'plan failed'),
-                        'points': 0,
-                        'stack': 'nav2',
-                    }
-                return {'ok': True, 'id': req_id}
-            msg = String()
-            msg.data = json.dumps({
-                'id': req_id,
-                'sx': sx, 'sy': sy, 'gx': gx, 'gy': gy, 'gyaw': gyaw,
-            })
-            self._sim_req_pub.publish(msg)
+            out = self._nav2_compute_path_sync(
+                sx, sy, float(body.get('syaw', 0.0)), gx, gy, gyaw,
+                planner_id=planner_id)
+            if out.get('ok'):
+                self._sim_path = out['path']
+                self._sim_result = {
+                    'id': req_id,
+                    'ok': True,
+                    'detail': out['detail'],
+                    'points': out['points'],
+                    'points_smooth': 0,
+                    'stack': stack_name,
+                    'planner_id': out.get('planner_id', planner_id),
+                }
+            else:
+                self._sim_result = {
+                    'id': req_id,
+                    'ok': False,
+                    'detail': out.get('detail', 'plan failed'),
+                    'points': 0,
+                    'stack': stack_name,
+                    'planner_id': planner_id,
+                }
             return {'ok': True, 'id': req_id}
 
         if path == '/api/sim/clear':
             self._sim_path = None
-            self._sim_path_smooth = None
             self._sim_result = {}
             return {'ok': True}
+
+        if path == '/api/gc_planner/start':
+            name = str(body.get('map_name') or self.session.get('map_name') or '')
+            robot = str(body.get('robot') or self.session.get('robot') or 'grip')
+            yaml_path = maps.map_yaml_path(name)
+            if not yaml_path.is_file():
+                raise FileNotFoundError(str(yaml_path))
+            mp = self.pm.start_gc_planner(robot, str(yaml_path))
+            self.session['nav_stack'] = 'gc_planner'
+            self.session['phase'] = self.session.get('phase') or 'deploy'
+            self._sim_path = None
+            self._sim_result = {}
+            return {
+                'ok': True,
+                'message': (
+                    'GC+Planner started (map + global costmap static/inflation + '
+                    'planner_server). Open RViz2: Fixed Frame map, add /map and '
+                    '/global_costmap/costmap. Then use Simulate → two points → '
+                    'Generate path.'
+                ),
+                'map': name,
+                'robot': robot,
+                'pid': mp.popen.pid,
+                'stacks': self.pm.stacks_alive(),
+            }
+
+        if path == '/api/gc_planner/stop':
+            self.pm.stop_gc_planner()
+            if str(self.session.get('nav_stack') or '') == 'gc_planner':
+                self.session['nav_stack'] = ''
+            return {
+                'ok': True,
+                'message': 'GC+Planner stopped',
+                'stacks': self.pm.stacks_alive(),
+            }
 
         if path == '/api/trail/clear':
             self._trail = []
             self._trail_last = (None, None)
             self._path = None
-            self._planner_path = None
-            self._smoothed_path = None
             return {'ok': True}
 
         if path == '/api/phase':
@@ -2342,6 +3241,7 @@ class StudioBridge(Node):
             self._pose = None
             self._amcl_ok = False
             self._scan = []
+            self._clear_live_map()
             return {'ok': True, 'already': False}
 
         if path == '/api/camera/on':
@@ -2383,10 +3283,124 @@ class StudioBridge(Node):
                 'stacks': self.pm.stacks_alive(),
             }
 
+        if path == '/api/oms/start':
+            robot = str(body.get('robot') or self.session.get('robot') or 'allterrain')
+            if robot not in ('allterrain', 'grip', 'mecanum', 'xdrive'):
+                raise ValueError('invalid robot')
+            self.session['robot'] = robot
+            snap = self._oms_snapshot()
+            if snap.get('ready'):
+                message = (
+                    'OMS already running — attached '
+                    f'({snap.get("source")}). Press Run is not needed.')
+                self._append_oms_log(message)
+                return {
+                    'ok': True,
+                    'already': True,
+                    'ready': True,
+                    'source': snap.get('source'),
+                    'message': message,
+                    'oms': snap,
+                }
+            mp = self.pm.start_oms(robot)
+            log_path = None if mp is None else mp.log_path
+            cmd = ' '.join(mp.cmd) if mp is not None else ''
+            message = (
+                'OMS launching (Titan + nodes). Idle until you press Home. '
+                f'Logs → {log_path or "studio_maps/_logs/oms.log"} '
+                '(shown on OMS Software dashboard).')
+            self._append_oms_log(message)
+            self.get_logger().info(
+                f'OMS start robot={robot} pid='
+                f'{None if mp is None else mp.popen.pid} '
+                f'log={log_path} cmd={cmd}')
+            return {
+                'ok': True,
+                'already': False,
+                'ready': False,
+                'source': 'standalone',
+                'message': message,
+                'pid': None if mp is None else mp.popen.pid,
+                'log': log_path,
+                'oms': self._oms_snapshot(),
+            }
+
+        if path == '/api/oms/stop':
+            was = bool(
+                self.pm.oms_standalone_alive() or self.pm.oms_nodes_alive())
+            stop_error = ''
+            try:
+                self.pm.stop_oms()
+            except RuntimeError as exc:
+                stop_error = str(exc)
+                self.get_logger().error(f'OMS stop: {stop_error}')
+                # Still force-clear bridge OMS state so UI is not stuck Ready.
+            self._oms['stamp'] = 0.0
+            self._oms['ready'] = False
+            self._oms['source'] = 'none'
+            self._oms['standalone'] = False
+            for key in (
+                    'rotation', 'lift', 'linear', 'vertical',
+                    'rotation_servo', 'gripper', 'home'):
+                slot = self._oms.get(key)
+                if isinstance(slot, dict):
+                    slot.clear()
+                    slot['state'] = 'stopped'
+            still = bool(self.pm.oms_nodes_alive())
+            if stop_error and still:
+                message = stop_error
+                self._append_oms_log(message)
+                snap = self._oms_snapshot()
+                snap['ready'] = False
+                snap['source'] = 'none'
+                snap['standalone'] = False
+                return {
+                    'ok': False,
+                    'error': message,
+                    'message': message,
+                    'oms': snap,
+                }
+            if was and not still:
+                message = 'OMS stopped. Titan + OMS nodes were killed.'
+            elif was and still:
+                message = (
+                    'OMS stop requested but some processes are still alive. '
+                    'Try Stop OMS again.')
+            else:
+                message = 'Stop requested — no standalone OMS was running.'
+            self._append_oms_log(message)
+            self.get_logger().info(message)
+            snap = self._oms_snapshot()
+            snap['ready'] = False
+            snap['source'] = 'none'
+            snap['standalone'] = False
+            return {
+                'ok': not still,
+                'message': message,
+                'oms': snap,
+            }
+
+        if path == '/api/oms/cmd':
+            return self._oms_send_cmd(body)
+
+        if path == '/api/oms/home':
+            return self._oms_send_cmd({'axis': 'home', 'mode': 'home'})
+
+        if path == '/api/oms/config':
+            from oms.config_io import save_oms_yaml
+            updates = body.get('updates') or body
+            if not isinstance(updates, dict):
+                raise ValueError('updates object required')
+            result = save_oms_yaml(updates)
+            self._oms_viz_cache = None
+            return result if result.get('ok') else {'ok': False, **result}
+
         raise ValueError(f'unknown endpoint {path}')
 
 
 def main(args=None) -> None:
+    from skill23_studio.ros_dds import apply_studio_dds_env
+    apply_studio_dds_env()
     rclpy.init(args=args)
     node = StudioBridge()
     cleaned = {'done': False}

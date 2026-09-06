@@ -2,6 +2,7 @@
 (() => {
   const SEQ_LS = 'skill23_studio_sequences';
   const DEFAULT_SEQ = 'default';
+  const COMMISSION_OBJECTS = ['Cylinder', 'Semisphere', 'Rectangle', 'Mystery'];
   const state = {
     connected: false,
     robot: 'grip',
@@ -17,12 +18,20 @@
     sequences: JSON.parse(localStorage.getItem(SEQ_LS) || '{}'),
     deployInFlight: false,
     deployModule: 'nav',
+    commissionConfig: null,
     waypointInputMode: 'live',
     simActive: false,
     simPoints: [],
     simStyle: 'planned',   // planned | smoothed — which sim path to draw
+    simPlannerId: 'GridBased',  // ClearancePlanner plugin id for GC / Nav2 sim
+    autoDetectAlign: true,      // commissioning: launch Detect+Align with Nav2+camera
     lastHwAlert: '',
     localizeRunning: false,
+    healthSessionId: '',
+    healthStartedAt: 0,
+    healthLastWrite: 0,
+    healthLastSig: '',
+    wpTaskIndex: 0,
   };
 
   const $ = (id) => document.getElementById(id);
@@ -180,6 +189,8 @@
     if (nsp) nsp.hidden = !deploy;
     const dap = $('detectAlignPanel');
     if (dap) dap.hidden = !(deploy && state.deployModule === 'commission');
+    const cmp = $('commissionPanel');
+    if (cmp) cmp.hidden = !(deploy && state.deployModule === 'commission');
     const hud = $('deployHud');
     if (hud) {
       hud.hidden = !deploy;
@@ -203,8 +214,12 @@
       if (deploy) {
         StudioMap.setTool('pose');
         renderDeployWpStrip();
+        renderWpTaskEditors();
         refreshSeqSelect();
         bindToolButtons();
+        if (state.deployModule === 'commission') {
+          loadCommissionConfig().catch((e) => console.warn(e));
+        }
       }
     } else if (deployPick) {
       showView('deployPick');
@@ -213,11 +228,51 @@
     if (topBat) topBat.style.display = deploy ? 'none' : '';
   }
 
+  function busyStacks() {
+    const stacks = (state.telemetry && state.telemetry.stacks) || {};
+    return ['nav', 'localize', 'slam', 'oms'].filter((k) => stacks[k]);
+  }
+
+  function alertIfBusy(action, ignore) {
+    const skip = new Set(ignore || []);
+    const which = busyStacks().filter((k) => !skip.has(k));
+    if (!which.length) return false;
+    alert(
+      `Cannot ${action}: hardware already running (${which.join(', ')}).\n`
+      + 'Stop that stack first so Titan is not launched twice.');
+    return true;
+  }
+
+  function syncOmsOpenButtons() {
+    ['btnOpenOms', 'btnOpenOmsDeploy'].forEach((id) => {
+      const el = $(id);
+      if (!el) return;
+      el.disabled = !state.connected;
+      el.title = state.connected
+        ? 'Open OMS Software (already linked to this Pi)'
+        : 'Connect to the Pi first, then open OMS Software';
+    });
+  }
+
+  function openOmsSoftware() {
+    if (!state.connected) {
+      alert('Connect to the Pi first (Connect button on this page).\n'
+        + 'OMS Software opens only after Studio is Online — no second Connect.');
+      return;
+    }
+    const url = new URL('oms.html', window.location.href);
+    if (state.robot) url.searchParams.set('robot', state.robot);
+    url.searchParams.set('from', 'studio');
+    url.searchParams.set('pi', StudioApi.getBaseUrl());
+    window.open(url.href, 'skill23-oms');
+  }
+
   function setConnected(ok) {
     state.connected = ok;
     $('connBadge').classList.toggle('on', ok);
     $('connText').textContent = ok ? 'Online' : 'Offline';
     if (!ok) updateBattery({ valid: false, source: 'waiting_for_control_server' });
+    syncOmsOpenButtons();
   }
 
   async function connect() {
@@ -301,7 +356,18 @@
     rows.push({
       name: 'Laser scan',
       cls: (t.scan_count > 8 && (t.scan_age == null || t.scan_age < 1.0)) ? 'ok' : 'bad',
-      detail: `pts=${t.scan_count || 0} age=${t.scan_age ?? '—'}s`,
+      detail: `pts=${t.scan_count || 0}`
+        + (t.scan_raw_count != null ? ` / beams=${t.scan_raw_count}` : '')
+        + ` age=${t.scan_age ?? '—'}s`,
+    });
+    const ca = t.collision_avoidance || {};
+    rows.push({
+      name: 'Collision avoid',
+      cls: isNav2 ? 'ok' : 'warn',
+      detail: ca.label
+        || (isNav2
+          ? 'Path-ahead footprint (local cost ≥254)'
+          : '—'),
     });
     const cam = t.camera || {};
     let camCls = 'bad';
@@ -355,7 +421,7 @@
       const st = String(n.state || '').toLowerCase();
       let cls = 'warn';
       if (['idle', 'ready', 'ok', 'running', 'tracking', 'wait_goal', 'done'].includes(st)) cls = 'ok';
-      if (['error', 'fail', 'failed', 'fault', 'stopped'].includes(st)) cls = 'bad';
+      if (['error', 'fail', 'failed', 'fault', 'stopped', 'stale'].includes(st)) cls = 'bad';
       if (['recovering', 'waiting', 'planning'].includes(st)) cls = 'warn';
       rows.push({
         name: label,
@@ -378,6 +444,39 @@
       `<li><span class="dot ${r.cls}"></span>`
       + `<div><div class="ns-name">${r.name}</div>`
       + `<div class="ns-detail">${r.detail}</div></div></li>`).join('');
+
+    maybeWriteHealthLog(t, rows);
+  }
+
+  function ensureHealthSession() {
+    if (state.healthSessionId && state.healthStartedAt) return;
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    state.healthSessionId = `${state.mapName || 'map'}_${stamp}`;
+    state.healthStartedAt = Date.now();
+  }
+
+  function maybeWriteHealthLog(t, rows) {
+    if (state.phase !== 'deploy') return;
+    ensureHealthSession();
+    const sig = rows.map((r) => `${r.name}:${r.cls}:${r.detail}`).join('|');
+    const now = Date.now();
+    // Write on change, or at least every 5s while Deploy is open.
+    if (sig === state.healthLastSig && (now - state.healthLastWrite) < 5000) return;
+    state.healthLastSig = sig;
+    state.healthLastWrite = now;
+    const payload = {
+      session: state.healthSessionId,
+      t: (t && t.ts) || (now / 1000),
+      runtime_s: Math.round((now - state.healthStartedAt) / 1000),
+      map: state.mapName || '',
+      robot: state.robot || '',
+      rows: rows.map((r) => ({ name: r.name, status: r.cls, detail: r.detail })),
+    };
+    fetch('/api/health-log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch(() => {});
   }
 
   function renderDetectAlign(t) {
@@ -481,14 +580,25 @@
     }
     if (t.map) StudioMap.setMap(t.map);
     updateSimStyleUi();
-    StudioMap.setScan(t.scan || []);
-    StudioMap.setTrail(t.trail || []);
+    // Deploy / localize UI: map + waypoints + planned path only (no scan/trail/pose paint).
+    const cleanMap = state.phase === 'deploy'
+      || state.phase === 'waypoints'
+      || state.phase === 'improve';
+    if (typeof StudioMap.setShowScan === 'function') {
+      StudioMap.setShowScan(!cleanMap);
+    }
+    if (typeof StudioMap.setShowPose === 'function') {
+      StudioMap.setShowPose(state.phase === 'mapping' || state.phase === 'improve');
+    }
+    StudioMap.setScan(cleanMap ? [] : (t.scan || []));
+    StudioMap.setTrail(cleanMap ? [] : (t.trail || []));
     StudioMap.setPaths(t.path || [], t.planner_path || [], t.smoothed_path || []);
     if (state.simActive) {
       const sim = t.sim || {};
       StudioMap.setSim(state.simPoints, simPathForStyle(sim), state.simStyle);
       updateSimHint(sim.result);
     }
+    updateGcPlannerUi(t.stacks);
 
     updateBattery(t.battery);
 
@@ -544,6 +654,7 @@
 
     renderNodeStatus(t);
     renderDetectAlign(t);
+    renderCommissionTelemetry(t);
 
     const logRunning = $('logRunning');
     if (logRunning) logRunning.textContent = `running: ${(t.logs && t.logs.running) || '—'}`;
@@ -578,9 +689,11 @@
           + (cam.depth_stream ? ' (+ depth)' : '');
       }
     }
-    const camLog = $('logCamera');
+    const camLog = $('logCamera') || $('logOrbbec');
     if (camLog) {
-      camLog.textContent = (cam.logs || []).join('\n') || '(empty)';
+      camLog.textContent = (cam.logs || []).join('\n')
+        || (t.logs && t.logs.camera)
+        || '(empty)';
     }
 
     $('stageHud').textContent = [
@@ -620,6 +733,14 @@
 
   $('btnConnect').onclick = (ev) => runWithLoading(
     ev.currentTarget, connect, 'Connecting…');
+
+  function bindOmsOpen(id) {
+    const el = $(id);
+    if (el) el.onclick = () => openOmsSoftware();
+  }
+  bindOmsOpen('btnOpenOms');
+  bindOmsOpen('btnOpenOmsDeploy');
+  syncOmsOpenButtons();
   $('piUrl').value = StudioApi.getBaseUrl();
 
   document.querySelectorAll('#robotChips .chip').forEach((chip) => {
@@ -633,10 +754,13 @@
   bindLoading('btnStartMapping', async () => {
     const name = $('mapName').value.trim();
     if (!name) return alert('Enter a map name');
+    if (alertIfBusy('start mapping', ['slam'])) return;
     const resolution = parseFloat($('mapResolution').value);
     const max_laser_range = parseFloat($('mapMaxRange').value);
     const min_laser_range = parseFloat($('mapMinRange').value);
-    if (!(resolution > 0)) return alert('Choose a valid resolution');
+    if (!(resolution >= 0.01 && resolution <= 0.2)) {
+      return alert('Resolution must be between 0.01 and 0.20 m/cell');
+    }
     state.mapName = name;
     await StudioApi.session({ map_name: name, robot: state.robot, mode: 'arena' });
     await StudioApi.mappingStart({
@@ -716,6 +840,7 @@
           return;
         }
         if (!state.mapName) return alert('No map selected');
+        if (alertIfBusy('start localize', ['localize'])) return;
         const res = await StudioApi.localizeStart({
           map_name: state.mapName,
           robot: state.robot,
@@ -808,11 +933,21 @@
         z: 0,
         yaw: +yaw.toFixed(3),
         name: `wp${state.waypoints.length + 1}`,
+        action: { type: 'wait', seconds: 0 },
       });
+      const newIdx = state.waypoints.length - 1;
       StudioMap.setWaypoints(state.waypoints);
+      // Auto-append into the mission sequence being built + refresh default 1→2→…
+      state.sequenceBuilder.push(newIdx);
+      ensureDefaultSequence();
+      refreshSeqSelect();
       renderWpList();
-      if (state.phase === 'deploy') renderDeployWpStrip();
-      StudioApi.waypointsSave(state.waypoints).catch(() => {});
+      if (state.phase === 'deploy') {
+        renderDeployWpStrip();
+        renderWpTaskEditors();
+        updateSeqPreview();
+      }
+      StudioApi.waypointsSave(cleanWaypoints(state.waypoints)).catch(() => {});
       return;
     }
     if (kind === 'pose') {
@@ -863,6 +998,7 @@
       }
     }
     await StudioApi.mapRestrictions(state.restrictions, true);
+    StudioMap.clearUndo();
     updateZoneHint();
   }
 
@@ -977,7 +1113,8 @@
 
   $('btnUndoEdit').onclick = () => {
     if (!StudioMap.undo()) alert('Nothing to undo');
-    // Keep pendingEdits in sync loosely — full re-save uses current map from last paint ops
+    else if (state.pendingEdits.length) state.pendingEdits.pop();
+    updateZoneHint();
   };
 
   bindLoading('btnSaveEdits', async () => {
@@ -1092,22 +1229,26 @@
   }, 'Loading…');
 
   function renderWpList() {
-    $('wpList').innerHTML = state.waypoints.map((w, i) => {
-      const tag = w.sticker ? ` [${String(w.sticker).toUpperCase()}]` : '';
-      let task = '';
-      if (w.action && w.action.type === 'wait') {
-        task = ` · wait ${Math.max(0, Number(w.action.seconds) || 0)}s`;
-      } else if (w.action && w.action.type === 'detect_align') {
-        task = ' · detect+align';
-      } else if (w.action && w.action.type === 'align') {
-        task = ' · align yaw';
-      } else if (w.action && w.action.type === 'align_move') {
-        task = ` · align+${Number(w.action.distance_m) || 0}m`;
-      }
-      return `<li>${i + 1}.${tag} (${w.x}, ${w.y}, ${w.z ?? 0}) ${Math.round(((w.yaw || 0) * 180) / Math.PI)}°`
-        + ` (${(w.yaw || 0).toFixed(2)} rad)${task}</li>`;
-    }).join('');
+    const list = $('wpList');
+    if (list) {
+      list.innerHTML = state.waypoints.map((w, i) => {
+        const tag = w.sticker ? ` [${stickerDisplay(w.sticker)}]` : '';
+        let task = '';
+        if (w.action && w.action.type === 'wait') {
+          task = ` · wait ${Math.max(0, Number(w.action.seconds) || 0)}s`;
+        } else if (w.action && w.action.type === 'detect_align') {
+          task = ' · detect+align';
+        } else if (w.action && w.action.type === 'align') {
+          task = ' · align yaw';
+        } else if (w.action && w.action.type === 'align_move') {
+          task = ` · align+${Number(w.action.distance_m) || 0}m`;
+        }
+        return `<li>${i + 1}.${tag} (${w.x}, ${w.y}, ${w.z ?? 0}) ${Math.round(((w.yaw || 0) * 180) / Math.PI)}°`
+          + ` (${(w.yaw || 0).toFixed(2)} rad)${task}</li>`;
+      }).join('');
+    }
     renderWpTaskEditors();
+    if (isCommission()) renderCommissionStickerSummary();
   }
 
   bindLoading('btnSaveWp', async () => {
@@ -1123,6 +1264,9 @@
     renderWpList();
     await StudioApi.waypointsSave(state.waypoints);
   }, 'Saving…');
+
+  bindLoading('btnSaveToPi', () => saveWaypointsAndSequencesToPi(), 'Saving to Pi…');
+  bindLoading('btnSaveToPiDeploy', () => saveWaypointsAndSequencesToPi(), 'Saving to Pi…');
 
   bindLoading('btnClearWp', async () => {
     state.waypoints = [];
@@ -1204,19 +1348,33 @@
     refreshSeqSelect();
   }
 
+  async function saveWaypointsAndSequencesToPi() {
+    ensureDefaultSequence();
+    const res = await StudioApi.piSave(
+      cleanWaypoints(state.waypoints),
+      state.sequences || {});
+    const nSeq = Object.keys(state.sequences || {}).length;
+    alert(
+      `Saved on Pi:\n`
+      + `${res.waypoints_path || 'waypoints.json'} (${res.waypoints || 0} WPs)\n`
+      + `${res.sequences_path || 'sequences.json'} (${res.sequences || nSeq} sequences)\n\n`
+      + (res.hint || ''));
+    return res;
+  }
+
   function isCommission() {
     return state.deployModule === 'commission';
   }
 
   function nextSticker(kind) {
-    const prefix = kind === 'drop' ? 'd' : 'p';
+    const prefix = kind === 'drop' ? 'drop' : 'pick';
     const used = new Set(
       (state.waypoints || [])
         .map((w) => String(w.sticker || '').trim().toLowerCase())
         .filter(Boolean),
     );
     let n = 1;
-    while (used.has(prefix + n)) n += 1;
+    while (used.has(prefix + n) || used.has((kind === 'drop' ? 'd' : 'p') + n)) n += 1;
     return prefix + n;
   }
 
@@ -1235,11 +1393,194 @@
     const hint = $('missionSourceHint');
     if (hint && state.phase === 'deploy') {
       hint.innerHTML = isCommission()
-        ? 'Commissioning: Start Nav2+camera, then Start mission. Per WP use Wait or Detect+Align. Stickers P1/D1 mark pick/drop.'
-        : 'Navigation: Start Nav2, then Start mission. Per WP: Wait, Align (saved yaw), or Align+distance. Physical START = Titan1 m3 limit_rev.';
+        ? 'Commissioning Module G: mark pick1…, drop1…, home on waypoints. Assign objects→drops, Start Nav2+camera, then Start mission.'
+        : 'Navigation: Start Nav2. Tick “Start Nav2 with Align node” to launch Align for Wait / Align / Align+distance WP tasks.';
     }
+    const wpLabel = $('deployWpTasksLabel');
+    if (wpLabel) {
+      wpLabel.textContent = isCommission() ? 'Waypoint stickers' : 'WP tasks';
+    }
+    const inDeployCommission = state.phase === 'deploy' && isCommission();
+    const cmp = $('commissionPanel');
+    if (cmp) cmp.hidden = !inDeployCommission;
     const dap = $('detectAlignPanel');
     if (dap) dap.hidden = !(state.phase === 'deploy' && isCommission());
+    const navAlignRow = $('navAlignRow');
+    if (navAlignRow) {
+      navAlignRow.style.display = (state.phase === 'deploy' && !isCommission()) ? '' : 'none';
+    }
+    // Always refresh WP task cards in both Navigation and Commissioning.
+    renderWpTaskEditors();
+    if (isCommission()) {
+      renderCommissionPanel();
+      renderCommissionStickerSummary();
+    }
+  }
+
+  function renderCommissionStickerSummary() {
+    const el = $('commissionStickerSummary');
+    if (!el || !isCommission()) return;
+    const wps = state.waypoints || [];
+    const picks = wps
+      .map((w, i) => ({ w, i }))
+      .filter(({ w }) => stickerKind(w.sticker) === 'pick');
+    const drops = wps
+      .map((w, i) => ({ w, i }))
+      .filter(({ w }) => stickerKind(w.sticker) === 'drop');
+    const home = wps.find((w) => stickerKind(w.sticker) === 'home');
+    const pickText = picks.length
+      ? picks.map(({ w, i }) => {
+        const n = Math.max(1, Number(w.pick_count) || 1);
+        const lift = Math.max(0, Number(w.pick_lift_mm) || 0);
+        return `${stickerDisplay(w.sticker)}×${n} @${lift}mm (WP ${i + 1})`;
+      }).join(', ')
+      : 'none yet';
+    const dropText = drops.length
+      ? drops.map(({ w, i }) => `${stickerDisplay(w.sticker)} (WP ${i + 1})`).join(', ')
+      : 'none yet';
+    const homeText = home
+      ? `WP ${wps.indexOf(home) + 1}`
+      : 'not set';
+    el.innerHTML =
+      `<div><strong>Picks</strong>: ${pickText}</div>`
+      + `<div><strong>Drops</strong>: ${dropText}</div>`
+      + `<div><strong>Home</strong>: ${homeText}</div>`;
+    if (!wps.length) {
+      el.insertAdjacentHTML(
+        'beforeend',
+        '<p class="hint">No waypoints yet — use <strong>Mark WP</strong> on the map.</p>');
+    }
+  }
+
+  function stickerKind(sticker) {
+    const s = String(sticker || '').trim().toLowerCase();
+    if (!s) return '';
+    if (s === 'home' || s === 'start') return 'home';
+    if (/^(pick|p)\d+$/.test(s)) return 'pick';
+    if (/^(drop|d)\d+$/.test(s)) return 'drop';
+    return '';
+  }
+
+  function stickerDisplay(sticker) {
+    const s = String(sticker || '').trim().toLowerCase();
+    if (!s) return '';
+    if (s === 'home' || s === 'start') return 'HOME';
+    const pm = s.match(/^(pick|p)(\d+)$/);
+    if (pm) return `P${pm[2]}`;
+    const dm = s.match(/^(drop|d)(\d+)$/);
+    if (dm) return `D${dm[2]}`;
+    return s.toUpperCase();
+  }
+
+  function listDropStickers() {
+    const drops = (state.waypoints || [])
+      .map((w) => String(w.sticker || '').trim().toLowerCase())
+      .filter((s) => stickerKind(s) === 'drop')
+      .map((s) => {
+        const m = s.match(/^(?:drop|d)(\d+)$/);
+        return m ? `drop${m[1]}` : s;
+      });
+    return [...new Set(drops)].sort((a, b) => {
+      const na = parseInt(a.replace(/\D/g, ''), 10) || 0;
+      const nb = parseInt(b.replace(/\D/g, ''), 10) || 0;
+      return na - nb;
+    });
+  }
+
+  async function loadCommissionConfig() {
+    try {
+      const res = await StudioApi.commissionGet();
+      state.commissionConfig = (res && res.config) || null;
+    } catch (e) {
+      console.warn('commission config load failed', e);
+      state.commissionConfig = {
+        drop_assignments: Object.fromEntries(COMMISSION_OBJECTS.map((o) => [o, ''])),
+        detect_retries: 3,
+        yaw_tolerance_deg: 1.0,
+      };
+    }
+    renderCommissionPanel();
+    renderCommissionStickerSummary();
+    return state.commissionConfig;
+  }
+
+  function renderCommissionPanel() {
+    const box = $('commissionDropAssign');
+    if (!box || !isCommission()) return;
+    const cfg = state.commissionConfig || {
+      drop_assignments: Object.fromEntries(COMMISSION_OBJECTS.map((o) => [o, ''])),
+    };
+    const drops = listDropStickers();
+    const assigns = cfg.drop_assignments || {};
+    box.innerHTML = COMMISSION_OBJECTS.map((obj) => {
+      const cur = String(assigns[obj] || '');
+      const opts = ['<option value="">— drop —</option>']
+        .concat(drops.map((d) =>
+          `<option value="${d}" ${cur === d ? 'selected' : ''}>${d}</option>`));
+      return `<label><span>${obj}</span><select data-cm-obj="${obj}">${opts.join('')}</select></label>`;
+    }).join('');
+    box.querySelectorAll('[data-cm-obj]').forEach((sel) => {
+      sel.onchange = () => {
+        if (!state.commissionConfig) {
+          state.commissionConfig = { drop_assignments: {} };
+        }
+        if (!state.commissionConfig.drop_assignments) {
+          state.commissionConfig.drop_assignments = {};
+        }
+        state.commissionConfig.drop_assignments[sel.getAttribute('data-cm-obj')] = sel.value;
+      };
+    });
+    if (!drops.length) {
+      box.insertAdjacentHTML(
+        'beforeend',
+        '<p class="hint">No drop locations yet — mark waypoints as drop1, drop2…</p>');
+    }
+    renderCommissionStickerSummary();
+  }
+
+  function renderCommissionTelemetry(t) {
+    if (!isCommission()) return;
+    const c = (t && t.commission) || {};
+    const phaseEl = $('cmPhase');
+    if (phaseEl) {
+      const detail = c.detail ? ` — ${c.detail}` : '';
+      phaseEl.textContent = `${c.phase || 'idle'}${detail}`;
+    }
+    const pickEl = $('cmPick');
+    if (pickEl) {
+      const total = Number(c.pick_total) || 0;
+      const idx = Number(c.pick_index) || 0;
+      const cur = c.current_pick || '';
+      pickEl.textContent = total
+        ? `${cur || '—'} (${Math.min(idx + 1, total)}/${total})`
+        : (cur || '—');
+    }
+    const remEl = $('cmRemaining');
+    if (remEl) {
+      const rem = c.remaining || {};
+      const parts = Object.keys(rem)
+        .sort()
+        .map((k) => `${k}:${rem[k]}`);
+      remEl.textContent = parts.length ? parts.join(' ') : '—';
+    }
+    const liftEl = $('cmLift');
+    if (liftEl) {
+      const lift = Number(c.lift_mm);
+      liftEl.textContent = Number.isFinite(lift) ? `${lift.toFixed(0)} mm` : '—';
+    }
+    $('cmDetected') && ($('cmDetected').textContent = c.detected_object || '—');
+    $('cmDrop') && ($('cmDrop').textContent = c.target_drop || '—');
+  }
+
+  function wpActionSummary(wp) {
+    const act = wp && wp.action;
+    if (!act || !act.type) return 'none (pass-through)';
+    if (act.type === 'wait') return `wait ${Math.max(0, Number(act.seconds) || 0)}s`;
+    if (act.type === 'align') return 'align (saved yaw)';
+    if (act.type === 'align_move') {
+      return `align + ${Math.max(0.03, Number(act.distance_m) || 0.15)} m`;
+    }
+    return String(act.type);
   }
 
   function renderWpTaskEditors() {
@@ -1248,97 +1589,206 @@
     box.innerHTML = '';
     const commission = isCommission();
 
-    state.waypoints.forEach((wp, i) => {
-      const type = (wp.action && wp.action.type) || 'wait';
-      const known = commission
-        ? (['wait', 'detect_align'].includes(type) ? wp.action : { type: 'wait', seconds: 0 })
-        : (['wait', 'align', 'align_move'].includes(type)
-          ? wp.action
-          : { type: 'wait', seconds: 0 });
-      const card = document.createElement('div');
-      card.className = 'wp-task-card';
-      let extra = '';
-      if (known.type === 'wait') {
-        extra = '<label>Seconds</label>'
-          + `<input type="number" min="0" step="0.5" data-seconds value="${Math.max(0, Number(known.seconds) || 0)}">`;
-      } else if (known.type === 'align_move') {
-        extra = '<label>Distance (m)</label>'
-          + `<input type="number" min="0.03" max="5" step="0.01" data-dist value="${Math.max(0.03, Number(known.distance_m) || 0.15)}">`;
-      }
-      const sticker = String(wp.sticker || '').toUpperCase();
-      const stickerRow = commission
-        ? '<div class="wp-sticker-row">'
-          + `<button type="button" class="chip ${sticker.startsWith('P') ? 'sticker-p' : ''}" data-sticker="pick">Pick ${sticker.startsWith('P') ? sticker : ''}</button>`
-          + `<button type="button" class="chip ${sticker.startsWith('D') ? 'sticker-d' : ''}" data-sticker="drop">Drop ${sticker.startsWith('D') ? sticker : ''}</button>`
-          + '<button type="button" class="chip" data-sticker="clear">Clear</button>'
-          + '</div>'
-        : '';
-      const taskOpts = commission
-        ? (`<option value="wait" ${known.type === 'wait' ? 'selected' : ''}>Wait</option>`
-          + `<option value="detect_align" ${known.type === 'detect_align' ? 'selected' : ''}>Detect+Align</option>`)
-        : (`<option value="wait" ${known.type === 'wait' ? 'selected' : ''}>Wait</option>`
-          + `<option value="align" ${known.type === 'align' ? 'selected' : ''}>Align (saved yaw)</option>`
-          + `<option value="align_move" ${known.type === 'align_move' ? 'selected' : ''}>Align + distance</option>`);
-      card.innerHTML =
-        `<header>Waypoint ${i + 1}${sticker ? ` · ${sticker}` : ''}</header>`
-        + '<label>Task</label>'
-        + `<select data-task>${taskOpts}</select>`
-        + extra
-        + stickerRow;
+    if (!state.waypoints.length) {
+      box.innerHTML = '<p class="hint">No waypoints yet — use <strong>Mark WP</strong> on the map. Each mark is added to the mission sequence.</p>';
+      return;
+    }
 
-      card.querySelector('[data-task]').onchange = (event) => {
-        const val = event.target.value;
-        if (val === 'wait') {
-          wp.action = { type: 'wait', seconds: 3 };
-        } else if (val === 'detect_align') {
-          wp.action = { type: 'detect_align' };
-        } else if (val === 'align') {
-          wp.action = { type: 'align' };
-        } else if (val === 'align_move') {
-          wp.action = { type: 'align_move', distance_m: 0.15 };
-        } else {
-          wp.action = { type: 'wait', seconds: 0 };
+    // Navigation: one compact editor — pick WP, pick action, set params, tick to save.
+    if (!commission) {
+      if (state.wpTaskIndex >= state.waypoints.length) state.wpTaskIndex = 0;
+      const idx = Math.max(0, Math.min(state.waypoints.length - 1, state.wpTaskIndex | 0));
+      state.wpTaskIndex = idx;
+      const wp = state.waypoints[idx];
+      const navTypes = ['wait', 'align', 'align_move'];
+      const known = (wp.action && navTypes.includes(wp.action.type))
+        ? wp.action
+        : { type: 'wait', seconds: 0 };
+      const wrap = document.createElement('div');
+      wrap.className = 'wp-task-compact';
+      const navActionHelp = (type) => {
+        if (type === 'wait') {
+          return '<p class="hint" style="margin:0.25rem 0 0">Stop at this WP for N seconds, then continue. No Align node needed.</p>';
         }
-        renderWpList();
-        StudioMap.setWaypoints(state.waypoints);
-        StudioApi.waypointsSave(state.waypoints).catch((error) => console.warn(error));
+        if (type === 'align_move') {
+          return '<p class="hint" style="margin:0.25rem 0 0">'
+            + '<strong>Align + distance:</strong> rotate base to the saved WP yaw, then drive so '
+            + 'front lidar reads <em>Distance</em> (m). Tuned in <code>wp_align_*.yaml</code> '
+            + '(yaw_tolerance_deg, dist_tolerance_m, duties). '
+            + 'Not Detect+Align (that is camera/OMS in Commissioning).</p>';
+        }
+        return '<p class="hint" style="margin:0.25rem 0 0">'
+          + '<strong>Align (saved yaw):</strong> rotate the robot base to this WP’s map yaw '
+          + '(AMCL + /cmd_vel). No camera/YOLO. Tuned in <code>wp_align_*.yaml</code>. '
+          + 'For camera object Detect + OMS head Align, use Commissioning → Detect+Align '
+          + '(<code>wp_detect_align.yaml</code>).</p>';
       };
-      const seconds = card.querySelector('[data-seconds]');
-      if (seconds) {
-        seconds.onchange = () => {
-          wp.action = {
-            type: 'wait',
-            seconds: Math.max(0, Number(seconds.value) || 0),
-          };
-          renderWpList();
-          StudioApi.waypointsSave(state.waypoints).catch((error) => console.warn(error));
+      let paramHtml = '';
+      if (known.type === 'wait') {
+        paramHtml = '<label>Seconds'
+          + `<input type="number" min="0" step="0.5" id="wpTaskParam" value="${Math.max(0, Number(known.seconds) || 0)}">`
+          + '</label>'
+          + navActionHelp('wait');
+      } else if (known.type === 'align_move') {
+        paramHtml = '<label>Distance (m)'
+          + `<input type="number" min="0.03" max="5" step="0.01" id="wpTaskParam" value="${Math.max(0.03, Number(known.distance_m) || 0.15)}">`
+          + '</label>'
+          + navActionHelp('align_move');
+      } else {
+        paramHtml = navActionHelp('align');
+      }
+      const options = state.waypoints.map((w, i) => {
+        const mark = w.sticker ? ` · ${stickerDisplay(w.sticker)}` : '';
+        return `<option value="${i}" ${i === idx ? 'selected' : ''}>WP ${i + 1}${mark} — ${wpActionSummary(w)}</option>`;
+      }).join('');
+      wrap.innerHTML =
+        `<p class="wp-task-summary">Select a waypoint, choose what happens there, then tick to save.</p>`
+        + '<label>Waypoint'
+        + `<select id="wpTaskSelect">${options}</select>`
+        + '</label>'
+        + '<div class="wp-task-row">'
+        + '<label>Action'
+        + '<select id="wpTaskAction">'
+        + `<option value="wait" ${known.type === 'wait' ? 'selected' : ''}>Wait</option>`
+        + `<option value="align" ${known.type === 'align' ? 'selected' : ''}>Align (saved yaw)</option>`
+        + `<option value="align_move" ${known.type === 'align_move' ? 'selected' : ''}>Align + distance</option>`
+        + '</select></label>'
+        + '<button type="button" class="btn btn-saffron btn-tick" id="btnWpTaskSave" title="Save task for this waypoint">✓</button>'
+        + '</div>'
+        + `<div id="wpTaskParams">${paramHtml}</div>`
+        + `<p class="wp-task-summary" id="wpTaskCurrent">Saved: <strong>${wpActionSummary(wp)}</strong></p>`;
+      box.appendChild(wrap);
+
+      const sel = $('wpTaskSelect');
+      const act = $('wpTaskAction');
+      const refreshParams = () => {
+        const type = act.value;
+        const params = $('wpTaskParams');
+        if (!params) return;
+        if (type === 'wait') {
+          const sec = (state.waypoints[state.wpTaskIndex].action
+            && state.waypoints[state.wpTaskIndex].action.type === 'wait')
+            ? Number(state.waypoints[state.wpTaskIndex].action.seconds) || 0
+            : 3;
+          params.innerHTML = '<label>Seconds'
+            + `<input type="number" min="0" step="0.5" id="wpTaskParam" value="${Math.max(0, sec)}">`
+            + '</label>'
+            + navActionHelp('wait');
+        } else if (type === 'align_move') {
+          const dist = (state.waypoints[state.wpTaskIndex].action
+            && state.waypoints[state.wpTaskIndex].action.type === 'align_move')
+            ? Number(state.waypoints[state.wpTaskIndex].action.distance_m) || 0.15
+            : 0.15;
+          params.innerHTML = '<label>Distance (m)'
+            + `<input type="number" min="0.03" max="5" step="0.01" id="wpTaskParam" value="${Math.max(0.03, dist)}">`
+            + '</label>'
+            + navActionHelp('align_move');
+        } else {
+          params.innerHTML = navActionHelp('align');
+        }
+      };
+      if (sel) {
+        sel.onchange = () => {
+          state.wpTaskIndex = Math.max(0, Number(sel.value) || 0);
+          renderWpTaskEditors();
         };
       }
-      const dist = card.querySelector('[data-dist]');
-      if (dist) {
-        dist.onchange = () => {
-          wp.action = {
-            type: 'align_move',
-            distance_m: Math.max(0.03, Math.min(5, Number(dist.value) || 0.15)),
-          };
+      if (act) act.onchange = refreshParams;
+      const saveBtn = $('btnWpTaskSave');
+      if (saveBtn) {
+        saveBtn.onclick = () => {
+          const i = state.wpTaskIndex;
+          const target = state.waypoints[i];
+          if (!target) return;
+          const type = (act && act.value) || 'wait';
+          const param = $('wpTaskParam');
+          if (type === 'wait') {
+            target.action = {
+              type: 'wait',
+              seconds: Math.max(0, Number(param && param.value) || 0),
+            };
+          } else if (type === 'align') {
+            target.action = { type: 'align' };
+          } else if (type === 'align_move') {
+            target.action = {
+              type: 'align_move',
+              distance_m: Math.max(0.03, Math.min(5, Number(param && param.value) || 0.15)),
+            };
+          }
           renderWpList();
-          StudioApi.waypointsSave(state.waypoints).catch((error) => console.warn(error));
+          StudioMap.setWaypoints(state.waypoints);
+          StudioApi.waypointsSave(cleanWaypoints(state.waypoints)).catch((e) => console.warn(e));
+          renderWpTaskEditors();
+        };
+      }
+      return;
+    }
+
+    state.waypoints.forEach((wp, i) => {
+      const card = document.createElement('div');
+      card.className = 'wp-task-card';
+      const sticker = String(wp.sticker || '');
+      const sk = stickerKind(sticker);
+      const stickerLabel = stickerDisplay(sticker);
+      const stickerRow = '<div class="wp-sticker-row">'
+        + `<button type="button" class="chip ${sk === 'pick' ? 'sticker-p' : ''}" data-sticker="pick">Pick ${sk === 'pick' ? stickerLabel : ''}</button>`
+        + `<button type="button" class="chip ${sk === 'drop' ? 'sticker-d' : ''}" data-sticker="drop">Drop ${sk === 'drop' ? stickerLabel : ''}</button>`
+        + `<button type="button" class="chip ${sk === 'home' ? 'sticker-home' : ''}" data-sticker="home">Home</button>`
+        + '<button type="button" class="chip" data-sticker="clear">Clear</button>'
+        + '</div>';
+      let pickParams = '';
+      if (sk === 'pick') {
+        const count = Math.max(1, Math.min(20, Number(wp.pick_count) || 1));
+        const lift = Math.max(0, Math.min(300, Number(wp.pick_lift_mm) || 0));
+        pickParams = '<div class="wp-pick-params">'
+          + `<label>Visits<input type="number" min="1" max="20" step="1" data-pick-count value="${count}"></label>`
+          + `<label>Lift mm<input type="number" min="0" max="300" step="1" data-pick-lift value="${lift}"></label>`
+          + '</div>';
+      }
+      card.innerHTML =
+        `<header>WP ${i + 1}${stickerLabel ? ` · ${stickerLabel}` : ''}</header>`
+        + stickerRow
+        + pickParams;
+
+      const countInp = card.querySelector('[data-pick-count]');
+      if (countInp) {
+        countInp.onchange = () => {
+          wp.pick_count = Math.max(1, Math.min(20, Math.round(Number(countInp.value) || 1)));
+          renderCommissionStickerSummary();
+          StudioMap.setWaypoints(state.waypoints);
+          StudioApi.waypointsSave(cleanWaypoints(state.waypoints)).catch((e) => console.warn(e));
+        };
+      }
+      const liftInp = card.querySelector('[data-pick-lift]');
+      if (liftInp) {
+        liftInp.onchange = () => {
+          wp.pick_lift_mm = Math.max(0, Math.min(300, Number(liftInp.value) || 0));
+          StudioMap.setWaypoints(state.waypoints);
+          StudioApi.waypointsSave(cleanWaypoints(state.waypoints)).catch((e) => console.warn(e));
         };
       }
       card.querySelectorAll('[data-sticker]').forEach((btn) => {
         btn.onclick = () => {
           const kind = btn.getAttribute('data-sticker');
           if (kind === 'clear') wp.sticker = '';
-          else if (kind === 'pick' && String(wp.sticker || '').toLowerCase().startsWith('p')) {
+          else if (kind === 'home') {
+            wp.sticker = stickerKind(wp.sticker) === 'home' ? '' : 'home';
+          } else if (kind === 'pick' && stickerKind(wp.sticker) === 'pick') {
             wp.sticker = '';
-          } else if (kind === 'drop' && String(wp.sticker || '').toLowerCase().startsWith('d')) {
+          } else if (kind === 'drop' && stickerKind(wp.sticker) === 'drop') {
             wp.sticker = '';
-          } else {
+          } else if (kind === 'pick' || kind === 'drop') {
             wp.sticker = nextSticker(kind);
+            if (kind === 'pick') {
+              if (!Number.isFinite(+wp.pick_count)) wp.pick_count = 1;
+              if (!Number.isFinite(+wp.pick_lift_mm)) wp.pick_lift_mm = 0;
+            }
           }
           renderWpList();
+          renderCommissionPanel();
+          renderWpTaskEditors();
           StudioMap.setWaypoints(state.waypoints);
-          StudioApi.waypointsSave(state.waypoints).catch((error) => console.warn(error));
+          StudioApi.waypointsSave(cleanWaypoints(state.waypoints)).catch((error) => console.warn(error));
         };
       });
       box.appendChild(card);
@@ -1352,6 +1802,12 @@
         const o = { x: +w.x, y: +w.y, yaw: +(w.yaw || 0) };
         if (w.name) o.name = w.name;
         if (w.sticker) o.sticker = String(w.sticker).trim().toLowerCase();
+        if (Number.isFinite(+w.pick_count)) {
+          o.pick_count = Math.max(1, Math.min(20, Math.round(+w.pick_count)));
+        }
+        if (Number.isFinite(+w.pick_lift_mm)) {
+          o.pick_lift_mm = Math.max(0, Math.min(300, +w.pick_lift_mm));
+        }
         const act = w.action;
         if (act && act.type === 'wait') {
           o.action = {
@@ -1390,6 +1846,23 @@
     const sel = $('seqSelect');
     if (sel && !sel.value && n > 0) {
       sel.value = DEFAULT_SEQ;
+    }
+    // If builder empty (or only tracking default), keep Seq preview = 1→2→…n
+    const onDefault = !sel || !sel.value || sel.value === DEFAULT_SEQ;
+    if (onDefault && n > 0) {
+      const builderMatchesDefault = state.sequenceBuilder.length === indices.length
+        && state.sequenceBuilder.every((v, i) => v === indices[i]);
+      if (!state.sequenceBuilder.length || builderMatchesDefault
+        || state.sequenceBuilder.every((v) => v >= 0 && v < n)) {
+        // Prefer showing full default when builder empty; otherwise keep custom order
+        // but drop out-of-range indices after WP clear.
+        if (!state.sequenceBuilder.length) {
+          state.sequenceBuilder = indices.slice();
+        } else {
+          state.sequenceBuilder = state.sequenceBuilder.filter((v) => v >= 0 && v < n);
+          if (!state.sequenceBuilder.length) state.sequenceBuilder = indices.slice();
+        }
+      }
     }
   }
 
@@ -1438,6 +1911,16 @@
       StudioMap.setWaypoints(state.waypoints);
       renderWpList();
       renderDeployWpStrip();
+      try {
+        const s = await StudioApi.sequencesGet();
+        const fromPi = (s && s.sequences) || {};
+        if (fromPi && typeof fromPi === 'object' && Object.keys(fromPi).length) {
+          state.sequences = { ...state.sequences, ...fromPi };
+          persistSequences();
+        }
+      } catch (e) {
+        console.warn('sequences load', e);
+      }
       ensureDefaultSequence();
       syncArmedMission();
       return state.waypoints;
@@ -1501,12 +1984,19 @@
       try { await StudioApi.localizeStop(); } catch (_) {}
       try { await StudioApi.mappingStop(); } catch (_) {}
       await StudioApi.phase('deploy');
+      state.healthSessionId = '';
+      state.healthStartedAt = 0;
+      state.healthLastWrite = 0;
+      state.healthLastSig = '';
       setPhase('deploy');
       StudioMap.setTool('pose');
       renderDeployWpStrip();
+      renderWpList();
+      renderWpTaskEditors();
       ensureDefaultSequence();
       refreshSeqSelect();
       applyDeployModuleUi();
+      if (isCommission()) await loadCommissionConfig();
       await syncArmedMission();
       return { ok: true };
     } finally {
@@ -1568,23 +2058,42 @@
       return;
     }
     const stacks = (state.telemetry && state.telemetry.stacks) || {};
-    if (stacks.nav || stacks.slam || stacks.localize) {
-      const which = ['nav', 'localize', 'slam'].filter((k) => stacks[k]).join(', ');
+    if (stacks.nav || stacks.slam || stacks.localize || stacks.oms) {
+      const which = ['nav', 'localize', 'slam', 'oms'].filter((k) => stacks[k]).join(', ');
       alert(
         `Stack already running (${which}).\n`
-        + 'Click Stop nav / stop mapping / stop localize first, then Start Nav2.');
+        + 'Stop mapping, Stop localize, or Stop nav first.\n'
+        + 'If OMS Software is in standalone Run, press Stop OMS there before Nav2.');
       return;
     }
     const camera = isCommission() || !!startCamera;
+    const daChk = $('chkAutoDetectAlign');
+    if (daChk) state.autoDetectAlign = !!daChk.checked;
+    const startDetectAlign = camera ? !!state.autoDetectAlign : false;
+    const alignChk = $('chkStartAlignNav');
+    const withAlign = isCommission()
+      ? false
+      : (alignChk ? !!alignChk.checked : true);
     const res = await StudioApi.deployStart({
       burn_restrictions: true,
       stack: 'nav2',
       module: isCommission() ? 'commission' : 'nav',
       start_camera: camera,
+      start_detect_align: startDetectAlign,
+      with_align: withAlign,
     });
-    alert(camera
-      ? `Commissioning: Nav2+camera (streams off) + Detect+Align.\n${res.map || ''}`
-      : `Navigation: Nav2 + Align YAML (saved yaw).\n${res.map || ''}`);
+    if (camera) {
+      alert(
+        `Commissioning: Nav2 + camera + OMS`
+        + `${startDetectAlign ? ' + Detect+Align' : ' (Detect+Align skipped)'}.\n`
+        + 'Open OMS Software — it shows Ready when OMS nodes are up. Do not press Run OMS.\n'
+        + `${res.map || ''}`);
+    } else {
+      alert(
+        `Navigation: Nav2 started`
+        + `${withAlign ? ' with Align node' : ' (Align node off)'}.\n`
+        + `${res.map || ''}`);
+    }
   }
 
   bindLoading('btnDeployNav2', () => startDeploy(false), 'Starting Nav2…');
@@ -1626,16 +2135,49 @@
 
   // ── Simulation: pick A + B, plan on the map, never move the robot ──────
   const SIM_HINT_IDLE =
-    'Pick two points on the map and generate a path — the robot never moves.';
+    'Start GC+Planner or Enter sim — pick two map points; robot never moves.';
+
+  function plannerStackLabel() {
+    const t = state.telemetry || {};
+    const sess = t.session || {};
+    const stack = String(sess.nav_stack || '');
+    if (stack === 'gc_planner') return 'GC+Planner';
+    if (stack === 'nav2' || (t.stacks && t.stacks.nav)) return 'Nav2';
+    return 'Custom';
+  }
 
   function navStackLabel() {
-    return 'Nav2';
+    return plannerStackLabel();
+  }
+
+  function plannerStackReady(stacks) {
+    const s = stacks || (state.telemetry && state.telemetry.stacks) || {};
+    return !!(s.nav || s.gc_planner);
+  }
+
+  function updateGcPlannerUi(stacks) {
+    const s = stacks || (state.telemetry && state.telemetry.stacks) || {};
+    const on = !!s.gc_planner;
+    const btnStart = $('btnGcPlannerStart');
+    const btnStop = $('btnGcPlannerStop');
+    if (btnStart) btnStart.hidden = on;
+    if (btnStop) btnStop.hidden = !on;
+  }
+
+  function setGcPlannerHint(text) {
+    const el = $('gcPlannerHint');
+    if (el && text) el.textContent = text;
+  }
+
+  function navStackUsesNav2Planner() {
+    const label = navStackLabel();
+    return label === 'Nav2' || label === 'GC+Planner';
   }
 
   function updateSimStyleUi() {
     const sel = $('simStyle');
     if (!sel) return;
-    const nav2 = navStackLabel().startsWith('Nav2');
+    const nav2 = navStackUsesNav2Planner();
     const smoothOpt = sel.querySelector('option[value="smoothed"]');
     if (smoothOpt) smoothOpt.hidden = nav2;
     if (nav2 && state.simStyle === 'smoothed') {
@@ -1646,7 +2188,9 @@
 
   /** Pick planned or smoothed sim path from telemetry per the dropdown. */
   function simPathForStyle(sim) {
-    const nav2 = (sim.stack || navStackLabel()).startsWith('Nav2');
+    const nav2 = navStackUsesNav2Planner()
+      || String(sim.stack || '').startsWith('nav2')
+      || String(sim.stack || '') === 'gc_planner';
     if (!nav2 && state.simStyle === 'smoothed') {
       const sm = sim.path_smooth || [];
       if (sm.length) return sm;
@@ -1666,11 +2210,14 @@
       return;
     }
     if (result && result.ok === true) {
-      const nav2 = (result.stack || stack).startsWith('Nav2');
+      const nav2 = navStackUsesNav2Planner()
+        || String(result.stack || stack).startsWith('nav2')
+        || String(result.stack || '') === 'gc_planner';
+      const planner = result.planner_id || state.simPlannerId || 'GridBased';
       const shown = (!nav2 && state.simStyle === 'smoothed')
         ? `smoothed (${result.points_smooth || result.points} pts)`
         : `planned (${result.points} pts)`;
-      hint.textContent = `${stack}: path found — showing ${shown}. `
+      hint.textContent = `${stack} [${planner}]: path found — showing ${shown}. `
         + 'Robot does not move in simulation.';
       return;
     }
@@ -1685,12 +2232,20 @@
     }
   }
 
-  function enterSim() {
-    const stacks = (state.telemetry && state.telemetry.stacks) || {};
-    if (!stacks.nav) {
-      alert('Start the nav stack first — the planner must be running for simulation.');
-      return;
+  async function enterSim() {
+    if (!plannerStackReady()) {
+      try {
+        const res = await StudioApi.gcPlannerStart({});
+        setGcPlannerHint(res.message || 'GC+Planner started.');
+      } catch (e) {
+        alert(`Could not start GC+Planner: ${e.message}`);
+        return;
+      }
     }
+    enterSimAfterPlanner();
+  }
+
+  function enterSimAfterPlanner() {
     state.simActive = true;
     state.simPoints = [];
     updateSimStyleUi();
@@ -1730,8 +2285,45 @@
     };
   }
 
+  function syncSimPlannerLabel() {
+    const el = $('simPlannerActive');
+    if (el) el.textContent = `Active planner: ${state.simPlannerId}`;
+    const sel = $('simPlannerSelect');
+    if (sel && sel.value !== state.simPlannerId) sel.value = state.simPlannerId;
+  }
+
+  const btnSimChoosePlanner = $('btnSimChoosePlanner');
+  if (btnSimChoosePlanner) {
+    btnSimChoosePlanner.onclick = () => {
+      const sel = $('simPlannerSelect');
+      const id = 'GridBased';
+      if (sel) sel.value = id;
+      state.simPlannerId = id;
+      syncSimPlannerLabel();
+      if (state.simActive) {
+        const hint = $('simHint');
+        if (hint) {
+          hint.textContent = `Planner set to ${id} — click Generate to plan.`;
+        }
+      }
+    };
+  }
+  syncSimPlannerLabel();
+
+  bindLoading('btnGcPlannerStart', async () => {
+    const res = await StudioApi.gcPlannerStart({});
+    setGcPlannerHint(res.message || 'GC+Planner started.');
+  }, 'Starting GC+Planner…');
+  bindLoading('btnGcPlannerStop', async () => {
+    const res = await StudioApi.gcPlannerStop();
+    setGcPlannerHint(res.message || 'GC+Planner stopped.');
+    if (state.simActive) exitSim();
+  }, 'Stopping…');
+
   const btnSimEnter = $('btnSimEnter');
-  if (btnSimEnter) btnSimEnter.onclick = () => enterSim();
+  if (btnSimEnter) {
+    btnSimEnter.onclick = () => runWithLoading(btnSimEnter, () => enterSim(), 'Starting…');
+  }
   const btnSimExit = $('btnSimExit');
   if (btnSimExit) btnSimExit.onclick = () => exitSim();
   const btnSimClearPts = $('btnSimClearPts');
@@ -1755,12 +2347,57 @@
     await StudioApi.simPlan({
       sx: a.x, sy: a.y, syaw: a.yaw || 0,
       gx: b.x, gy: b.y, gyaw,
+      planner_id: state.simPlannerId || 'GridBased',
     });
     updateSimHint({ ok: null });
   }, 'Planning…');
 
   bindLoading('btnMissionStart', async () => {
     if (!state.waypoints.length) await loadSavedWaypoints();
+    const m = (state.telemetry && state.telemetry.mission) || {};
+    if (['running', 'wait_action', 'wait_goal', 'recovering'].includes(
+      String(m.state || '').toLowerCase())) {
+      alert('Mission already running — press Stop first.');
+      return;
+    }
+    if (isCommission()) {
+      const picks = (state.waypoints || []).filter((w) => stickerKind(w.sticker) === 'pick');
+      if (!picks.length) {
+        alert('Mark at least one pick location (pick1, pick2, …) on the map.');
+        return;
+      }
+      const drops = listDropStickers();
+      if (!drops.length) {
+        alert('Mark at least one drop location (drop1, drop2, …) on the map.');
+        return;
+      }
+      if (!state.commissionConfig) await loadCommissionConfig();
+      const assigns = (state.commissionConfig && state.commissionConfig.drop_assignments) || {};
+      const missing = COMMISSION_OBJECTS.filter((obj) => !assigns[obj]);
+      if (missing.length) {
+        const go = confirm(
+          `Some objects have no drop assigned (${missing.join(', ')}).\n`
+          + 'Start anyway? Unassigned detections will skip that pick.');
+        if (!go) return;
+      }
+      await StudioApi.waypointsSave(cleanWaypoints(state.waypoints));
+      await StudioApi.commissionSave(state.commissionConfig || {});
+      const res = await StudioApi.start({ source: 'dashboard' });
+      if (res && res.started === false && res.reason === 'already_running') {
+        alert('Mission already running — press Stop first.');
+        return;
+      }
+      if (res && res.ok === false) {
+        alert(res.error || res.reason || 'Commission mission could not start.');
+        return;
+      }
+      const rem = (res && res.remaining) || {};
+      const remText = Object.keys(rem).map((k) => `${k}=${rem[k]}`).join(', ') || '—';
+      alert(
+        `Commissioning mission started\n`
+        + `${picks.length} pick(s)\nCounts: ${remText}`);
+      return;
+    }
     ensureDefaultSequence();
     const sel = resolveMissionSelection();
     if (!sel.indices.length || !state.waypoints.length) {
@@ -1772,12 +2409,6 @@
     const mission = cleanWaypoints(sel.indices.map((i) => state.waypoints[i]));
     if (!mission.length) {
       alert('Selected sequence has no valid waypoints.');
-      return;
-    }
-    const m = (state.telemetry && state.telemetry.mission) || {};
-    if (['running', 'wait_action', 'wait_goal', 'recovering'].includes(
-      String(m.state || '').toLowerCase())) {
-      alert('Mission already running — press Stop first.');
       return;
     }
     await StudioApi.setGoals(mission, sel.name);
@@ -1796,6 +2427,28 @@
       + `Sequence: ${sel.name}\n`
       + `${mission.length} waypoint(s)`);
   }, 'Starting mission…');
+
+  const btnCommissionSave = $('btnCommissionSave');
+  if (btnCommissionSave) {
+    bindLoading('btnCommissionSave', async () => {
+      if (!state.commissionConfig) await loadCommissionConfig();
+      await StudioApi.waypointsSave(cleanWaypoints(state.waypoints));
+      await StudioApi.commissionSave(state.commissionConfig || {});
+      alert('Pick/drop assignments, counts, and lifts saved.');
+    }, 'Saving…');
+  }
+
+  const btnCommissionHomeOms = $('btnCommissionHomeOms');
+  if (btnCommissionHomeOms) {
+    bindLoading('btnCommissionHomeOms', async () => {
+      const res = await StudioApi.omsHome();
+      if (res && res.ok === false) {
+        alert(res.error || res.message || 'OMS home failed');
+        return;
+      }
+      alert('OMS home command sent.');
+    }, 'Homing OMS…');
+  }
 
   bindLoading('btnMissionStop', async () => {
     await StudioApi.stop({ source: 'dashboard' });

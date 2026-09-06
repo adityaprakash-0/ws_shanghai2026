@@ -1,56 +1,177 @@
-# Detect+Align — one YAML for every robot (OMS is the same mechanism).
+# Detect+Align — single config (OMS is identical on every robot).
 #
-# After Nav2 reaches the waypoint: enable color, drop the first skip_frames,
-# run YOLO on the next snapshot, command OMS rotation (absolute deg from
-# home / limit switch), snapshot-verify, then one-shot depth at camera_tilt_deg.
-# The base does not yaw. Titan /cmd_vel is unused here.
+# WHAT IT DOES (Commissioning / Nav2+camera — NOT the Navigation WP dropdown)
+# ---------------------------------------------------------------------------
+# Navigation WP actions are Wait / Align / Align+distance (robot body yaw via
+# /cmd_vel — see wp_align_*.yaml). Detect+Align is different:
 #
-# Bench: ros2 launch skill23_studio test_detect_align.launch.py robot:=allterrain
-#        then: ros2 run skill23_studio studio_detect_align_test
+#   Detect  = YOLO on one color snapshot → find object in image
+#   Align   = rotate OMS head so object is centered (gripper/camera yaw)
+#   Depth   = brief depth sample → floor distance / pick metrics
+#
+# Geometry: Orbbec Z-depth (mm) + /camera/*/camera_info intrinsics + 35° tilt
+#   → pinhole unproject (Xc,Yc,Zc) → floor frame (forward, lateral, yaw).
+#   Bearing/yaw: atan2(lateral, forward); +ACW left, −CW right.
+#
+# Lightweight snapshot flow (no continuous video processing):
+#   1. Toggle color ON → verify frames arrive → grab ONE frame → YOLO → color OFF
+#   2. Pinhole bearing from color intrinsics → OMS target angle
+#   3. Command /oms/rotation/cmd goto {absolute_deg}
+#   4. After move, repeat with 3–4 verify snapshots until centered
+#   5. Enable depth briefly, sample Z-depth, 3D floor metrics, streams OFF
+#
+# Debug (bench): rqt_image_view /studio/detect_align/debug_image
+#
+# Bench:
+#   ros2 launch skill23_studio test_detect_align.launch.py robot:=allterrain
+#   ros2 run skill23_studio studio_detect_align_test
+#
+# OMS align bench (rotates OMS, 3× verify, then depth + linear output):
+#   ros2 launch skill23_studio test_detect_align_oms.launch.py robot:=allterrain
+#   ros2 run skill23_studio studio_detect_align_oms_test
 
 detect_align:
   ros__parameters:
-    cmd_vel_topic: /cmd_vel
-    cmd_topic: /studio/detect_align/cmd
-    result_topic: /studio/detect_align/result
-    cancel_topic: /studio/detect_align/cancel
-    status_topic: /studio/detect_align/status
+    # --- I/O topics ---
+    cmd_topic: /studio/detect_align/cmd              # start a Detect+Align job (JSON String)
+    result_topic: /studio/detect_align/result        # success/fail result for studio bridge
+    cancel_topic: /studio/detect_align/cancel        # abort in-progress job
+    status_topic: /studio/detect_align/status        # live UI status (state, object, u, depth…)
+    debug_image_topic: /studio/detect_align/debug_image
+    publish_debug_image: true                        # bbox overlay for rqt_image_view
+
+    # --- Camera streams ---
     color_topic: /camera/color/image_raw
     depth_topic: /camera/depth/image_raw
+    color_camera_info_topic: /camera/color/camera_info
+    depth_camera_info_topic: /camera/depth/camera_info
+
+    # --- YOLO / Detect ---
+    model_dir: ''                    # empty → default yolov8n NCNN under share; or absolute path
+    input_size: 320                  # network input square (px); larger = slower / more accurate
+    conf_threshold: 0.35             # min YOLO confidence to accept a box (0…1)
+    nms_iou: 0.45                    # non-max suppression IoU — drop overlapping boxes
+    num_threads: 1                   # NCNN CPU threads (keep 1 on Pi to avoid thrash)
+    target_class: -1                 # COCO class id; -1 = any (or filter via target_name)
+    target_name: ''                  # e.g. 'bottle'; empty = highest-conf non-background
+    gripper_u_norm: 0.0              # image u target for “centered” (0=center; +right/−left)
+    min_box_area_frac: 0.002         # reject tiny boxes (< this fraction of image area)
+    center_tol_norm: 0.05            # |u_norm − target| ≤ this → considered centered (Detect OK)
+    center_u_offset: 0.0             # extra u bias if gripper is not optically at image center
+    confirm_frames: 3                # consecutive centered snapshots required before Align done
+    detect_wait_sec: 8.0             # max time to get a valid detection after color ON
+    skip_frames: 3                   # drop first N frames after stream ON (AE/settle)
+    verify_skip_frames: 3            # same, after each OMS move before re-checking center
+
+    # --- Align (OMS rotation) ---
+    align_timeout_sec: 30.0          # max wall time for the whole align loop
+    angular_sign: 1.0                # flip to −1.0 if OMS turns the wrong way vs bearing
+    oms_min_deg: -90.0               # clamp absolute OMS rotation command
+    oms_max_deg: 90.0
+    oms_cmd_topic: /oms/rotation/cmd
+    oms_result_topic: /oms/rotation/result
+    oms_status_topic: /oms/rotation/status
+    oms_timeout_sec: 25.0            # wait for one OMS goto to finish
+    max_oms_moves: 6                 # max rotate→verify cycles before fail
+    stream_verify_frames: 3          # snapshots used to confirm after a move
+    stream_verify_timeout_sec: 12.0  # max time collecting those verify frames
+    # Bench: set false to skip OMS rotation (vision + depth only).
+    oms_rotation_enabled: true
+
+    # --- Depth after Align ---
+    depth_after_align_sec: 0.8       # pause after centered before enabling depth
+    depth_samples: 4                 # number of Z samples to median/average
+    depth_sample_timeout_sec: 5.0    # max time to collect depth_samples
+    depth_roi_frac: 0.08             # box-center ROI size as fraction of image for Z
+
+    # --- Camera mount geometry ---
+    camera_tilt_deg: 35.0            # mount tilt used for floor unproject
+    # false = tilt measured down from horizontal (typical floor-facing mount).
+    # true  = tilt measured down from robot +Z vertical (35 from +Z → 55° from horizontal).
+    camera_tilt_from_vertical: false
+    hfov_deg: 69.0                   # fallback HFOV if camera_info not received yet
+
+    # --- Job control ---
+    hold_after_done_sec: 0.5         # sit after success before publishing result
+    retries: 1                       # extra full Detect+Align attempts after failure
+    retry_pause_sec: 0.3             # pause between retries
+    log_hz: 2.0                      # status / log rate while running
+
+# Vision-only bench node (studio_detect_align_test) — same geometry, no OMS motion.
+# Use to tune Detect (YOLO + centering) without moving hardware.
+detect_align_test:
+  ros__parameters:
+    color_topic: /camera/color/image_raw
+    depth_topic: /camera/depth/image_raw
+    color_camera_info_topic: /camera/color/camera_info
+    depth_camera_info_topic: /camera/depth/camera_info
+    debug_image_topic: /studio/detect_align/debug_image
+    start_topic: /studio/detect_align_test/start
+    model_dir: ''
+    input_size: 320                  # see detect_align above
+    conf_threshold: 0.35
+    nms_iou: 0.45
+    num_threads: 1
+    target_class: -1
+    target_name: ''
+    min_box_area_frac: 0.002
+    center_tol_norm: 0.05            # Detect “centered” tolerance (normalized u)
+    center_u_offset: 0.0
+    camera_tilt_deg: 35.0
+    camera_tilt_from_vertical: false
+    hfov_deg: 69.0
+    angular_sign: 1.0                # still used for bearing sign in debug overlay
+    depth_samples: 4
+    depth_sample_timeout_sec: 5.0
+    depth_roi_frac: 0.08
+    skip_frames: 3
+    stream_verify_timeout_sec: 12.0
+    oms_min_deg: -90.0               # reported clamp only (no motion in this node)
+    oms_max_deg: 90.0
+
+# OMS pick bench — prefer detect_align_oms_pick.yaml for the full pick sequence.
+# OMS align bench (studio_detect_align_oms_test) — detect, rotate, depth + linear.
+detect_align_oms_test:
+  ros__parameters:
+    color_topic: /camera/color/image_raw
+    depth_topic: /camera/depth/image_raw
+    color_camera_info_topic: /camera/color/camera_info
+    depth_camera_info_topic: /camera/depth/camera_info
+    debug_image_topic: /studio/detect_align/debug_image
+    start_topic: /studio/detect_align_oms_test/start
     model_dir: ''
     input_size: 320
     conf_threshold: 0.35
     nms_iou: 0.45
     num_threads: 1
     target_class: -1
-    target_name: 'Cylinder'
-    gripper_name: ''
-    gripper_u_norm: 0.0
+    target_name: ''
     min_box_area_frac: 0.002
-    control_rate_hz: 8.0
     center_tol_norm: 0.05
     center_u_offset: 0.0
-    confirm_frames: 2
+    confirm_frames: 3
     detect_wait_sec: 8.0
-    align_timeout_sec: 25.0
-    depth_after_align_sec: 1.0
-    depth_samples: 5
-    depth_sample_timeout_sec: 4.0
+    align_timeout_sec: 45.0
+    depth_after_align_sec: 0.8
+    depth_samples: 4
+    depth_sample_timeout_sec: 5.0
     depth_roi_frac: 0.08
     camera_tilt_deg: 35.0
+    camera_tilt_from_vertical: false
     hfov_deg: 69.0
-    skip_frames: 4
-    verify_skip_frames: 2
-    hold_after_done_sec: 1.0
-    retries: 2
-    retry_pause_sec: 0.4
+    skip_frames: 3
+    verify_skip_frames: 3
+    stream_verify_timeout_sec: 12.0
     angular_sign: 1.0
+    oms_min_deg: -90.0
+    oms_max_deg: 90.0
     oms_cmd_topic: /oms/rotation/cmd
     oms_result_topic: /oms/rotation/result
-    oms_status_topic: /oms/rotation/status
     oms_timeout_sec: 25.0
-    max_oms_moves: 5
-    oms_vertical_cmd_topic: /oms/vertical/cmd
-    oms_vertical_result_topic: /oms/vertical/result
-    oms_vertical_timeout_sec: 8.0
-    log_hz: 2.0
+    max_oms_moves: 8
+    linear_fwd_offset_mm: 0.0        # add/subtract from computed linear stroke (mm)
+    linear_max_mm: 110.0             # clamp linear extension
+    linear_cmd_enabled: false        # true → send /oms/linear/cmd after depth
+    linear_cmd_topic: /oms/linear/cmd
+    pick_mode: false                 # true → full pick sequence (see oms_pick yaml)
+    home_on_start: false             # true → OMS home before first detect

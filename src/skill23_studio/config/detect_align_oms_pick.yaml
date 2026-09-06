@@ -1,0 +1,93 @@
+# OMS pick bench sequence:
+#   home → color detect (yaw) → OMS rotate → color+depth measure →
+#   rotation_servo in → vertical up + gripper open → lift → linear → gripper close → linear home
+#
+# Parameter groups (see also wp_detect_align.yaml):
+#   Detect (YOLO): conf_threshold, nms_iou, target_name/class, need_frames,
+#     detect_wait_sec, skip_frames, min_box_area_frac, center_u_offset
+#   Align (OMS yaw to object): oms_align_tol_deg, align_yaw_tol_deg,
+#     align_refine_max, oms_min/max_deg, oms_timeout_sec, angular_sign
+#   Depth → linear: depth_*, camera_to_gripper_mm, linear_fwd_offset_mm, linear_max_mm
+#   Pick sequence: pick_mode, pick_lift_mm, home_on_start, *_timeout_sec / topics
+#
+# Terminal 1 (no sudo — launch uses sudo internally for control_server):
+#   source ~/skill23_ws/install/setup.bash
+#   ros2 launch skill23_studio test_detect_align_oms.launch.py robot:=allterrain
+# Terminal 2 (no sudo):
+#   source ~/skill23_ws/install/setup.bash
+#   ros2 run skill23_studio studio_detect_align_oms_test --ros-args \
+#     --params-file ~/skill23_ws/src/skill23_studio/config/detect_align_oms_pick.yaml
+# START: type start + Enter  (or publish Empty on start_topic)
+# View debug image:
+#   Pi:    rqt_image_view /studio/detect_align/debug_image
+#   Laptop (same WiFi, same ROS_DOMAIN_ID):
+#     export ROS_DOMAIN_ID=0 ROS_LOCALHOST_ONLY=0
+#     rqt_image_view /studio/detect_align/debug_image
+#
+# target_name: ''  → any COCO class except 0 (background), highest confidence wins
+# target_name: 'bottle'  → only that class
+
+detect_align_oms_test:
+  ros__parameters:
+    color_topic: /camera/color/image_raw
+    depth_topic: /camera/depth/image_raw
+    color_camera_info_topic: /camera/color/camera_info
+    depth_camera_info_topic: /camera/depth/camera_info
+    debug_image_topic: /studio/detect_align/debug_image
+    start_topic: /studio/detect_align_oms_test/start
+    model_dir: ''
+    input_size: 320
+    conf_threshold: 0.35
+    nms_iou: 0.45
+    num_threads: 1
+    target_class: -1
+    target_name: ''
+    min_box_area_frac: 0.002
+    center_u_offset: 0.0
+    camera_tilt_deg: 35.0
+    camera_tilt_from_vertical: false
+    hfov_deg: 69.0
+    angular_sign: 1.0
+    # Detection: grab this many color frames and run YOLO on each; best conf wins.
+    need_frames: 3
+    skip_frames: 3
+    stream_verify_timeout_sec: 12.0
+    detect_wait_sec: 10.0
+    depth_samples: 4
+    depth_sample_timeout_sec: 6.0
+    depth_roi_frac: 0.08
+    depth_after_align_sec: 0.4
+    # OMS limits / motion
+    oms_min_deg: -90.0
+    oms_max_deg: 90.0
+    oms_cmd_topic: /oms/rotation/cmd
+    oms_result_topic: /oms/rotation/result
+    oms_timeout_sec: 25.0
+    oms_align_tol_deg: 1.0
+    align_yaw_tol_deg: 2.0
+    align_refine_max: 2
+    oms_home_cmd_topic: /oms/home/cmd
+    oms_home_result_topic: /oms/home/result
+    oms_home_timeout_sec: 180.0
+    home_on_start: true
+    # linear_mm = depth_z_m×1000 − camera_to_gripper_mm + linear_fwd_offset_mm (clamp 0…linear_max_mm)
+    pick_lift_mm:300.0
+    camera_to_gripper_mm: 455.0
+    linear_fwd_offset_mm: 40.0
+    linear_max_mm: 100.0
+    linear_cmd_enabled: true
+    linear_cmd_topic: /oms/linear/cmd
+    linear_result_topic: /oms/linear/result
+    linear_timeout_sec: 45.0
+    lift_cmd_topic: /oms/lift/cmd
+    lift_result_topic: /oms/lift/result
+    lift_timeout_sec: 40.0
+    rotation_servo_cmd_topic: /oms/rotation_servo/cmd
+    rotation_servo_result_topic: /oms/rotation_servo/result
+    vertical_cmd_topic: /oms/vertical/cmd
+    vertical_result_topic: /oms/vertical/result
+    gripper_cmd_topic: /oms/gripper/cmd
+    gripper_result_topic: /oms/gripper/result
+    servo_timeout_sec: 12.0
+    pick_mode: true
+    post_pick_frames: 3

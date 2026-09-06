@@ -119,6 +119,65 @@ def load_waypoints(name: str) -> List[Dict[str, Any]]:
     return list(data.get('waypoints') or [])
 
 
+def save_sequences(name: str, sequences: Dict[str, Any]) -> Path:
+    """Save named sequences (0-based WP indices) next to waypoints.json."""
+    d = project_dir(name)
+    d.mkdir(parents=True, exist_ok=True)
+    path = d / 'sequences.json'
+    clean: Dict[str, List[int]] = {}
+    raw = sequences.get('sequences') if isinstance(sequences, dict) and 'sequences' in sequences else sequences
+    if isinstance(raw, dict):
+        for key, idxs in raw.items():
+            if isinstance(idxs, list) and idxs:
+                clean[str(key)] = [int(i) for i in idxs]
+    path.write_text(json.dumps({'sequences': clean}, indent=2))
+    return path
+
+
+def load_sequences(name: str) -> Dict[str, List[int]]:
+    path = project_dir(name) / 'sequences.json'
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text())
+    except Exception:
+        return {}
+    raw = data.get('sequences') if isinstance(data, dict) else {}
+    out: Dict[str, List[int]] = {}
+    if isinstance(raw, dict):
+        for key, idxs in raw.items():
+            if isinstance(idxs, list) and idxs:
+                out[str(key)] = [int(i) for i in idxs]
+    return out
+
+
+def commission_config_path(name: str) -> Path:
+    return project_dir(name) / 'commission.json'
+
+
+def load_commission_config(name: str) -> Dict[str, Any]:
+    from skill23_studio.commission_mission import default_config, normalize_config
+
+    path = commission_config_path(name)
+    if not path.is_file():
+        return default_config()
+    try:
+        data = json.loads(path.read_text())
+    except Exception:
+        return default_config()
+    return normalize_config(data)
+
+
+def save_commission_config(name: str, config: Dict[str, Any]) -> Path:
+    from skill23_studio.commission_mission import normalize_config
+
+    d = project_dir(name)
+    d.mkdir(parents=True, exist_ok=True)
+    path = commission_config_path(name)
+    path.write_text(json.dumps(normalize_config(config), indent=2))
+    return path
+
+
 def save_restrictions(name: str, rects: List[Dict[str, Any]]) -> Path:
     d = project_dir(name)
     d.mkdir(parents=True, exist_ok=True)
@@ -282,6 +341,10 @@ def invalidate_base_snapshot(name: str) -> None:
         pass
 
 
+# Offline telemetry rebuilds this payload ~3x/s — cache it per file version.
+_GRID_CACHE: Dict[str, Tuple[Tuple[Any, ...], Dict[str, Any]]] = {}
+
+
 def apply_occupancy_edits(
     name: str,
     ops: List[Dict[str, Any]],
@@ -323,6 +386,8 @@ def apply_occupancy_edits(
                     f'Cannot write {target} (likely root-owned). Run:\n'
                     f'  sudo chown -R $USER:$USER ~/skill23_ws/studio_maps'
                 ) from exc
+        # Drop UI grid cache so the next telemetry frame reloads map.pgm.
+        _GRID_CACHE.pop(str(d), None)
 
 
 def burn_restrictions_into_map(name: str) -> None:
@@ -351,10 +416,10 @@ def burn_restrictions_into_map(name: str) -> None:
                 f'Cannot write {pgm} (likely root-owned). Run:\n'
                 f'  sudo chown -R $USER:$USER ~/skill23_ws/studio_maps'
             ) from exc
+        _GRID_CACHE.pop(str(d), None)
 
 
-# Offline telemetry rebuilds this payload ~3x/s — cache it per file version.
-_GRID_CACHE: Dict[str, Tuple[Tuple[Any, ...], Dict[str, Any]]] = {}
+# load_map_grid uses _GRID_CACHE (defined above apply_occupancy_edits).
 
 
 def load_map_grid(name: str) -> Optional[Dict[str, Any]]:
@@ -509,5 +574,12 @@ def import_map_files(
     (d / 'map.yaml').write_text('\n'.join(lines) + '\n')
     # New pixels — any zone snapshot from a previous map is meaningless now.
     invalidate_base_snapshot(name)
+    # Stale restriction boxes from a previous project would burn/erase the
+    # newly imported walls on the first zone sync — clear them on import.
+    rest = d / 'restrictions.json'
+    try:
+        rest.write_text('[]\n')
+    except OSError:
+        pass
     write_meta(name, robot=robot, imported_from=str(src_y), created_at=time.time())
     return d / 'map.yaml'

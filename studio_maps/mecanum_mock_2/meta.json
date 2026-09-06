@@ -1,0 +1,12 @@
+{
+  "robot": "mecanum",
+  "mode": "offline",
+  "created_at": 1788609109.1108725,
+  "name": "mecanum_mock_2",
+  "updated_at": 1788609109.111557,
+  "resolution": 0.05,
+  "max_laser_range": 10.0,
+  "min_laser_range": 0.05,
+  "phase": "mode",
+  "saved_at": 1788585898.0502176
+}

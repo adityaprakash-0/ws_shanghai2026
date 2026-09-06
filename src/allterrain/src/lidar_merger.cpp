@@ -42,11 +42,11 @@ public:
         target_frame_ = declare_parameter<std::string>(
             "target_frame", "base_footprint");
         front_half_fov_rad_ = degrees_to_radians(
-            declare_parameter<double>("front_half_fov_deg", 132.0));
+            declare_parameter<double>("front_half_fov_deg", 128.0));
         back_half_fov_rad_ = degrees_to_radians(
-            declare_parameter<double>("back_half_fov_deg", 132.0));
+            declare_parameter<double>("back_half_fov_deg", 128.0));
         max_sync_skew_sec_ =
-            declare_parameter<double>("max_sync_skew_sec", 0.10);
+            declare_parameter<double>("max_sync_skew_sec", 0.08);
         // 720 bins (0.5 deg) matches the useful angular density at 7 Hz.
         // Higher bin counts create artificial gaps rather than more detail.
         output_bins_ = declare_parameter<int>("output_bins", 720);

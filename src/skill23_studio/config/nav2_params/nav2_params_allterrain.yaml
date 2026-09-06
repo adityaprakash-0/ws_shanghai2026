@@ -8,11 +8,13 @@ amcl:
       y: 0.0
       z: 0.0
       yaw: 0.0
-    alpha1: 0.2
-    alpha2: 0.2
-    alpha3: 0.2
-    alpha4: 0.2
-    alpha5: 0.2
+    # Odometry here is the EKF (encoders + IMU heading) — inject less noise
+    # per update than the raw-wheel default of 0.2 so the cloud can tighten.
+    alpha1: 0.1
+    alpha2: 0.05
+    alpha3: 0.1
+    alpha4: 0.05
+    alpha5: 0.1
     base_frame_id: base_footprint
     global_frame_id: map
     odom_frame_id: odom
@@ -22,24 +24,28 @@ amcl:
     max_particles: 2000
     pf_err: 0.05
     pf_z: 0.99
-    resample_interval: 1
+    # Resample every 2nd update: with updates every 5 cm and recovery
+    # injection disabled, resampling each cycle depletes particle diversity.
+    resample_interval: 2
     recovery_alpha_fast: 0.0
     recovery_alpha_slow: 0.0
     laser_model_type: likelihood_field
     scan_topic: /scan
-    max_beams: 45
+    max_beams: 40
     laser_max_range: 8.0
-    laser_min_range: 0.12
+    laser_min_range: 0.05
     laser_likelihood_max_dist: 2.0
     z_hit: 0.85
     z_rand: 0.15
     z_max: 0.03
     z_short: 0.02
-    sigma_hit: 0.18
+    # 0.15 sharpens convergence on the 3 cm map while still absorbing the
+    # ±3-5 cm smear of uncompensated scans; do not go lower than ~0.12.
+    sigma_hit: 0.15
     lambda_short: 0.1
     update_min_d: 0.05
     update_min_a: 0.10
-    transform_tolerance: 1.0
+    transform_tolerance: 1.5
     do_beamskip: false
     beam_skip_distance: 0.4
     beam_skip_threshold: 0.35
@@ -136,7 +142,15 @@ controller_server:
       yaw_goal_tolerance: 0.18
       stateful: True
     FollowPath:
-      plugin: nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController
+      plugin: skill23_path_collision/PathAheadCollisionController
+      primary_controller: nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController
+      path_collision_enabled: true
+      path_collision_lookahead_time: 1.0
+      path_collision_min_lookahead_dist: 0.15
+      path_collision_min_check_speed: 0.05
+      path_collision_sample_step: 0.05
+      path_collision_disable_at_goal_yaw: true
+      path_collision_goal_xy_dist: 0.18
       desired_linear_vel: 0.25
       lookahead_dist: 0.20
       min_lookahead_dist: 0.15
@@ -146,7 +160,7 @@ controller_server:
       transform_tolerance: 0.5
       min_approach_linear_velocity: 0.1
       approach_velocity_scaling_dist: 0.40
-      use_collision_detection: true
+      use_collision_detection: false
       max_allowed_time_to_collision_up_to_carrot: 0.5
       use_regulated_linear_velocity_scaling: true
       regulated_linear_scaling_min_radius: 2.0
@@ -192,7 +206,7 @@ local_costmap:
           raytrace_min_range: 0.10
       inflation_layer:
         plugin: nav2_costmap_2d::InflationLayer
-        inflation_radius: 0.02
+        inflation_radius: 0.28
         cost_scaling_factor: 4.0
 
 
@@ -202,14 +216,13 @@ global_costmap:
       use_sim_time: false
       global_frame: map
       robot_base_frame: base_footprint
-      resolution: 0.05
+      resolution: 0.03
       track_unknown_space: true
       update_frequency: 4.0
       publish_frequency: 2.0
       transform_tolerance: 1.0
       always_send_full_costmap: false
-     # footprint: "[[0.22, 0.18], [0.22, -0.18], [-0.22, -0.18], [-0.22, 0.18]]"
-      robot_radius: 0.20
+      footprint: "[[0.22, 0.18], [0.22, -0.18], [-0.22, -0.18], [-0.22, 0.18]]"
       plugins: [static_layer, obstacle_layer, inflation_layer]
       static_layer:
         plugin: nav2_costmap_2d::StaticLayer
@@ -239,26 +252,17 @@ planner_server:
     use_sim_time: false
     expected_planner_frequency: 2.0
     # GridBased: continuous replan, free cells only (0–252)
-    # GridBasedNarrow: after clear recovery — free first, then 253 + distance-to-254 EDT
-    planner_plugins: [GridBased, GridBasedNarrow]
+    planner_plugins: [GridBased]
     GridBased:
       plugin: skill23_clearance_planner/ClearancePlanner
       use_final_approach_orientation: true
       allow_unknown: false
       allow_narrow: false
+      shift_goal_off_inscribed: false
       straight_line_only: true
-      w_distance: 0.5
-      w_cell_cost: 20.0
-      w_inflation: 1.0
-      turn_penalty: 16.0
-      narrow_wall_penalty: 50.0
-      edt_narrow_weight: 40.0
-    GridBasedNarrow:
-      plugin: skill23_clearance_planner/ClearancePlanner
-      use_final_approach_orientation: true
-      allow_unknown: true
-      allow_narrow: true
-      straight_line_only: true
+      smooth_path: true
+      smooth_iterations: 10
+      max_deviation: 0.05
       w_distance: 0.5
       w_cell_cost: 20.0
       w_inflation: 1.0

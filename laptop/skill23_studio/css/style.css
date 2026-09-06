@@ -512,17 +512,24 @@ input, select {
 }
 .deploy-dock-left {
   left: 0.55rem;
-  top: 6.8rem;
-  bottom: 8.2rem;
-  width: min(228px, 30%);
+  top: 5.4rem;
+  bottom: 11.5rem;
+  width: min(248px, 30%);
   overflow: auto;
+}
+.deploy-hud.module-nav .deploy-dock-left {
+  width: min(268px, 32%);
+  top: 5.2rem;
 }
 .deploy-dock-right {
   right: 0.55rem;
-  top: 6.8rem;
-  bottom: 8.2rem;
-  width: min(220px, 28%);
+  top: 5.4rem;
+  bottom: 11.5rem;
+  width: min(280px, 34%);
   overflow: auto;
+}
+.deploy-hud.module-nav .deploy-dock-right {
+  width: min(300px, 36%);
 }
 .deploy-dock-right .node-status-panel {
   position: static;
@@ -541,6 +548,9 @@ input, select {
   width: min(170px, 26%);
   z-index: 5;
 }
+.deploy-hud.module-nav .deploy-dock-teleop {
+  bottom: 0.55rem;
+}
 .deploy-dock-teleop .dpad-compact .hold {
   width: 2rem;
   height: 2rem;
@@ -552,12 +562,17 @@ input, select {
 }
 .deploy-dock-bottom {
   left: calc(min(170px, 26%) + 1rem);
-  right: 0.55rem;
+  right: calc(min(280px, 34%) + 1.1rem);
   bottom: 0.55rem;
   flex-direction: row;
   align-items: stretch;
   gap: 0.75rem;
-  max-height: 7.2rem;
+  max-height: 10.5rem;
+  overflow: hidden;
+}
+.deploy-hud.module-nav .deploy-dock-bottom {
+  left: calc(min(170px, 26%) + 1rem);
+  right: calc(min(300px, 36%) + 1.1rem);
 }
 .deploy-bottom-cam {
   flex: 0 0 auto;
@@ -565,6 +580,59 @@ input, select {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
+}
+.deploy-hud.module-nav .deploy-bottom-cam {
+  display: none !important;
+}
+.deploy-dock-bottom .node-status-panel {
+  flex: 1;
+  min-width: 0;
+  max-height: 10rem;
+  overflow: auto;
+  position: static;
+  width: auto;
+  box-shadow: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+}
+.deploy-dock-bottom .node-status-panel ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 0.28rem 0.55rem;
+  max-height: none;
+}
+.deploy-dock-bottom .node-status-panel li {
+  align-items: flex-start;
+}
+.deploy-side-logs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  flex: 1;
+  min-height: 0;
+}
+.deploy-side-log {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+.log-box.side-log-tall {
+  max-height: min(28vh, 14rem);
+  min-height: 6rem;
+  font-size: 0.62rem;
+  line-height: 1.35;
+  overflow: auto;
+  flex: 1;
+}
+.deploy-hud.module-nav #sideLogDaWrap,
+.deploy-hud.module-nav #sideLogCamWrap {
+  display: none !important;
+}
+.deploy-hud.module-commission #sideLogNavWrap {
+  display: none !important;
 }
 .deploy-bottom-logs {
   flex: 1;
@@ -582,12 +650,65 @@ input, select {
   font-size: 0.58rem;
 }
 .deploy-dock-left .seq-builder {
-  max-height: 4.5rem;
+  max-height: min(22vh, 9rem);
+  min-height: 4.5rem;
   overflow: auto;
 }
+.deploy-dock-left .seq-builder button {
+  min-width: 2.1rem;
+  min-height: 2.1rem;
+  font-size: 0.9rem;
+  padding: 0.25rem 0.4rem;
+}
 .deploy-dock-left .wp-task-list {
-  max-height: 7rem;
-  overflow: auto;
+  max-height: none;
+  overflow: visible;
+  min-height: 0;
+}
+.wp-task-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.4rem 0.45rem;
+  border: 1px solid rgba(0, 0, 128, 0.12);
+  border-radius: 10px;
+  background: rgba(0, 0, 128, 0.03);
+}
+.wp-task-compact .wp-task-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.35rem;
+  align-items: end;
+}
+.wp-task-compact label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.wp-task-compact select,
+.wp-task-compact input {
+  width: 100%;
+  font-size: 0.78rem !important;
+  padding: 0.4rem 0.45rem !important;
+}
+.wp-task-compact .btn-tick {
+  min-width: 2.4rem;
+  min-height: 2.4rem;
+  padding: 0;
+  font-size: 1.1rem;
+  font-weight: 800;
+  line-height: 1;
+}
+.wp-task-compact .wp-task-summary {
+  font-size: 0.68rem;
+  color: var(--muted);
+  margin: 0;
+  line-height: 1.35;
 }
 .deploy-dock-left input,
 .deploy-dock-left select {
@@ -749,6 +870,41 @@ input, select {
 .deploy-hud .node-status-panel {
   position: static;
 }
+.deploy-hud.module-nav .deploy-dock-bottom .node-status-panel {
+  display: block !important;
+}
+.node-status-panel[hidden] { display: none !important; }
+.node-status-panel h4 {
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
+}
+.node-status-panel ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.node-status-panel li {
+  display: flex;
+  gap: 0.4rem;
+  align-items: flex-start;
+  font-size: 0.68rem;
+  line-height: 1.25;
+  padding: 0.2rem 0;
+  border-bottom: 1px solid rgba(0,0,128,0.06);
+}
+.node-status-panel .dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  margin-top: 0.2rem;
+  flex-shrink: 0;
+  background: #9aa;
+}
+.node-status-panel .dot.ok { background: #138808; }
+.node-status-panel .dot.warn { background: #FF9933; }
+.node-status-panel .dot.bad { background: #c62828; }
+.node-status-panel .ns-name { font-weight: 700; color: var(--navy); }
+.node-status-panel .ns-detail { color: var(--muted); font-weight: 500; }
 .detect-align-panel {
   background: rgba(255,255,255,0.94);
   border: 1px solid rgba(0,0,128,0.15);
@@ -800,8 +956,12 @@ input, select {
   white-space: nowrap;
 }
 .deploy-hud.module-nav #btnDeployNav2Cam,
+.deploy-hud.module-nav #btnOpenOmsDeploy,
 .deploy-hud.module-nav #detectAlignPanel,
 .deploy-hud.module-nav .deploy-bottom-cam {
+  display: none !important;
+}
+.deploy-hud.module-commission #navAlignRow {
   display: none !important;
 }
 .deploy-hud.module-commission #btnDeployNav2 {
@@ -825,46 +985,153 @@ input, select {
   background: #c45c12;
   color: #fff;
 }
+.sticker-home {
+  background: #1a4a8a;
+  color: #fff;
+}
+.deploy-hud.module-commission .deploy-mission-seq {
+  display: none !important;
+}
+.deploy-hud.module-commission .deploy-bottom-logs {
+  display: none !important;
+}
+.deploy-hud.module-commission #detectAlignPanel .side-log,
+.deploy-hud.module-commission #daLog {
+  display: none !important;
+}
+.deploy-hud.module-commission .deploy-dock-right .deploy-dock-label:not(.deploy-logs-label),
+.deploy-hud.module-commission #relocHint,
+.deploy-hud.module-commission #btnRelocSpin,
+.deploy-hud.module-commission #btnRelocFront,
+.deploy-hud.module-commission #btnRelocBack,
+.deploy-hud.module-commission #btnRelocThen,
+.deploy-hud.module-commission #btnRelocStop,
+.deploy-hud.module-commission #simHint,
+.deploy-hud.module-commission #btnGcPlannerStart,
+.deploy-hud.module-commission #btnGcPlannerStop,
+.deploy-hud.module-commission #gcPlannerHint,
+.deploy-hud.module-commission #btnSimEnter,
+.deploy-hud.module-commission #simControls {
+  display: none !important;
+}
+.deploy-hud.module-commission .deploy-dock-left {
+  width: min(320px, 40%);
+}
+.wp-pick-params {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+  margin-top: 0.4rem;
+}
+.wp-pick-params label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.68rem;
+  color: #445;
+}
+.wp-pick-params input {
+  width: 100%;
+  font-size: 0.8rem;
+  padding: 0.2rem 0.35rem;
+}
+.deploy-hud.module-commission .commission-panel {
+  display: block;
+  margin: 0.15rem 0 0.35rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+  max-height: none;
+  overflow: visible;
+}
+.deploy-hud.module-commission .commission-panel[hidden] {
+  display: none !important;
+}
+.commission-panel {
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid #d8dde5;
+  border-radius: 10px;
+  padding: 0.65rem 0.75rem;
+  margin-bottom: 0.65rem;
+  max-height: 42vh;
+  overflow: auto;
+}
+.commission-summary {
+  display: grid;
+  gap: 0.2rem;
+  margin-bottom: 0.45rem;
+  font-size: 0.7rem;
+  line-height: 1.35;
+}
+.commission-summary strong {
+  color: var(--navy);
+}
+.commission-subhead {
+  margin-top: 0.15rem;
+}
+.deploy-hud.module-commission .wp-task-list {
+  max-height: none;
+}
+.commission-panel h4 {
+  margin: 0 0 0.35rem;
+  font-size: 0.85rem;
+  color: var(--navy);
+}
+.commission-hint {
+  font-size: 0.72rem;
+  margin: 0 0 0.5rem;
+}
+.commission-assign {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 0.45rem;
+}
+.commission-assign label {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+  align-items: center;
+  font-size: 0.72rem;
+}
+.commission-assign select {
+  font-size: 0.72rem;
+  padding: 0.2rem 0.35rem;
+}
+.commission-stats {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0.5rem 0 0.35rem;
+  font-size: 0.72rem;
+}
+.commission-stats > div {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr;
+  gap: 0.35rem;
+}
+.commission-stats dt {
+  color: var(--muted);
+  font-weight: 600;
+}
+.commission-stats dd {
+  margin: 0;
+  font-weight: 600;
+  color: var(--navy);
+}
+.btn-compact {
+  width: 100%;
+  font-size: 0.72rem;
+  padding: 0.25rem 0.5rem;
+}
+#cmLog {
+  max-height: 6rem;
+  font-size: 0.68rem;
+}
 #daLog {
   max-height: 7.5rem;
   margin-top: 0.4rem;
   font-size: 0.62rem;
 }
-.node-status-panel[hidden] { display: none !important; }
-.node-status-panel h4 {
-  margin: 0 0 0.4rem;
-  font-size: 0.78rem;
-  color: var(--navy);
-}
-.node-status-panel ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.28rem;
-}
-.node-status-panel li {
-  display: grid;
-  grid-template-columns: 10px 1fr;
-  gap: 0.4rem;
-  align-items: start;
-  font-size: 0.68rem;
-  line-height: 1.25;
-  color: #222;
-}
-.node-status-panel .dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  margin-top: 3px;
-  background: #9e9e9e;
-}
-.node-status-panel .dot.ok { background: #138808; }
-.node-status-panel .dot.warn { background: #FF9933; }
-.node-status-panel .dot.bad { background: #c62828; }
-.node-status-panel .ns-name { font-weight: 700; color: var(--navy); }
-.node-status-panel .ns-detail { color: var(--muted); font-weight: 500; }
 
 .dpad { display: grid; gap: 0.35rem; justify-items: center; }
 .dpad-mid { display: flex; gap: 0.3rem; }

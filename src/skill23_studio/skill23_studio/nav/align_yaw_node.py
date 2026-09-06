@@ -414,6 +414,13 @@ class AlignYawNode(Node):
             time.sleep(0.02)
         cmd_id = str(cmd.get('cmd_id', ''))
         mode = self._mode_of(cmd)
+        yaw_tol_saved = self._yaw_tol
+        try:
+            raw_tol = float(cmd.get('yaw_tolerance_deg', 0.0) or 0.0)
+        except (TypeError, ValueError):
+            raw_tol = 0.0
+        if raw_tol > 0.0 and math.isfinite(raw_tol):
+            self._yaw_tol = math.radians(min(15.0, max(0.1, raw_tol)))
         try:
             target_yaw = float(cmd.get('yaw', 0.0))
         except (TypeError, ValueError):
@@ -479,6 +486,7 @@ class AlignYawNode(Node):
                     ok = False
                     message = f'canceled during hold yaw_err={err_deg:.1f}deg'
         finally:
+            self._yaw_tol = yaw_tol_saved
             self._stop()
             with self._lock:
                 self._busy = False

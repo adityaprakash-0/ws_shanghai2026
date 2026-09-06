@@ -1,44 +1,78 @@
 # Mecanum — UNTUNED starter. Titan /cmd_vel is duty (−1…1).
 # Bench: ros2 launch skill23_studio test_wp_align.launch.py robot:=mecanum mode:=align
 # Dashboard Deploy loads this file when robot=mecanum.
+#
+# NAVIGATION WP DROPDOWN (no camera / no YOLO)
+# --------------------------------------------
+# Align (saved yaw)
+#   Rotate the robot base to the waypoint yaw stored on the map. Uses AMCL pose
+#   + yaw PID on /cmd_vel. Params that matter most: yaw_tolerance_deg,
+#   confirm_frames, timeout_sec, yaw_duty_*, yaw_k*.
+#
+# Align + distance
+#   Same yaw Align, then drive forward/back so front lidar reports distance_m
+#   (set per-waypoint in the UI). Uses scan_topic + lin_* / forward|backward_duty_*.
+#   Params: dist_tolerance_m, dist_confirm_frames, timeout_align_move_sec,
+#   pause_after_align_sec.
+#
+# Wait — handled by the bridge (sleep seconds); not in this YAML.
+#
+# Detect+Align is Commissioning only (camera + YOLO + OMS) → wp_detect_align.yaml
+#
+# Timing knobs:
+#   timeout_sec            max time for ONE align attempt. Then retries (if any).
+#   timeout_align_move_sec max time for ONE align+move attempt.
+#   retries                extra tries after timeout (0 = give up after first).
+#   retry_pause_sec        sit still between attempts.
+#   pause_after_align_sec  brief stop between yaw and lidar drive (align+move only).
+#   hold_after_done_sec    sit still after success, then send done → next waypoint.
 
 align:
   ros__parameters:
-    pose_source: amcl
-    pose_topic: /amcl_pose
-    cmd_vel_topic: /cmd_vel
-    cmd_topic: /studio/align/cmd
+    # --- Pose / cmd I/O ---
+    pose_source: amcl                # heading source label (amcl)
+    pose_topic: /amcl_pose           # robot yaw for Align PID
+    cmd_vel_topic: /cmd_vel          # Titan duty Twist (−1…1)
+    cmd_topic: /studio/align/cmd     # JSON: {mode: align|align_move, yaw, distance_m?}
     result_topic: /studio/align/result
     cancel_topic: /studio/align/cancel
+
+    # --- Front lidar for Align+distance ---
     scan_topic: /scan/front
-    scan_topic_alt: /scan_front
-    scan_angle_deg: 0.0
-    scan_window_deg: 3.0
-    control_rate_hz: 20.0
-    yaw_tolerance_deg: 2.5
-    confirm_frames: 8
-    timeout_sec: 20.0
-    timeout_align_move_sec: 40.0
-    retries: 2
+    scan_topic_alt: /scan_front      # fallback topic name
+    scan_angle_deg: 0.0              # beam angle used for range (0 = straight ahead)
+    scan_window_deg: 3.0             # average beams in ±window around scan_angle
+
+    # --- Control loop ---
+    control_rate_hz: 20.0            # PID tick rate
+    log_hz: 2.0
+
+    # --- Align (yaw) ---
+    yaw_tolerance_deg: 2.5           # |yaw_error| under this counts as good
+    confirm_frames: 8                # consecutive good frames before Align success
+    timeout_sec: 20.0                # abort one Align attempt after this many seconds
+    retries: 2                       # extra attempts after timeout
     retry_pause_sec: 0.4
-    pause_after_align_sec: 0.5
-    hold_after_done_sec: 2.0
-    yaw_kp: 1.4
+    pause_after_align_sec: 0.5       # Align+distance: pause after yaw before driving
+    hold_after_done_sec: 2.0         # hold still after success before result→next WP
+    yaw_kp: 1.4                      # yaw PID gains
     yaw_ki: 0.05
     yaw_kd: 0.12
-    yaw_i_limit: 0.4
-    yaw_duty_min: 0.12
-    yaw_duty_max: 0.35
-    angular_sign: 1.0
-    dist_tolerance_m: 0.015
-    dist_confirm_frames: 8
-    lin_kp: 4.0
+    yaw_i_limit: 0.4                 # integral clamp
+    yaw_duty_min: 0.12               # min |angular| duty so robot actually turns
+    yaw_duty_max: 0.35               # max |angular| duty
+    angular_sign: 1.0                # −1.0 if turn direction is inverted
+
+    # --- Align+distance (linear) ---
+    timeout_align_move_sec: 40.0     # abort one Align+move attempt
+    dist_tolerance_m: 0.015          # |range − distance_m| under this = good
+    dist_confirm_frames: 8           # consecutive good range frames
+    lin_kp: 4.0                      # linear PID on range error
     lin_ki: 0.05
     lin_kd: 0.15
     lin_i_limit: 0.3
-    forward_duty_min: 0.12
+    forward_duty_min: 0.12           # duty when closing gap (drive toward obstacle)
     forward_duty_max: 0.28
-    backward_duty_min: 0.12
+    backward_duty_min: 0.12          # duty when backing away (too close)
     backward_duty_max: 0.28
-    linear_sign: 1.0
-    log_hz: 2.0
+    linear_sign: 1.0                 # −1.0 if forward/back are swapped

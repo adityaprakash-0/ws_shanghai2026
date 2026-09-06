@@ -1,0 +1,33 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>skill23_path_collision</name>
+  <version>1.0.0</version>
+  <description>
+    Lightweight Nav2 controller wrapper: path-ahead footprint check on the local
+    costmap (abort FollowPath on lethal 254). Delegates tracking to inner RPP.
+  </description>
+  <maintainer email="adityaprakash.main@gmail.com">ADEV</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>rclcpp_lifecycle</depend>
+  <depend>pluginlib</depend>
+  <depend>nav2_core</depend>
+  <depend>nav2_util</depend>
+  <depend>nav2_costmap_2d</depend>
+  <depend>nav_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
+
+  <exec_depend>nav2_regulated_pure_pursuit_controller</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+    <nav2_core plugin="${prefix}/path_collision_plugin.xml"/>
+  </export>
+</package>

@@ -19,12 +19,12 @@ _LATCH = QoSProfile(
 
 
 class NodeStatusPub:
-    """Publish JSON status on /custom_nav/node_status; log only on change."""
+    """Publish JSON status for Studio dashboards; log only on change."""
 
     def __init__(self, node: Node, name: str) -> None:
         self._node = node
         self._name = name
-        self._pub = node.create_publisher(String, '/custom_nav/node_status', _LATCH)
+        self._pub = node.create_publisher(String, '/studio/node_status', _LATCH)
         self._last_state: Optional[str] = None
         self._last_detail: Optional[str] = None
         self._last_extra: dict = {}

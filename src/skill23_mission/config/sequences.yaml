@@ -1,0 +1,22 @@
+# Sequence list for mission_runner.
+# index_base: 1  →  waypoint numbers match Studio UI (WP1, WP2, …)
+# Edit freely; map-folder sequences.json (from Studio Save) overrides same names.
+
+index_base: 1
+
+sequences:
+  # Shown as [1] in the terminal menu
+  1:
+    name: all_waypoints
+    # Visit every WP in order — leave empty to mean "all" (runner fills it)
+    waypoints: []
+
+  2:
+    name: short_loop
+    # Example: WP1 → WP2 → WP1  (1-based)
+    waypoints: [1, 2, 1]
+
+  3:
+    name: full_tour
+    # Example for mecanum_mock_1 style maps with 6 WPs
+    waypoints: [1, 2, 3, 4, 5, 6]

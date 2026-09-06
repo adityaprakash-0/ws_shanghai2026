@@ -12,7 +12,7 @@ have two poses each.
   Servos:
     T / G  linear fwd / back   topic /linear_servo/cmd (continuous); SPACE → 0
     Y / H  vertical up / down  service (two angles)
-    U / J  rotation horiz/vert service (two angles)
+    U / J  rotation in / out   service (two angles)
     I / K  gripper open/close  service (two angles)
 
   ros2 launch mypackage oms.launch.py enable_servos:=true
@@ -105,10 +105,12 @@ class OmsNode(Node):
         self.declare_parameter('lift_duty', 0.50)
         self.declare_parameter('rotate_motor', ROTATE_MOTOR)
         self.declare_parameter('lift_motor', LIFT_MOTOR)
-        self.declare_parameter('vertical_up_deg', 50.0)
+        self.declare_parameter('vertical_up_deg', 60.0)
         self.declare_parameter('vertical_down_deg', -40.0)
-        self.declare_parameter('rotation_horizontal_deg', 70.0)
-        self.declare_parameter('rotation_vertical_deg', 170.0)
+        self.declare_parameter('rotation_in_deg', 110.0)
+        self.declare_parameter('rotation_out_deg', 0.0)
+        self.declare_parameter('rotation_horizontal_deg', 110.0)
+        self.declare_parameter('rotation_vertical_deg', 0.0)
         self.declare_parameter('gripper_open_deg', -150.0)
         self.declare_parameter('gripper_close_deg', 150.0)
 
@@ -120,10 +122,14 @@ class OmsNode(Node):
             self.get_parameter('linear_speed').value))))
         self.vertical_up = float(self.get_parameter('vertical_up_deg').value)
         self.vertical_down = float(self.get_parameter('vertical_down_deg').value)
-        self.rotation_horizontal = float(
-            self.get_parameter('rotation_horizontal_deg').value)
-        self.rotation_vertical = float(
-            self.get_parameter('rotation_vertical_deg').value)
+        self.rotation_in = float(self.get_parameter('rotation_in_deg').value)
+        self.rotation_out = float(self.get_parameter('rotation_out_deg').value)
+        if abs(self.rotation_in - 110.0) < 1e-9:
+            self.rotation_in = float(
+                self.get_parameter('rotation_horizontal_deg').value)
+        if abs(self.rotation_out - 0.0) < 1e-9:
+            self.rotation_out = float(
+                self.get_parameter('rotation_vertical_deg').value)
         self.gripper_open = float(self.get_parameter('gripper_open_deg').value)
         self.gripper_close = float(self.get_parameter('gripper_close_deg').value)
 
@@ -164,7 +170,7 @@ class OmsNode(Node):
             f'  R/F  lift up / down    (titan1 m_{self.lift_motor}, stays until SPACE)\n'
             '  T/G  linear fwd / back (continuous −100…100, latches until SPACE)\n'
             '  Y/H  vertical up / down\n'
-            '  U/J  rotation horiz / vert\n'
+            '  U/J  rotation in / out\n'
             '  I/K  gripper open / close\n'
             '  SPACE stop motors (node stays running) | ESC quit')
 
@@ -290,9 +296,9 @@ class OmsNode(Node):
         elif code == KEY_H:
             self._servo(self.vertical_cli, self.vertical_down, 'vertical down')
         elif code == KEY_U:
-            self._servo(self.rotation_cli, self.rotation_horizontal, 'rotation horizontal')
+            self._servo(self.rotation_cli, self.rotation_in, 'rotation in')
         elif code == KEY_J:
-            self._servo(self.rotation_cli, self.rotation_vertical, 'rotation vertical')
+            self._servo(self.rotation_cli, self.rotation_out, 'rotation out')
         elif code == KEY_I:
             self._servo(self.gripper_cli, self.gripper_open, 'gripper open')
         elif code == KEY_K:

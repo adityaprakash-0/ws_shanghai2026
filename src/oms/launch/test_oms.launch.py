@@ -1,7 +1,8 @@
 """Bench OMS — Titan control_server + OMS nodes. No Nav2, no camera.
 
-Starts manual_composition (sudo -E inside) then OMS rotation + vertical.
-Rotation auto-homes to the limit switch. Vertical auto-homes down (−40°).
+Starts manual_composition (sudo -E inside) then all OMS nodes.
+Boot homing runs via oms_home (rotation → lift → linear → vertical →
+rotation_servo → gripper).
 
   ros2 run oms oms_test
   oms> 30
@@ -85,17 +86,20 @@ def _setup(context, *args, **kwargs):
         get_package_share_directory('oms'), 'launch', 'oms.launch.py')
     motion_log = os.path.expanduser(
         '~/skill23_ws/studio_maps/_logs/oms_motion.csv')
+    auto_home = LaunchConfiguration('auto_home').perform(context)
     return [
         LogInfo(msg=(
             f'[test_oms] robot={robot}  hw={hw_params}  '
-            f'motion_log={motion_log}  '
-            'Terminal 2: ros2 run oms oms_test')),
+            f'auto_home={auto_home}  log→studio_maps/_logs/oms.log')),
         ExecuteProcess(cmd=_control_server_cmd(exec_path, hw_params), output='screen'),
-        TimerAction(period=7.0, actions=[
-            LogInfo(msg=f'[test_oms] OMS nodes — CSV log {motion_log}'),
+        TimerAction(period=3.0, actions=[
+            LogInfo(msg=f'[test_oms] OMS node — CSV {motion_log}'),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(oms_launch),
-                launch_arguments={'motion_log': motion_log}.items(),
+                launch_arguments={
+                    'motion_log': motion_log,
+                    'auto_home': auto_home,
+                }.items(),
             ),
         ]),
     ]
@@ -107,5 +111,8 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'robot', default_value='allterrain',
             description='hw_params robot: allterrain | mecanum | xdrive | grip'),
+        DeclareLaunchArgument(
+            'auto_home', default_value='false',
+            description='boot home sequence (false = Home only from Studio)'),
         OpaqueFunction(function=_setup),
     ])

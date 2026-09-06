@@ -7,6 +7,8 @@ const StudioMap = (() => {
   let scan = [];
   let trail = [];
   let showTrail = true;
+  let showScan = true;
+  let showPose = true;
   let path = [];
   let plannerPath = [];
   let smoothedPath = [];
@@ -91,6 +93,8 @@ const StudioMap = (() => {
     if (d && d.length && d.width) robotDims = { length: +d.length, width: +d.width };
   }
   function setShowTrail(v) { showTrail = !!v; draw(); }
+  function setShowScan(v) { showScan = !!v; draw(); }
+  function setShowPose(v) { showPose = !!v; draw(); }
   function clearTrailLocal() { trail = []; draw(); }
 
   function setMap(m) {
@@ -100,8 +104,8 @@ const StudioMap = (() => {
       && mapData.height === m.height
       && mapData.resolution === m.resolution
       && mapData.data.length === m.data.length;
-    // Keep local paint edits if same grid and we're editing
-    if (same && undoStack.length && mapData._locallyEdited) {
+    // Never clobber in-progress paint with a telemetry frame.
+    if (mapData && mapData._locallyEdited) {
       draw();
       return;
     }
@@ -290,14 +294,16 @@ const StudioMap = (() => {
     return out;
   }
 
-  /** Delete the zone under the cursor and wipe the cells its burn blackened. */
-  function removeRestrictionAt(wx, wy, { clearCells = true } = {}) {
+  /** Delete the zone under the cursor. Do NOT erase cells into pendingEdits —
+   *  that permanently destroyed real walls in map_base. Burn rebuilds map.pgm
+   *  from map_base + remaining zones instead.
+   */
+  function removeRestrictionAt(wx, wy, { clearCells = false } = {}) {
     const idx = restrictionIndexAt(wx, wy);
     if (idx < 0) return null;
     const removed = restrictions[idx];
     const prev = restrictions.slice();
     restrictions = restrictions.filter((_, i) => i !== idx);
-    // One undo entry restores the box and its pixels together.
     const cells = clearCells ? applyCells('erase', occupiedCellsInRect(removed)) : [];
     undoStack.push({ type: 'restrict', prev, cells });
     if (onRestrict) onRestrict(restrictions, { removed });
@@ -305,7 +311,7 @@ const StudioMap = (() => {
     return removed;
   }
 
-  function clearRestrictions({ clearCells = true } = {}) {
+  function clearRestrictions({ clearCells = false } = {}) {
     if (!restrictions.length) return [];
     const prev = restrictions.slice();
     restrictions = [];
@@ -344,7 +350,10 @@ const StudioMap = (() => {
   }
 
   function canUndo() { return undoStack.length > 0; }
-  function clearUndo() { undoStack = []; }
+  function clearUndo() {
+    undoStack = [];
+    if (mapData) mapData._locallyEdited = false;
+  }
 
   function setPose(p) { pose = p; draw(); }
   function setScan(s) { scan = s || []; draw(); }
@@ -814,7 +823,7 @@ const StudioMap = (() => {
   }
 
   function drawFootprint() {
-    if (!pose || !mapData) return;
+    if (!showPose || !pose || !mapData) return;
     const yaw = pose.yaw || 0;
     const hl = robotDims.length / 2;
     const hw = robotDims.width / 2;
@@ -885,7 +894,7 @@ const StudioMap = (() => {
     drawPoly(plannerPath, 'rgba(0,0,128,0.45)', 2);
     drawPoly(smoothedPath.length ? smoothedPath : path, 'rgba(255,153,51,0.95)', 3);
 
-    if (pose && scan.length) {
+    if (showScan && pose && scan.length) {
       const c = Math.cos(pose.yaw);
       const s = Math.sin(pose.yaw);
       ctx.fillStyle = 'rgba(19,136,8,0.75)';
@@ -923,18 +932,28 @@ const StudioMap = (() => {
       const yaw = wp.yaw || 0;
       const deg = Math.round((yaw * 180) / Math.PI);
       const sticker = String(wp.sticker || '').trim().toUpperCase();
-      const isPick = /^P\d+$/i.test(sticker);
-      const isDrop = /^D\d+$/i.test(sticker);
-      ctx.fillStyle = isPick ? '#1b7a3a' : (isDrop ? '#c45c12' : '#000080');
+      const sk = sticker.toLowerCase();
+      const isPick = /^(pick|p)\d+$/.test(sk);
+      const isDrop = /^(drop|d)\d+$/.test(sk);
+      const isHome = sk === 'HOME' || sk === 'START';
+      const mapLabel = (() => {
+        if (isHome) return 'H';
+        const pm = sk.match(/^(?:pick|p)(\d+)$/);
+        if (pm) return `P${pm[1]}`;
+        const dm = sk.match(/^(?:drop|d)(\d+)$/);
+        if (dm) return `D${dm[1]}`;
+        return sticker || String(i + 1);
+      })();
+      ctx.fillStyle = isPick ? '#1b7a3a' : (isDrop ? '#c45c12' : (isHome ? '#1a4a8a' : '#000080'));
       ctx.beginPath();
-      ctx.arc(sc.x, sc.y, sticker ? 10 : 7, 0, Math.PI * 2);
+      ctx.arc(sc.x, sc.y, wp.sticker ? 10 : 7, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = '#fff';
-      ctx.font = sticker ? 'bold 10px Outfit, sans-serif' : '11px Outfit, sans-serif';
+      ctx.font = wp.sticker ? 'bold 10px Outfit, sans-serif' : '11px Outfit, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(sticker || String(i + 1), sc.x, sc.y);
-      if (sticker) {
+      ctx.fillText(mapLabel || String(i + 1), sc.x, sc.y);
+      if (wp.sticker) {
         ctx.font = '9px Outfit, sans-serif';
         ctx.fillStyle = '#000080';
         ctx.fillText(String(i + 1), sc.x, sc.y + 16);
@@ -1098,7 +1117,7 @@ const StudioMap = (() => {
   return {
     init, setMap, setPose, setScan, setTrail, setPaths, setSim,
     setWaypoints, setRestrictions, setTool, setOnEditCells, setOnRestrict,
-    setDims, setShowTrail, clearTrailLocal, undo, canUndo, clearUndo,
+    setDims, setShowTrail, setShowScan, setShowPose, clearTrailLocal, undo, canUndo, clearUndo,
     clearMeasures, resize, draw,
     setBrush, getBrush, setOnBrushChange,
     removeRestrictionAt, clearRestrictions, restrictionIndexAt,

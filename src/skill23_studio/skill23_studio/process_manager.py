@@ -11,8 +11,8 @@ HW access (Titan / VMX):
 
 Why leftovers happen
 --------------------
-Deploy starts ``ros2 launch skill23_studio studio_nav.launch.py`` in a **new
-session** (``start_new_session=True``). That launch then starts each node in
+Deploy starts ``ros2 launch skill23_studio studio_nav2.launch.py`` (or
+``studio_commission.launch.py``) in a **new session** (``start_new_session=True``). That launch then starts each node in
 its *own* process group (and ``sudo manual_composition`` is yet another tree).
 
 ``stop()`` used to ``killpg`` only the launch PID, then ``wait()``. ROS 2 launch
@@ -28,6 +28,7 @@ from __future__ import annotations
 import os
 import signal
 import subprocess
+import sys
 import threading
 import time
 from dataclasses import dataclass, field
@@ -61,6 +62,52 @@ def _run_stop_script() -> None:
         pass
 
 
+def _workspace_launch_env(base: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    """Env for child launches with current ``install/`` packages on the overlay.
+
+    Studio may have been started before a package was built (e.g.
+    ``skill23_path_collision``). Without refreshing ``AMENT_PREFIX_PATH``,
+    pluginlib cannot see the new controller and Nav2 configure fails.
+    """
+    env = dict(base if base is not None else os.environ)
+    install = Path(os.path.expanduser('~/skill23_ws/install'))
+    if not install.is_dir():
+        return env
+
+    prefixes: List[str] = []
+    try:
+        for child in sorted(install.iterdir()):
+            if child.is_dir() and (child / 'share' / 'ament_index').is_dir():
+                prefixes.append(str(child.resolve()))
+    except OSError:
+        pass
+    if (install / 'share' / 'ament_index').is_dir():
+        prefixes.insert(0, str(install.resolve()))
+
+    if not prefixes:
+        return env
+
+    existing = [p for p in env.get('AMENT_PREFIX_PATH', '').split(':') if p]
+    existing_set = set(existing)
+    missing = [p for p in prefixes if p not in existing_set]
+    if missing:
+        env['AMENT_PREFIX_PATH'] = ':'.join(missing + existing)
+
+    lib_dirs = [
+        str(Path(p) / 'lib') for p in missing
+        if (Path(p) / 'lib').is_dir()
+    ]
+    if lib_dirs:
+        old_ld = [p for p in env.get('LD_LIBRARY_PATH', '').split(':') if p]
+        env['LD_LIBRARY_PATH'] = ':'.join(lib_dirs + old_ld)
+
+    if missing:
+        old_cmake = [p for p in env.get('CMAKE_PREFIX_PATH', '').split(':') if p]
+        env['CMAKE_PREFIX_PATH'] = ':'.join(missing + old_cmake)
+
+    return env
+
+
 @dataclass
 class ManagedProcess:
     name: str
@@ -72,12 +119,12 @@ class ManagedProcess:
 
 # Match cmdline fragments of leftover studio children (not studio.launch itself).
 _NAV_ORPHANS = (
-    'studio_nav_camera.launch.py',
     'studio_nav2.launch.py',
+    'studio_gc_planner.launch.py',
     'test_detect_align.launch.py',
     'test_wp_align.launch.py',
     'test_oms.launch.py',
-    'studio_nav.launch.py',
+    'studio_commission.launch.py',
     'studio_localize.launch.py',
     'slam_tele_grip.py',
     'slam_tele_allterrain.py',
@@ -86,8 +133,9 @@ _NAV_ORPHANS = (
     'lib/skill23_studio/cn_',
     'lib/skill23_studio/studio_align',
     'lib/skill23_studio/studio_detect_align',
-    'lib/oms/oms_rotation',
-    'lib/oms/oms_vertical',
+    # 'lib/oms/oms_' covers the single oms_all node, oms_test and any
+    # leftover per-axis executables from an older install.
+    'lib/oms/oms_',
     'cn_obstacle_detector',
     'cn_collision_checker',
     'cn_planner',
@@ -221,14 +269,46 @@ def _pkill_patterns(patterns: Iterable[str]) -> None:
                 pass
 
 
+_OMS_PKILL = (
+    'test_oms.launch.py',
+    'oms/launch/oms.launch.py',
+    'lib/oms/oms_',
+)
+
+
+def _reap_oms(*, kill_titan: bool = True) -> None:
+    """Force-kill OMS launch + nodes (+ Titan control_server when safe)."""
+    pats = list(_OMS_PKILL)
+    if kill_titan:
+        pats.extend(('manual_composition', '__node:=control_server'))
+    _pkill_patterns(pats)
+    time.sleep(0.3)
+    _pkill_patterns(pats)
+
+
+def _oms_orphans_alive() -> bool:
+    return any(_cmdline_has(p) for p in _OMS_PKILL)
+
+
+# GC+Planner only — never bare map_server/planner_server (shared with Nav2).
+_GC_PKILL = (
+    'studio_gc_planner.launch.py',
+    'lifecycle_manager_gc_planner',
+)
+
+
+def _reap_gc_planner() -> None:
+    _pkill_patterns(_GC_PKILL)
+
+
 # Safe for pkill -f (will not match Studio's sudo env AMENT_PREFIX_PATH line).
 _PKILL_SAFE = (
-    'studio_nav_camera.launch.py',
     'studio_nav2.launch.py',
+    'studio_gc_planner.launch.py',
     'test_detect_align.launch.py',
     'test_wp_align.launch.py',
     'test_oms.launch.py',
-    'studio_nav.launch.py',
+    'studio_commission.launch.py',
     'studio_localize.launch.py',
     'slam_tele_grip.py',
     'slam_tele_allterrain.py',
@@ -243,8 +323,7 @@ _PKILL_SAFE = (
     'lib/skill23_studio/cn_',
     'lib/skill23_studio/studio_align',
     'lib/skill23_studio/studio_detect_align',
-    'lib/oms/oms_rotation',
-    'lib/oms/oms_vertical',
+    'lib/oms/oms_',
     'cn_obstacle_detector',
     'cn_collision_checker',
     'cn_planner',
@@ -370,9 +449,8 @@ class ProcessManager:
         return {
             'nav': (
                 self.running('nav')
-                or _cmdline_has('studio_nav.launch.py')
                 or _cmdline_has('studio_nav2.launch.py')
-                or _cmdline_has('studio_nav_camera.launch.py')),
+                or _cmdline_has('studio_commission.launch.py')),
             'localize': (
                 self.running('localize')
                 or _cmdline_has('studio_localize.launch.py')),
@@ -387,13 +465,31 @@ class ProcessManager:
                 or _cmdline_has('dabai.launch.py')
                 or _cmdline_has('gemini_e.launch.py')
                 or _cmdline_has('__node:=camera_container')),
+            'oms': self.oms_nodes_alive(),
+            'gc_planner': (
+                self.running('gc_planner')
+                or _cmdline_has('studio_gc_planner.launch.py')
+                or _cmdline_has('lifecycle_manager_gc_planner')),
         }
+
+    def oms_standalone_alive(self) -> bool:
+        return (
+            self.running('oms')
+            or _cmdline_has('test_oms.launch.py'))
+
+    def oms_nodes_alive(self) -> bool:
+        return (
+            self.oms_standalone_alive()
+            or _oms_orphans_alive()
+            or _cmdline_has('lib/oms/oms_all'))
 
     def nav2_component_status(self) -> Dict[str, Dict[str, Any]]:
         """Process-level health for Nav2 stack status panel."""
         stack_up = (
             self.running('nav')
+            or self.running('gc_planner')
             or _cmdline_has('studio_nav2.launch.py')
+            or _cmdline_has('studio_gc_planner.launch.py')
             or _cmdline_has('__node:=nav2_container')
             or _cmdline_has('component_container_isolated'))
         checks = (
@@ -424,9 +520,14 @@ class ProcessManager:
         return out
 
     def require_stacks_idle(self, *, wanting: str) -> None:
-        """Refuse to start if another HW stack (or the same one) is already up."""
+        """Refuse to start if a *different* HW stack is already up."""
         alive = self.stacks_alive()
-        blockers = [n for n in ('nav', 'localize', 'slam') if alive.get(n)]
+        blockers = [
+            n for n in ('nav', 'localize', 'slam', 'gc_planner')
+            if alive.get(n) and n != wanting
+        ]
+        if wanting != 'oms' and self.oms_standalone_alive():
+            blockers.append('oms')
         if not blockers:
             return
         names = ', '.join(blockers)
@@ -443,6 +544,18 @@ class ProcessManager:
 
     def _wait_stack_idle(self, name: str, timeout: float = 12.0) -> None:
         """Block until no managed launch or cmdline match for this stack."""
+        if name == 'gc_planner':
+            deadline = time.time() + timeout
+            while time.time() < deadline:
+                if not self.stacks_alive()['gc_planner']:
+                    return
+                _reap_gc_planner()
+                time.sleep(0.25)
+            if self.stacks_alive().get('gc_planner'):
+                raise RuntimeError(
+                    f'gc_planner stack still running after {timeout:.0f}s '
+                    f'(leftover nodes). Run stop_studio_stack.sh, then retry.')
+            return
         if name not in ('nav', 'localize', 'slam'):
             return
         deadline = time.time() + timeout
@@ -475,6 +588,7 @@ class ProcessManager:
         *,
         cwd: Optional[str] = None,
         raw_cmd: Optional[List[str]] = None,
+        echo_terminal: bool = False,
     ) -> ManagedProcess:
         if raw_cmd:
             cmd = list(raw_cmd)
@@ -488,13 +602,50 @@ class ProcessManager:
             log_f.flush()
 
         log_f = open(log_path, 'a', encoding='utf-8')
-        popen = subprocess.Popen(
-            cmd,
-            cwd=cwd or os.path.expanduser('~'),
-            stdout=log_f,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,
-        )
+        launch_env = _workspace_launch_env()
+        if echo_terminal:
+            popen = subprocess.Popen(
+                cmd,
+                cwd=cwd or os.path.expanduser('~'),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+                bufsize=1,
+                text=True,
+                env=launch_env,
+            )
+            prefix = f'[{name}] '
+
+            def _tee() -> None:
+                try:
+                    assert popen.stdout is not None
+                    for line in popen.stdout:
+                        try:
+                            log_f.write(line)
+                            log_f.flush()
+                        except Exception:
+                            pass
+                        try:
+                            sys.stdout.write(prefix + line)
+                            sys.stdout.flush()
+                        except Exception:
+                            pass
+                finally:
+                    try:
+                        log_f.close()
+                    except Exception:
+                        pass
+
+            threading.Thread(target=_tee, daemon=True, name=f'tee-{name}').start()
+        else:
+            popen = subprocess.Popen(
+                cmd,
+                cwd=cwd or os.path.expanduser('~'),
+                stdout=log_f,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+                env=launch_env,
+            )
         mp = ManagedProcess(
             name=name, popen=popen, cmd=cmd, log_path=str(log_path))
         self._procs[name] = mp
@@ -543,6 +694,22 @@ class ProcessManager:
             reap_studio_orphans(
                 nav=True, camera=False, keep_pids=self._keep_pids(),
                 force_pkill=True)
+        elif name == 'gc_planner':
+            # Launch often dies before children; reap by name so a quick
+            # Start cannot collide with a still-shutting-down prior launch.
+            _reap_gc_planner()
+            time.sleep(0.2)
+            _reap_gc_planner()
+        elif name == 'oms':
+            # Always name-reap: launch often exits and leaves sudo Titan + OMS
+            # nodes behind. Do not skip when managed Popen is already dead.
+            kill_titan = not any(
+                self.stacks_alive().get(k) for k in ('nav', 'localize', 'slam'))
+            _reap_oms(kill_titan=kill_titan)
+            deadline = time.time() + 3.0
+            while time.time() < deadline and _oms_orphans_alive():
+                _reap_oms(kill_titan=kill_titan)
+                time.sleep(0.2)
         elif name == 'camera':
             reap_studio_orphans(
                 nav=False, camera=True, keep_pids=self._keep_pids(),
@@ -597,7 +764,7 @@ class ProcessManager:
         if slam_params_file:
             args.append(f'slam_params_file:={slam_params_file}')
         with self._stack_lock:
-            self._stop_other_hw_stacks()
+            self.require_stacks_idle(wanting='slam')
             self.stop('slam')
             self._wait_stack_idle('slam')
             return self._launch('slam', args)
@@ -618,7 +785,7 @@ class ProcessManager:
                 if existing is not None and existing.popen.poll() is None:
                     return existing
                 raise RuntimeError('localize already running')
-            self._stop_other_hw_stacks()
+            self.require_stacks_idle(wanting='localize')
             self.stop('localize')
             self._wait_stack_idle('localize')
             return self._launch(
@@ -640,37 +807,38 @@ class ProcessManager:
             self, robot: str, map_yaml: str, *,
             with_camera: bool = False,
             with_align: Optional[bool] = None,
-            stack: str = 'custom') -> ManagedProcess:
+            with_detect_align: Optional[bool] = None,
+            stack: str = 'nav2') -> ManagedProcess:
         if not map_yaml or not os.path.isfile(map_yaml):
             raise FileNotFoundError(f'map not found: {map_yaml}')
-        stack = 'nav2' if str(stack).lower() == 'nav2' else 'custom'
+        if str(stack).lower() not in ('nav2', ''):
+            raise ValueError(f'Unsupported nav stack {stack!r} — use nav2')
         if with_align is None:
             with_align = not with_camera
+        if with_detect_align is None:
+            with_detect_align = bool(with_camera)
+        with_detect_align = bool(with_detect_align) and bool(with_camera)
         with self._stack_lock:
-            # Localize/slam share grip/ekf/lidar — stop them first so orphans
-            # cannot survive beside a new nav stack (duplicate cn_* / grip_node).
-            self._stop_other_hw_stacks()
+            self.require_stacks_idle(wanting='nav')
             self.stop('nav')
             self._wait_stack_idle('nav')
-            if stack == 'nav2':
+            if with_camera:
+                launch_file = 'studio_commission.launch.py'
+                args = [
+                    'launch', 'skill23_studio', launch_file,
+                    f'robot:={robot}',
+                    f'map:={map_yaml}',
+                    f'with_detect_align:={"true" if with_detect_align else "false"}',
+                ]
+            else:
                 launch_file = 'studio_nav2.launch.py'
                 args = [
                     'launch', 'skill23_studio', launch_file,
                     f'robot:={robot}',
                     f'map:={map_yaml}',
-                    f'with_camera:={"true" if with_camera else "false"}',
+                    'with_camera:=false',
+                    'with_detect_align:=false',
                     f'with_align:={"true" if with_align else "false"}',
-                ]
-            else:
-                launch_file = (
-                    'studio_nav_camera.launch.py'
-                    if with_camera else 'studio_nav.launch.py')
-                args = [
-                    'launch', 'skill23_studio', launch_file,
-                    f'robot:={robot}',
-                    f'map:={map_yaml}',
-                    'enable_bridge:=false',
-                    'http_port:=8084',
                 ]
             return self._launch('nav', args)
 
@@ -678,6 +846,32 @@ class ProcessManager:
         with self._stack_lock:
             self.stop('nav')
             self._wait_stack_idle('nav')
+
+    def start_gc_planner(self, robot: str, map_yaml: str) -> ManagedProcess:
+        """Map server + global costmap (static+inflation) + planner_server only."""
+        if not map_yaml or not os.path.isfile(map_yaml):
+            raise FileNotFoundError(f'map not found: {map_yaml}')
+        with self._stack_lock:
+            self.require_stacks_idle(wanting='gc_planner')
+            # Idempotent: a second Start while bringup is in progress used to
+            # SIGINT the fresh ros2 process (KeyboardInterrupt during import).
+            existing = self._procs.get('gc_planner')
+            if existing is not None and existing.popen.poll() is None:
+                return existing
+            self.stop('gc_planner')
+            self._wait_stack_idle('gc_planner')
+            # Let prior SIGINT settle so it cannot hit the new session.
+            time.sleep(0.4)
+            return self._launch('gc_planner', [
+                'launch', 'skill23_studio', 'studio_gc_planner.launch.py',
+                f'robot:={robot}',
+                f'map:={map_yaml}',
+            ])
+
+    def stop_gc_planner(self) -> None:
+        with self._stack_lock:
+            self.stop('gc_planner')
+            self._wait_stack_idle('gc_planner')
 
     def start_camera(self, *, enable_depth: bool = False) -> ManagedProcess:
         """Orbbec Gemini E — node up with toggle_color / toggle_depth.
@@ -705,6 +899,62 @@ class ProcessManager:
 
     def stop_camera(self) -> None:
         self.stop('camera')
+
+    def start_oms(self, robot: str) -> Optional[ManagedProcess]:
+        """Launch Titan + OMS nodes, or no-op if OMS is already up."""
+        if robot not in ('allterrain', 'grip', 'mecanum', 'xdrive'):
+            raise ValueError(f'unknown robot {robot}')
+        with self._stack_lock:
+            if self.oms_nodes_alive():
+                return None
+            alive = self.stacks_alive()
+            blockers = [n for n in ('nav', 'localize', 'slam') if alive.get(n)]
+            if blockers:
+                raise RuntimeError(
+                    f'Cannot start OMS: Titan already in use ({", ".join(blockers)}). '
+                    'If commissioning/Nav2 is starting, wait until this page shows Ready — '
+                    'do not launch OMS a second time. Stop the other stack first to run OMS alone.')
+            self.stop('oms')
+            # Quiet like slam/nav: only the cmd line in the studio terminal;
+            # full output goes to studio_maps/_logs/oms.log (dashboard).
+            return self._launch(
+                'oms',
+                [
+                    'launch', 'oms', 'test_oms.launch.py',
+                    f'robot:={robot}',
+                    'auto_home:=false',
+                ],
+                echo_terminal=False,
+            )
+
+    def stop_oms(self) -> None:
+        """Stop standalone OMS (test_oms) + Titan. Never leave orphans.
+
+        Refuse only when Nav2/commission owns OMS (nav up, no test_oms launch,
+        and we are not tracking a managed oms process). Orphaned OMS nodes
+        after a dead launch parent are always killable.
+        """
+        nav_up = bool(self.stacks_alive().get('nav'))
+        managed = self.running('oms')
+        standalone_launch = _cmdline_has('test_oms.launch.py')
+        if (
+            nav_up
+            and not managed
+            and not standalone_launch
+            and self.oms_nodes_alive()
+        ):
+            raise RuntimeError(
+                'OMS is running inside commissioning / Nav2. '
+                'Use Stop nav — do not stop OMS alone.')
+        with self._stack_lock:
+            self.stop('oms')
+            # Extra pass if launch died before stop and left orphans.
+            if not nav_up and _oms_orphans_alive():
+                _reap_oms(kill_titan=True)
+            if _oms_orphans_alive():
+                raise RuntimeError(
+                    'OMS stop incomplete — some oms_* / test_oms processes '
+                    'are still alive. Check sudo -n pkill permissions.')
 
     def save_map(self, out_prefix: str) -> subprocess.CompletedProcess:
         """Save /map to out_prefix.yaml + .pgm via map_saver_cli (same user as bridge)."""

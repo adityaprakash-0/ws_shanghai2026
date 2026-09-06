@@ -3,7 +3,7 @@ control_server:
 
     titan:
       enabled: true
-      sensors: ["titan0", "titan1"]  # titan1: OMS rotate m_0 + lift m_2
+      sensors: ["titan0", "titan1"]  # titan1: OMS rotate m_2, lift m_1, home lim m_0
       titan0:
         can_id: 42
         motor_freq: 15600
@@ -38,34 +38,35 @@ control_server:
       titan1:
         can_id: 43
         motor_freq: 15600
-        # OMS: m_0 rotate, m_2 lift. m_1/m_3 unused.
-        encoder_rate_hz: 20
-        motor_update_rate_hz: 50
+        # OMS on titan1: m_2 rotate, m_1 lift, m_3 Cypher linear encoder.
+        # m_0 limit_rev = rotation home; m_0 limit_fwd = linear home.
+        encoder_rate_hz: 10
+        motor_update_rate_hz: 20
         limit_switches: true
         enable_freshness: true
-        m_0:  # OMS rotation
+        m_0:  # limit_rev=rotation home, limit_fwd=linear home
+          encoder_mode: "quadrature"
+          dist_per_tick: 1.0
+          invert_motor: false
+          invert_encoder: true
+          invert_rpm: false
+        m_1:  # OMS belt lift — limit_fwd=up (home), limit_rev=down (floor)
           encoder_mode: "quadrature"
           dist_per_tick: 1.0
           invert_motor: true
           invert_encoder: true
           invert_rpm: false
-        m_1:
+        m_2:  # OMS rotation
+          encoder_mode: "quadrature"
+          dist_per_tick: 1.0
+          invert_motor: false
+          invert_encoder: true
+          invert_rpm: false
+        m_3:  # Cypher Max linear encoder (quadrature)
           encoder_mode: "quadrature"
           dist_per_tick: 1.0
           invert_motor: true
           invert_encoder: true
-          invert_rpm: false
-        m_2:  # OMS lift
-          encoder_mode: "quadrature"
-          dist_per_tick: 1.0
-          invert_motor: false
-          invert_encoder: false
-          invert_rpm: false
-        m_3:
-          encoder_mode: "quadrature"
-          dist_per_tick: 1.0
-          invert_motor: false
-          invert_encoder: false
           invert_rpm: false
 
     imu:

@@ -1,4 +1,4 @@
-"""Shared helpers for skill23_custom_nav."""
+"""Shared helpers for align / detect+align nodes."""
 
 from __future__ import annotations
 

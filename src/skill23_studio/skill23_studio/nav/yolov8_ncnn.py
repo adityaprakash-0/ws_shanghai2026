@@ -204,6 +204,8 @@ class YoloV8Ncnn:
                 want_id = mapped
         best: Optional[Detection] = None
         for det in dets:
+            if int(det.class_id) == 0:
+                continue
             if det.area < min_area:
                 continue
             if want_id >= 0 and int(det.class_id) != want_id:

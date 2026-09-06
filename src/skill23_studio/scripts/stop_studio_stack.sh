@@ -13,7 +13,7 @@ echo "studio_stop_stack: reaping nav/camera leftovers…"
 
 # Skip the whole sweep when nothing matches — map/session clicks used to spend
 # many seconds here on empty pkill invocations.
-if ! pgrep -af -- 'studio_nav|studio_localize|slam_tele_|manual_composition|__node:=control_server|ydlidar_ros2_driver|lidar_merger|lib/skill23_studio/cn_|lib/skill23_studio/studio_align|lib/skill23_studio/studio_detect_align|studio_camera_gate|test_detect_align.launch.py|dabai.launch.py|gemini_e|camera_container|ob_camera_node|bt_navigator|planner_server|controller_server|nav2_container|lifecycle_manager_localization|__node:=map_server|__node:=amcl|lib/skill23_amcl/amcl|__node:=studio_joy_node' >/dev/null 2>&1; then
+if ! pgrep -af -- 'studio_nav|studio_commission|studio_localize|studio_gc_planner|slam_tele_|manual_composition|__node:=control_server|ydlidar_ros2_driver|lidar_merger|lib/skill23_studio/cn_|lib/skill23_studio/studio_align|lib/skill23_studio/studio_detect_align|lib/oms/oms_|studio_camera_gate|test_detect_align.launch.py|test_oms.launch.py|dabai.launch.py|gemini_e|camera_container|ob_camera_node|bt_navigator|planner_server|controller_server|nav2_container|lifecycle_manager_localization|__node:=map_server|__node:=amcl|lib/skill23_amcl/amcl|__node:=studio_joy_node' >/dev/null 2>&1; then
   echo "studio_stop_stack: nothing running"
   exit 0
 fi
@@ -27,11 +27,12 @@ pkill_pat() {
 }
 
 # Outer launches
-pkill_pat 'studio_nav_camera.launch.py'
+pkill_pat 'studio_gc_planner.launch.py'
 pkill_pat 'studio_nav2.launch.py'
 pkill_pat 'test_detect_align.launch.py'
 pkill_pat 'test_wp_align.launch.py'
-pkill_pat 'studio_nav.launch.py'
+pkill_pat 'test_oms.launch.py'
+pkill_pat 'studio_commission.launch.py'
 pkill_pat 'studio_localize.launch.py'
 pkill_pat 'slam_tele_grip.py'
 pkill_pat 'slam_tele_allterrain.py'
@@ -53,6 +54,8 @@ pkill_pat '__node:=studio_joy_node'
 pkill_pat 'lib/skill23_studio/cn_'
 pkill_pat 'lib/skill23_studio/studio_align'
 pkill_pat 'lib/skill23_studio/studio_detect_align'
+# Single OMS node (oms_all); prefix also clears legacy per-axis executables.
+pkill_pat 'lib/oms/oms_'
 pkill_pat 'cn_obstacle_detector'
 pkill_pat 'cn_collision_checker'
 pkill_pat 'cn_planner'
@@ -67,6 +70,7 @@ pkill_pat '__node:=amcl'
 pkill_pat '__node:=map_server'
 pkill_pat 'lib/nav2_amcl/amcl'
 pkill_pat 'lib/nav2_map_server/map_server'
+pkill_pat 'lifecycle_manager_gc_planner'
 pkill_pat 'lifecycle_manager_localization'
 # Stale gate from older installs
 pkill_pat 'studio_camera_gate'
