@@ -354,9 +354,14 @@
               style="width:100%;margin:0.35rem 0">Save WPs + sequences to Pi</button>
             <div class="deploy-dock-label deploy-wp-tasks-label" id="deployWpTasksLabel">WP tasks</div>
             <label class="hint deploy-mission-seq" id="navAlignRow"
-              style="display:flex;align-items:center;gap:0.4rem;margin:0.25rem 0 0.35rem">
-              <input type="checkbox" id="chkStartAlignNav" checked>
+              style="display:flex;align-items:center;gap:0.4rem;margin:0.25rem 0 0.2rem">
+              <input type="checkbox" id="chkStartAlignNav">
               Start Nav2 with Align node
+            </label>
+            <label class="hint deploy-mission-seq" id="navCobraRow"
+              style="display:flex;align-items:center;gap:0.4rem;margin:0.15rem 0 0.35rem">
+              <input type="checkbox" id="chkStartCobraNav">
+              Start Nav2 with Cobra align node
             </label>
             <div id="wpTaskList" class="wp-task-list"></div>
           </div>
@@ -414,6 +419,33 @@
             </button>
             <button class="btn btn-ghost" id="btnGcPlannerStop" type="button" hidden>Stop GC+Planner</button>
             <p class="hint" id="gcPlannerHint">Lightweight planner preview — open RViz2 (map + /global_costmap/costmap) on the Pi.</p>
+            <div id="gcPlannerParams" class="gc-planner-params" hidden>
+              <div class="deploy-dock-label">Planner / smoother (live)</div>
+              <p class="hint">Changes apply immediately — no restart. Then Generate path.</p>
+              <label>smooth_path
+                <select id="gcSmoothPath"><option value="true">true</option><option value="false">false</option></select>
+              </label>
+              <label>smooth_iterations
+                <input type="number" id="gcSmoothIter" min="0" max="50" step="1" value="10">
+              </label>
+              <label>max_deviation (m)
+                <input type="number" id="gcMaxDev" min="0" max="0.5" step="0.01" value="0.05">
+              </label>
+              <label>w_distance
+                <input type="number" id="gcWDist" min="0" step="0.1" value="0.5">
+              </label>
+              <label>w_cell_cost
+                <input type="number" id="gcWCell" min="0" step="1" value="20">
+              </label>
+              <label>w_inflation
+                <input type="number" id="gcWInf" min="0" step="0.1" value="1">
+              </label>
+              <label>turn_penalty
+                <input type="number" id="gcTurn" min="0" step="1" value="16">
+              </label>
+              <button class="btn btn-saffron btn-compact" id="btnGcApplyParams" type="button"
+                style="width:100%;margin:0.35rem 0">Apply planner params</button>
+            </div>
             <button class="btn btn-ghost" id="btnSimEnter">Enter sim</button>
             <div id="simControls" hidden>
               <label class="hint" for="simPlannerSelect" style="display:block;margin:0.25rem 0 0.15rem">Planner</label>

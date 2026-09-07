@@ -11,6 +11,7 @@
 #include "nav2_costmap_2d/costmap_2d_ros.hpp"
 #include "nav2_util/lifecycle_node.hpp"
 #include "nav_msgs/msg/path.hpp"
+#include "rcl_interfaces/msg/set_parameters_result.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp_lifecycle/lifecycle_node.hpp"
 #include "tf2_ros/buffer.h"
@@ -133,6 +134,8 @@ private:
   std::vector<uint16_t> lethal_dist_;
   int lethal_dist_width_{0};
   int lethal_dist_height_{0};
+
+  rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr dyn_params_handler_;
 };
 
 }  // namespace skill23_clearance_planner

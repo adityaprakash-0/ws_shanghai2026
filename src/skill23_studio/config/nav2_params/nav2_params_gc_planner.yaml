@@ -27,8 +27,8 @@ global_costmap:
         map_subscribe_transient_local: true
       inflation_layer:
         plugin: nav2_costmap_2d::InflationLayer
-        inflation_radius: 0.29
-        cost_scaling_factor: 5.0
+        inflation_radius: 0.28
+        cost_scaling_factor: 6.0
 
 planner_server:
   ros__parameters:
@@ -41,7 +41,7 @@ planner_server:
       use_final_approach_orientation: true
       allow_unknown: false
       allow_narrow: false
-      shift_goal_off_inscribed: false
+      shift_goal_off_inscribed: true
       straight_line_only: false
       smooth_path: true
       smooth_iterations: 10

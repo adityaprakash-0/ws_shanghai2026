@@ -13,7 +13,7 @@ echo "studio_stop_stack: reaping nav/camera leftovers…"
 
 # Skip the whole sweep when nothing matches — map/session clicks used to spend
 # many seconds here on empty pkill invocations.
-if ! pgrep -af -- 'studio_nav|studio_commission|studio_localize|studio_gc_planner|slam_tele_|manual_composition|__node:=control_server|ydlidar_ros2_driver|lidar_merger|lib/skill23_studio/cn_|lib/skill23_studio/studio_align|lib/skill23_studio/studio_detect_align|lib/oms/oms_|studio_camera_gate|test_detect_align.launch.py|test_oms.launch.py|dabai.launch.py|gemini_e|camera_container|ob_camera_node|bt_navigator|planner_server|controller_server|nav2_container|lifecycle_manager_localization|__node:=map_server|__node:=amcl|lib/skill23_amcl/amcl|__node:=studio_joy_node' >/dev/null 2>&1; then
+if ! pgrep -af -- 'studio_nav|studio_commission|studio_localize|studio_gc_planner|slam_tele_|manual_composition|__node:=control_server|ydlidar_ros2_driver|lidar_merger|lib/skill23_studio/cn_|lib/skill23_studio/studio_align|lib/skill23_studio/studio_cobra|lib/skill23_studio/studio_detect_align|lib/oms/oms_|studio_camera_gate|test_detect_align.launch.py|test_wp_align.launch.py|test_wp_cobra.launch.py|test_oms.launch.py|dabai.launch.py|gemini_e|camera_container|ob_camera_node|bt_navigator|planner_server|controller_server|nav2_container|lifecycle_manager_localization|__node:=map_server|__node:=amcl|lib/skill23_amcl/amcl|__node:=studio_joy_node' >/dev/null 2>&1; then
   echo "studio_stop_stack: nothing running"
   exit 0
 fi
@@ -31,6 +31,7 @@ pkill_pat 'studio_gc_planner.launch.py'
 pkill_pat 'studio_nav2.launch.py'
 pkill_pat 'test_detect_align.launch.py'
 pkill_pat 'test_wp_align.launch.py'
+pkill_pat 'test_wp_cobra.launch.py'
 pkill_pat 'test_oms.launch.py'
 pkill_pat 'studio_commission.launch.py'
 pkill_pat 'studio_localize.launch.py'
@@ -53,6 +54,7 @@ pkill_pat '__node:=studio_joy_node'
 # Custom-nav nodes
 pkill_pat 'lib/skill23_studio/cn_'
 pkill_pat 'lib/skill23_studio/studio_align'
+pkill_pat 'lib/skill23_studio/studio_cobra'
 pkill_pat 'lib/skill23_studio/studio_detect_align'
 # Single OMS node (oms_all); prefix also clears legacy per-axis executables.
 pkill_pat 'lib/oms/oms_'

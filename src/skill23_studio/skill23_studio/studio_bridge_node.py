@@ -34,6 +34,11 @@ from std_srvs.srv import SetBool
 from tf2_ros import Buffer, TransformException, TransformListener
 
 from skill23_studio import map_pipeline as maps
+from skill23_studio.nav.light_tower_patterns import (
+    get_pattern,
+    list_patterns,
+    pattern_duration,
+)
 from skill23_studio.commission_mission import (
     COMMISSION_OBJECTS,
     default_config,
@@ -343,6 +348,17 @@ class StudioBridge(Node):
         self._align_cancel_pub = self.create_publisher(Empty, '/studio/align/cancel', 10)
         self.create_subscription(
             String, '/studio/align/result', self._on_studio_align_result, 10)
+        self._cobra_cmd_pub = self.create_publisher(String, '/studio/cobra/cmd', 10)
+        self._cobra_cancel_pub = self.create_publisher(Empty, '/studio/cobra/cancel', 10)
+        self.create_subscription(
+            String, '/studio/cobra/result', self._on_studio_align_result, 10)
+        self._light_gen = 0
+        self._light_cli = None
+        try:
+            from studica_control.srv import SetData  # type: ignore
+            self._light_cli = self.create_client(SetData, '/light_tower/set')
+        except Exception as exc:
+            self.get_logger().warn(f'light_tower SetData unavailable: {exc}')
         self._detect_cmd_pub = self.create_publisher(
             String, '/studio/detect_align/cmd', 10)
         self._detect_cancel_pub = self.create_publisher(
@@ -569,9 +585,15 @@ class StudioBridge(Node):
         except Exception:
             pass
         try:
+            self._cobra_cancel_pub.publish(Empty())
+        except Exception:
+            pass
+        try:
             self._detect_cancel_pub.publish(Empty())
         except Exception:
             pass
+        self._light_gen += 1
+        self._light_tower_set('off')
         self._cancel_nav2_goal_only()
         if str((self._mission or {}).get('state', '')).lower() in (
                 'running', 'wait_goal', 'wait_action', 'recovering'):
@@ -590,7 +612,9 @@ class StudioBridge(Node):
     @staticmethod
     def _nav2_wait_seconds(wp: dict) -> float:
         action = (wp or {}).get('action')
-        if not isinstance(action, dict) or action.get('type') != 'wait':
+        if not isinstance(action, dict):
+            return 0.0
+        if action.get('type') not in ('wait', 'wait_light'):
             return 0.0
         try:
             seconds = float(action.get('seconds', 0.0))
@@ -599,6 +623,80 @@ class StudioBridge(Node):
         if not math.isfinite(seconds):
             return 0.0
         return min(3600.0, max(0.0, seconds))
+
+    def _light_tower_set(self, cmd: str) -> bool:
+        cli = getattr(self, '_light_cli', None)
+        if cli is None:
+            return False
+        try:
+            if not cli.service_is_ready():
+                return False
+            from studica_control.srv import SetData  # type: ignore
+            req = SetData.Request()
+            req.params = str(cmd)
+            cli.call_async(req)
+            return True
+        except Exception as exc:
+            self.get_logger().warn(f'light_tower set "{cmd}" failed: {exc}')
+            return False
+
+    def _play_light_pattern(self, pattern: str, gen: int) -> None:
+        for cmd, dwell in get_pattern(pattern):
+            if gen != self._light_gen:
+                break
+            self._light_tower_set(cmd)
+            end = time.time() + max(0.0, float(dwell))
+            while time.time() < end and gen == self._light_gen:
+                time.sleep(0.05)
+        if gen == self._light_gen:
+            self._light_tower_set('off')
+
+    def _nav2_start_wait_light(self, wp: dict, reached_idx: int) -> None:
+        n = len(self._nav2_seq_wps)
+        action = self._wp_action(wp)
+        pattern = str(action.get('pattern') or 'red_blink_3x')
+        seconds = self._nav2_wait_seconds(wp)
+        wait_s = max(seconds, pattern_duration(pattern), 0.5)
+        self._light_gen += 1
+        gen = self._light_gen
+        threading.Thread(
+            target=self._play_light_pattern, args=(pattern, gen), daemon=True).start()
+        self._nav2_wait_until = time.time() + wait_s
+        self._nav2_action_cmd_id = ''
+        self._nav2_action_kind = 'wait_light'
+        self._nav2_action_deadline = 0.0
+        self._nav2_set_mission(
+            'wait_action',
+            f'wp {reached_idx + 1}/{n} wait_light {pattern} {wait_s:g}s')
+        self.get_logger().info(
+            f'Waypoint {reached_idx + 1}/{n} reached — wait_light '
+            f'pattern={pattern} for {wait_s:g}s '
+            '(enable light_tower in hw_params if no flash)')
+
+    def _nav2_start_cobra_action(self, wp: dict, reached_idx: int) -> None:
+        n = len(self._nav2_seq_wps)
+        action = self._wp_action(wp)
+        timeout = self._nav2_action_timeout('cobra_align', action)
+        cmd_id = f'nav2_{self._nav2_seq_gen}_{reached_idx}_{int(time.time() * 1000)}'
+        payload: Dict[str, Any] = {
+            'cmd_id': cmd_id,
+            'mode': 'cobra_align',
+        }
+        try:
+            cmd_timeout = float(action.get('timeout_sec', 0.0) or 0.0)
+        except (TypeError, ValueError):
+            cmd_timeout = 0.0
+        if cmd_timeout > 0.0 and math.isfinite(cmd_timeout):
+            payload['timeout_sec'] = min(60.0, max(2.0, cmd_timeout))
+        self._cobra_cmd_pub.publish(String(data=json.dumps(payload)))
+        self._nav2_action_cmd_id = cmd_id
+        self._nav2_action_kind = 'cobra_align'
+        self._nav2_action_deadline = time.time() + timeout + 15.0
+        self._nav2_set_mission(
+            'wait_action', f'wp {reached_idx + 1}/{n} cobra_align')
+        self.get_logger().info(
+            f'Waypoint {reached_idx + 1}/{n} reached — cobra_align '
+            '(enable cobra in hw_params)')
 
     def _nav2_set_mission(self, state: str, detail: str = '') -> None:
         n = len(self._nav2_seq_wps)
@@ -1131,6 +1229,12 @@ class StudioBridge(Node):
         if atype in ('align', 'align_move'):
             self._nav2_start_align_action(wp, reached_idx, atype)
             return
+        if atype == 'cobra_align':
+            self._nav2_start_cobra_action(wp, reached_idx)
+            return
+        if atype == 'wait_light':
+            self._nav2_start_wait_light(wp, reached_idx)
+            return
         wait_s = self._nav2_wait_seconds(wp)
         if wait_s <= 0.0:
             self._send_nav2_seq_pose()
@@ -1166,6 +1270,10 @@ class StudioBridge(Node):
             except Exception:
                 pass
             try:
+                self._cobra_cancel_pub.publish(Empty())
+            except Exception:
+                pass
+            try:
                 self._detect_cancel_pub.publish(Empty())
             except Exception:
                 pass
@@ -1177,6 +1285,8 @@ class StudioBridge(Node):
         self._nav2_set_mission('wait_action', f'waiting {max(0.0, remaining):.1f}s')
         if remaining > 0.0:
             return
+        self._light_gen += 1
+        self._light_tower_set('off')
         self._nav2_finish_action_then_next('Waypoint wait complete')
 
     def _on_nav2_seq_result(self, gen: int, rfut) -> None:
@@ -2604,6 +2714,10 @@ class StudioBridge(Node):
                     })
                 elif path == '/api/logs':
                     self._json(200, bridge._process_logs(80))
+                elif path == '/api/gc_planner/params':
+                    self._json(200, bridge._gc_planner_params({}))
+                elif path == '/api/light_tower/patterns':
+                    self._json(200, {'ok': True, 'patterns': list_patterns()})
                 elif path in ('/api/oms', '/api/oms/status'):
                     self._json(200, bridge._oms_api_status())
                 elif path == '/api/oms/config':
@@ -2623,6 +2737,107 @@ class StudioBridge(Node):
 
         server = ThreadingHTTPServer(('0.0.0.0', self.http_port), Handler)
         server.serve_forever()
+
+    _GC_PLANNER_KEYS = (
+        'GridBased.smooth_path',
+        'GridBased.smooth_iterations',
+        'GridBased.max_deviation',
+        'GridBased.straight_line_only',
+        'GridBased.w_distance',
+        'GridBased.w_cell_cost',
+        'GridBased.w_inflation',
+        'GridBased.turn_penalty',
+        'GridBased.narrow_wall_penalty',
+        'GridBased.edt_narrow_weight',
+        'GridBased.allow_unknown',
+        'GridBased.allow_narrow',
+        'GridBased.shift_goal_off_inscribed',
+        'GridBased.use_final_approach_orientation',
+    )
+
+    def _gc_planner_params(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        """Get or set ClearancePlanner params on /planner_server (live, no restart)."""
+        from rcl_interfaces.msg import Parameter as ParamMsg
+        from rcl_interfaces.msg import ParameterType, ParameterValue
+        from rcl_interfaces.srv import GetParameters, SetParameters
+
+        node_name = 'planner_server'
+        updates = body.get('params') if isinstance(body.get('params'), dict) else body
+        updates = {
+            k: v for k, v in (updates or {}).items()
+            if k in self._GC_PLANNER_KEYS or k.startswith('GridBased.')
+        }
+
+        if updates:
+            cli = self.create_client(SetParameters, f'/{node_name}/set_parameters')
+            if not cli.wait_for_service(timeout_sec=1.5):
+                raise RuntimeError('planner_server set_parameters not ready (is GC+Planner up?)')
+            req = SetParameters.Request()
+            for key, raw in updates.items():
+                p = ParamMsg()
+                p.name = key
+                pv = ParameterValue()
+                if isinstance(raw, bool):
+                    pv.type = ParameterType.PARAMETER_BOOL
+                    pv.bool_value = bool(raw)
+                elif isinstance(raw, int) and not isinstance(raw, bool):
+                    pv.type = ParameterType.PARAMETER_INTEGER
+                    pv.integer_value = int(raw)
+                else:
+                    pv.type = ParameterType.PARAMETER_DOUBLE
+                    pv.double_value = float(raw)
+                p.value = pv
+                req.parameters.append(p)
+            fut = cli.call_async(req)
+            done = threading.Event()
+
+            def _done(_f):
+                done.set()
+
+            fut.add_done_callback(_done)
+            if not done.wait(3.0):
+                raise RuntimeError('set_parameters timed out')
+            res = fut.result()
+            if res is None:
+                raise RuntimeError('set_parameters failed')
+            results = []
+            for i, r in enumerate(res.results):
+                results.append({
+                    'name': req.parameters[i].name if i < len(req.parameters) else '?',
+                    'successful': bool(r.successful),
+                    'reason': str(r.reason or ''),
+                })
+            # Fall through to read-back
+            _ = results
+
+        gcli = self.create_client(GetParameters, f'/{node_name}/get_parameters')
+        if not gcli.wait_for_service(timeout_sec=1.5):
+            raise RuntimeError('planner_server get_parameters not ready (is GC+Planner up?)')
+        greq = GetParameters.Request()
+        greq.names = list(self._GC_PLANNER_KEYS)
+        gfut = gcli.call_async(greq)
+        gdone = threading.Event()
+        gfut.add_done_callback(lambda _f: gdone.set())
+        if not gdone.wait(3.0):
+            raise RuntimeError('get_parameters timed out')
+        gres = gfut.result()
+        out: Dict[str, Any] = {}
+        if gres is not None:
+            for name, val in zip(self._GC_PLANNER_KEYS, gres.values):
+                if val.type == ParameterType.PARAMETER_BOOL:
+                    out[name] = bool(val.bool_value)
+                elif val.type == ParameterType.PARAMETER_INTEGER:
+                    out[name] = int(val.integer_value)
+                elif val.type == ParameterType.PARAMETER_DOUBLE:
+                    out[name] = float(val.double_value)
+                elif val.type == ParameterType.PARAMETER_STRING:
+                    out[name] = str(val.string_value)
+        return {
+            'ok': True,
+            'params': out,
+            'updated': bool(updates),
+            'keys': list(self._GC_PLANNER_KEYS),
+        }
 
     def _parse_slam_config(self, body: Dict[str, Any]) -> Dict[str, float]:
         prev = self.session.get('slam') or {}
@@ -2879,33 +3094,38 @@ class StudioBridge(Node):
             if module in ('commission', 'commissioning', 'detect'):
                 start_camera = True
                 with_align = False
+                with_cobra = False
                 module = 'commission'
             elif module in ('nav', 'navigation', 'localisation', 'localization'):
                 start_camera = False
-                # Dashboard checkbox: Start Nav2 with Align node (default on).
-                if 'with_align' in body:
-                    with_align = bool(body.get('with_align'))
-                else:
-                    with_align = True
+                # Dashboard checkboxes (default off).
+                with_align = bool(body.get('with_align')) if 'with_align' in body else False
+                with_cobra = bool(body.get('with_cobra')) if 'with_cobra' in body else False
                 module = 'nav'
             else:
                 module = 'commission' if start_camera else 'nav'
                 with_align = (
                     bool(body.get('with_align'))
-                    if 'with_align' in body else (not start_camera))
+                    if 'with_align' in body else False)
+                with_cobra = (
+                    bool(body.get('with_cobra'))
+                    if 'with_cobra' in body else False)
+            if module == 'commission' or start_camera:
+                with_cobra = False
             if 'start_detect_align' in body:
                 with_detect_align = bool(body.get('start_detect_align'))
             else:
                 with_detect_align = bool(start_camera)
             with_detect_align = with_detect_align and start_camera
-            # Align node is only for nav (no camera); never with Detect+Align stack.
+            # Align / Cobra nodes are only for nav (no camera).
             if start_camera:
                 with_align = False
+                with_cobra = False
             stack = 'nav2'
             yaml_path = maps.map_yaml_path(name)
             if not yaml_path.is_file():
                 raise FileNotFoundError(str(yaml_path))
-            # Nav module: Align YAML, no camera. Commissioning: camera + optional Detect+Align.
+            # Nav module: Align/Cobra YAML, no camera. Commissioning: camera + optional Detect+Align.
             self._cam_deploy_requested = False
             if not start_camera:
                 self._cam_ui = False
@@ -2918,6 +3138,7 @@ class StudioBridge(Node):
             mp = self.pm.start_nav(
                 robot, str(yaml_path),
                 with_camera=start_camera, with_align=with_align,
+                with_cobra=with_cobra,
                 with_detect_align=with_detect_align, stack=stack)
             self.session['phase'] = 'deploy'
             self.session['mode'] = 'arena'
@@ -2937,7 +3158,7 @@ class StudioBridge(Node):
                     f'Commissioning — Gemini E in launch (streams OFF); {da_msg}')
             self.get_logger().info(
                 f'Deploy START module={module} stack={stack} robot={robot} '
-                f'camera={start_camera} align={with_align} '
+                f'camera={start_camera} align={with_align} cobra={with_cobra} '
                 f'detect_align={with_detect_align} map={yaml_path} '
                 f'pid={mp.popen.pid} log={mp.log_path} cmd={" ".join(mp.cmd)}')
             return {
@@ -2947,6 +3168,7 @@ class StudioBridge(Node):
                 'map': str(yaml_path),
                 'camera': start_camera,
                 'with_align': with_align,
+                'with_cobra': with_cobra,
                 'with_detect_align': with_detect_align,
                 'camera_after_nav_startup': False,
                 'pid': mp.popen.pid,
@@ -3171,6 +3393,12 @@ class StudioBridge(Node):
                 'message': 'GC+Planner stopped',
                 'stacks': self.pm.stacks_alive(),
             }
+
+        if path == '/api/gc_planner/params':
+            return self._gc_planner_params(body or {})
+
+        if path == '/api/light_tower/patterns':
+            return {'ok': True, 'patterns': list_patterns()}
 
         if path == '/api/trail/clear':
             self._trail = []

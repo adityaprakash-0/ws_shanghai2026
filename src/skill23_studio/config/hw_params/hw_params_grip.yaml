@@ -174,14 +174,14 @@ control_server:
     # Light Tower — 5-output indicator LED tower
     # -------------------------------------------------------------------------
     light_tower:
-      enabled: false
-      sensors: ["status_tower"]
-      status_tower:
-        red_pin: 2
-        green_pin: 3
-        yellow_pin: 4
-        buzzer_pin: 5
-        enable_pin: 6
+      enabled: true
+      name: "light_tower"
+      pin_continuous: 0
+      pin_red: 1
+      pin_green: 2
+      pin_yellow: 3
+      pin_buzzer: 4
+      default_blink_hz: 1.0
 
     # -------------------------------------------------------------------------
     # Colore — Studica color sensor (CAN or USB)

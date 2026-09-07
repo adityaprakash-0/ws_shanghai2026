@@ -132,6 +132,7 @@ _NAV_ORPHANS = (
     'slam_tele_xdrive.py',
     'lib/skill23_studio/cn_',
     'lib/skill23_studio/studio_align',
+    'lib/skill23_studio/studio_cobra',
     'lib/skill23_studio/studio_detect_align',
     # 'lib/oms/oms_' covers the single oms_all node, oms_test and any
     # leftover per-axis executables from an older install.
@@ -322,6 +323,7 @@ _PKILL_SAFE = (
     'xdrive_node',
     'lib/skill23_studio/cn_',
     'lib/skill23_studio/studio_align',
+    'lib/skill23_studio/studio_cobra',
     'lib/skill23_studio/studio_detect_align',
     'lib/oms/oms_',
     'cn_obstacle_detector',
@@ -807,6 +809,7 @@ class ProcessManager:
             self, robot: str, map_yaml: str, *,
             with_camera: bool = False,
             with_align: Optional[bool] = None,
+            with_cobra: Optional[bool] = None,
             with_detect_align: Optional[bool] = None,
             stack: str = 'nav2') -> ManagedProcess:
         if not map_yaml or not os.path.isfile(map_yaml):
@@ -814,10 +817,15 @@ class ProcessManager:
         if str(stack).lower() not in ('nav2', ''):
             raise ValueError(f'Unsupported nav stack {stack!r} — use nav2')
         if with_align is None:
-            with_align = not with_camera
+            with_align = False
+        if with_cobra is None:
+            with_cobra = False
         if with_detect_align is None:
             with_detect_align = bool(with_camera)
         with_detect_align = bool(with_detect_align) and bool(with_camera)
+        if with_camera:
+            with_align = False
+            with_cobra = False
         with self._stack_lock:
             self.require_stacks_idle(wanting='nav')
             self.stop('nav')
@@ -839,6 +847,7 @@ class ProcessManager:
                     'with_camera:=false',
                     'with_detect_align:=false',
                     f'with_align:={"true" if with_align else "false"}',
+                    f'with_cobra:={"true" if with_cobra else "false"}',
                 ]
             return self._launch('nav', args)
 

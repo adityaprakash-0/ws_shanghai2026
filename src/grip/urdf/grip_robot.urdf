@@ -4,7 +4,7 @@
   <!-- ============================================================
        Source of truth for robot frames (grip).
        Footprint box: length 0.44 m × width 0.363 m × height 0.21 m.
-       LiDAR mounts: front +0.21 m, back -0.21 m on X; back yaw = π.
+       LiDAR mounts: front +0.192 m, back -0.192 m on X (optical center); back yaw = π.
        lidar_merger reads these poses from TF (no duplicated offsets).
        ============================================================ -->
 
@@ -46,7 +46,7 @@
   <joint name="laser_front_joint" type="fixed">
     <parent link="base_link"/>
     <child link="laser_front"/>
-    <origin xyz="0.21 0 0" rpy="0 0 0"/>
+    <origin xyz="0.192 0 0" rpy="0 0 0"/>
   </joint>
 
   <!-- Back YDLIDAR T-mini Plus: facing rearward (yaw = π) -->
@@ -54,7 +54,7 @@
   <joint name="laser_back_joint" type="fixed">
     <parent link="base_link"/>
     <child link="laser_back"/>
-    <origin xyz="-0.21 0 0" rpy="0 0 3.141592653589793"/>
+    <origin xyz="-0.192 0 0" rpy="0 0 3.141592653589793"/>
   </joint>
 
 </robot>

@@ -3,7 +3,7 @@
 # WHAT IT DOES (Commissioning / Nav2+camera — NOT the Navigation WP dropdown)
 # ---------------------------------------------------------------------------
 # Navigation WP actions are Wait / Align / Align+distance (robot body yaw via
-# /cmd_vel — see wp_align_*.yaml). Detect+Align is different:
+# /cmd_vel — see config/align/wp_align_*.yaml). Detect+Align is different:
 #
 #   Detect  = YOLO on one color snapshot → find object in image
 #   Align   = rotate OMS head so object is centered (gripper/camera yaw)

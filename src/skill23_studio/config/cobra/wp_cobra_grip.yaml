@@ -1,0 +1,23 @@
+# Grip — Cobra align (NO strafe: yaw + optional approach).
+# Enable cobra in hw_params_grip.yaml (cobra.enabled: true) before use.
+
+cobra_align:
+  ros__parameters:
+    cmd_topic: /studio/cobra/cmd
+    result_topic: /studio/cobra/result
+    cancel_topic: /studio/cobra/cancel
+    cmd_vel_topic: /cmd_vel
+    channel_prefix: /line_follower
+    allow_strafe: false
+    control_rate_hz: 20.0
+    timeout_sec: 20.0
+    confirm_frames: 8
+    error_tol: 0.10
+    kp: 1.0
+    duty_min: 0.12
+    duty_max: 0.28
+    approach_duty: 0.0
+    invert_error: false
+    channel_stale_sec: 0.5
+    hold_after_done_sec: 0.5
+    log_hz: 2.0

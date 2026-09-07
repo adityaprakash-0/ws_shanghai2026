@@ -1,0 +1,12 @@
+{
+  "robot": "grip",
+  "mode": "offline",
+  "created_at": 1788711045.805513,
+  "name": "grip_mock_1",
+  "updated_at": 1788711045.8063197,
+  "resolution": 0.05,
+  "max_laser_range": 10.0,
+  "min_laser_range": 0.05,
+  "phase": "mode",
+  "saved_at": 1788703095.84776
+}

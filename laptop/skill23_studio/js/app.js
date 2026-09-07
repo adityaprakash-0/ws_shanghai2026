@@ -32,6 +32,8 @@
     healthLastWrite: 0,
     healthLastSig: '',
     wpTaskIndex: 0,
+    lightPatterns: [],
+    gcParamsLoaded: false,
   };
 
   const $ = (id) => document.getElementById(id);
@@ -283,6 +285,9 @@
       setConnected(true);
       StudioApi.connectStream(onTelemetry);
       await refreshMaps();
+      StudioApi.lightTowerPatterns().then((res) => {
+        if (res && Array.isArray(res.patterns)) state.lightPatterns = res.patterns;
+      }).catch(() => {});
     } catch (e) {
       setConnected(false);
       alert(`Connect failed: ${e.message}`);
@@ -1394,7 +1399,7 @@
     if (hint && state.phase === 'deploy') {
       hint.innerHTML = isCommission()
         ? 'Commissioning Module G: mark pick1…, drop1…, home on waypoints. Assign objects→drops, Start Nav2+camera, then Start mission.'
-        : 'Navigation: Start Nav2. Tick “Start Nav2 with Align node” to launch Align for Wait / Align / Align+distance WP tasks.';
+        : 'Navigation: Start Nav2. Tick Align and/or Cobra only if WP tasks need them (both default off).';
     }
     const wpLabel = $('deployWpTasksLabel');
     if (wpLabel) {
@@ -1405,10 +1410,11 @@
     if (cmp) cmp.hidden = !inDeployCommission;
     const dap = $('detectAlignPanel');
     if (dap) dap.hidden = !(state.phase === 'deploy' && isCommission());
+    const showNavNodes = state.phase === 'deploy' && !isCommission();
     const navAlignRow = $('navAlignRow');
-    if (navAlignRow) {
-      navAlignRow.style.display = (state.phase === 'deploy' && !isCommission()) ? '' : 'none';
-    }
+    if (navAlignRow) navAlignRow.style.display = showNavNodes ? '' : 'none';
+    const navCobraRow = $('navCobraRow');
+    if (navCobraRow) navCobraRow.style.display = showNavNodes ? '' : 'none';
     // Always refresh WP task cards in both Navigation and Commissioning.
     renderWpTaskEditors();
     if (isCommission()) {
@@ -1576,11 +1582,31 @@
     const act = wp && wp.action;
     if (!act || !act.type) return 'none (pass-through)';
     if (act.type === 'wait') return `wait ${Math.max(0, Number(act.seconds) || 0)}s`;
+    if (act.type === 'wait_light') {
+      const sec = Math.max(0, Number(act.seconds) || 0);
+      const pat = String(act.pattern || 'red_blink_3x');
+      return `wait+light ${sec}s (${pat})`;
+    }
     if (act.type === 'align') return 'align (saved yaw)';
     if (act.type === 'align_move') {
       return `align + ${Math.max(0.03, Number(act.distance_m) || 0.15)} m`;
     }
+    if (act.type === 'cobra_align') return 'cobra align';
     return String(act.type);
+  }
+
+  function lightPatternOptions(selected) {
+    const pats = (state.lightPatterns && state.lightPatterns.length)
+      ? state.lightPatterns
+      : [
+        'off', 'red', 'green', 'yellow', 'buzzer',
+        'red_blink', 'green_blink', 'yellow_blink',
+        'red_blink_3x', 'green_blink_3x', 'yellow_blink_3x', 'buzzer_3x',
+      ];
+    const cur = String(selected || 'red_blink_3x');
+    return pats.map((p) => (
+      `<option value="${p}" ${p === cur ? 'selected' : ''}>${p}</option>`
+    )).join('');
   }
 
   function renderWpTaskEditors() {
@@ -1600,7 +1626,7 @@
       const idx = Math.max(0, Math.min(state.waypoints.length - 1, state.wpTaskIndex | 0));
       state.wpTaskIndex = idx;
       const wp = state.waypoints[idx];
-      const navTypes = ['wait', 'align', 'align_move'];
+      const navTypes = ['wait', 'wait_light', 'align', 'align_move', 'cobra_align'];
       const known = (wp.action && navTypes.includes(wp.action.type))
         ? wp.action
         : { type: 'wait', seconds: 0 };
@@ -1608,32 +1634,57 @@
       wrap.className = 'wp-task-compact';
       const navActionHelp = (type) => {
         if (type === 'wait') {
-          return '<p class="hint" style="margin:0.25rem 0 0">Stop at this WP for N seconds, then continue. No Align node needed.</p>';
+          return '<p class="hint" style="margin:0.25rem 0 0">Stop at this WP for N seconds, then continue. No Align/Cobra node needed.</p>';
+        }
+        if (type === 'wait_light') {
+          return '<p class="hint" style="margin:0.25rem 0 0">'
+            + '<strong>Wait + light tower:</strong> hold for N seconds while playing a flash pattern '
+            + '(red/green/yellow/buzzer). Enable <code>light_tower</code> in <code>hw_params</code>.</p>';
         }
         if (type === 'align_move') {
           return '<p class="hint" style="margin:0.25rem 0 0">'
             + '<strong>Align + distance:</strong> rotate base to the saved WP yaw, then drive so '
-            + 'front lidar reads <em>Distance</em> (m). Tuned in <code>wp_align_*.yaml</code> '
-            + '(yaw_tolerance_deg, dist_tolerance_m, duties). '
-            + 'Not Detect+Align (that is camera/OMS in Commissioning).</p>';
+            + 'front lidar reads <em>Distance</em> (m). Tuned in <code>config/align/wp_align_*.yaml</code>. '
+            + 'Needs Align node ticked at Start Nav2.</p>';
+        }
+        if (type === 'cobra_align') {
+          return '<p class="hint" style="margin:0.25rem 0 0">'
+            + '<strong>Cobra align:</strong> center on reflectance sensors '
+            + '(<code>/line_follower/ch_*</code>). Mecanum/xdrive strafe; allterrain/grip yaw-only. '
+            + 'Tick Cobra at Start Nav2; enable cobra in <code>hw_params</code>. '
+            + 'Tuned in <code>config/cobra/wp_cobra_*.yaml</code>. '
+            + 'Bench: <code>ros2 launch skill23_studio test_wp_cobra.launch.py</code>.</p>';
         }
         return '<p class="hint" style="margin:0.25rem 0 0">'
-          + '<strong>Align (saved yaw):</strong> rotate the robot base to this WP’s map yaw '
-          + '(AMCL + /cmd_vel). No camera/YOLO. Tuned in <code>wp_align_*.yaml</code>. '
-          + 'For camera object Detect + OMS head Align, use Commissioning → Detect+Align '
-          + '(<code>wp_detect_align.yaml</code>).</p>';
+          + '<strong>Align (saved yaw):</strong> rotate the robot base to this WP’s map yaw. '
+          + 'Needs Align node ticked at Start Nav2. Tuned in <code>config/align/wp_align_*.yaml</code>.</p>';
       };
+      const waitLightParamsHtml = (sec, pattern) => (
+        '<label>Seconds'
+        + `<input type="number" min="0" step="0.5" id="wpTaskParam" value="${Math.max(0, sec)}">`
+        + '</label>'
+        + '<label>Pattern'
+        + `<select id="wpTaskPattern">${lightPatternOptions(pattern)}</select>`
+        + '</label>'
+        + navActionHelp('wait_light')
+      );
       let paramHtml = '';
       if (known.type === 'wait') {
         paramHtml = '<label>Seconds'
           + `<input type="number" min="0" step="0.5" id="wpTaskParam" value="${Math.max(0, Number(known.seconds) || 0)}">`
           + '</label>'
           + navActionHelp('wait');
+      } else if (known.type === 'wait_light') {
+        paramHtml = waitLightParamsHtml(
+          Number(known.seconds) || 3,
+          known.pattern || 'red_blink_3x');
       } else if (known.type === 'align_move') {
         paramHtml = '<label>Distance (m)'
           + `<input type="number" min="0.03" max="5" step="0.01" id="wpTaskParam" value="${Math.max(0.03, Number(known.distance_m) || 0.15)}">`
           + '</label>'
           + navActionHelp('align_move');
+      } else if (known.type === 'cobra_align') {
+        paramHtml = navActionHelp('cobra_align');
       } else {
         paramHtml = navActionHelp('align');
       }
@@ -1650,8 +1701,10 @@
         + '<label>Action'
         + '<select id="wpTaskAction">'
         + `<option value="wait" ${known.type === 'wait' ? 'selected' : ''}>Wait</option>`
+        + `<option value="wait_light" ${known.type === 'wait_light' ? 'selected' : ''}>Wait + light flash</option>`
         + `<option value="align" ${known.type === 'align' ? 'selected' : ''}>Align (saved yaw)</option>`
         + `<option value="align_move" ${known.type === 'align_move' ? 'selected' : ''}>Align + distance</option>`
+        + `<option value="cobra_align" ${known.type === 'cobra_align' ? 'selected' : ''}>Cobra align</option>`
         + '</select></label>'
         + '<button type="button" class="btn btn-saffron btn-tick" id="btnWpTaskSave" title="Save task for this waypoint">✓</button>'
         + '</div>'
@@ -1665,24 +1718,28 @@
         const type = act.value;
         const params = $('wpTaskParams');
         if (!params) return;
+        const cur = state.waypoints[state.wpTaskIndex]
+          && state.waypoints[state.wpTaskIndex].action;
         if (type === 'wait') {
-          const sec = (state.waypoints[state.wpTaskIndex].action
-            && state.waypoints[state.wpTaskIndex].action.type === 'wait')
-            ? Number(state.waypoints[state.wpTaskIndex].action.seconds) || 0
-            : 3;
+          const sec = (cur && cur.type === 'wait') ? Number(cur.seconds) || 0 : 3;
           params.innerHTML = '<label>Seconds'
             + `<input type="number" min="0" step="0.5" id="wpTaskParam" value="${Math.max(0, sec)}">`
             + '</label>'
             + navActionHelp('wait');
+        } else if (type === 'wait_light') {
+          const sec = (cur && cur.type === 'wait_light') ? Number(cur.seconds) || 3 : 3;
+          const pat = (cur && cur.type === 'wait_light' && cur.pattern)
+            ? cur.pattern : 'red_blink_3x';
+          params.innerHTML = waitLightParamsHtml(sec, pat);
         } else if (type === 'align_move') {
-          const dist = (state.waypoints[state.wpTaskIndex].action
-            && state.waypoints[state.wpTaskIndex].action.type === 'align_move')
-            ? Number(state.waypoints[state.wpTaskIndex].action.distance_m) || 0.15
-            : 0.15;
+          const dist = (cur && cur.type === 'align_move')
+            ? Number(cur.distance_m) || 0.15 : 0.15;
           params.innerHTML = '<label>Distance (m)'
             + `<input type="number" min="0.03" max="5" step="0.01" id="wpTaskParam" value="${Math.max(0.03, dist)}">`
             + '</label>'
             + navActionHelp('align_move');
+        } else if (type === 'cobra_align') {
+          params.innerHTML = navActionHelp('cobra_align');
         } else {
           params.innerHTML = navActionHelp('align');
         }
@@ -1702,10 +1759,17 @@
           if (!target) return;
           const type = (act && act.value) || 'wait';
           const param = $('wpTaskParam');
+          const patSel = $('wpTaskPattern');
           if (type === 'wait') {
             target.action = {
               type: 'wait',
               seconds: Math.max(0, Number(param && param.value) || 0),
+            };
+          } else if (type === 'wait_light') {
+            target.action = {
+              type: 'wait_light',
+              seconds: Math.max(0, Number(param && param.value) || 0),
+              pattern: String((patSel && patSel.value) || 'red_blink_3x'),
             };
           } else if (type === 'align') {
             target.action = { type: 'align' };
@@ -1714,6 +1778,8 @@
               type: 'align_move',
               distance_m: Math.max(0.03, Math.min(5, Number(param && param.value) || 0.15)),
             };
+          } else if (type === 'cobra_align') {
+            target.action = { type: 'cobra_align' };
           }
           renderWpList();
           StudioMap.setWaypoints(state.waypoints);
@@ -1814,6 +1880,13 @@
             type: 'wait',
             seconds: Math.max(0, Number(act.seconds) || 0),
           };
+        } else if (act && act.type === 'wait_light' && !isCommission()) {
+          o.action = {
+            type: 'wait_light',
+            seconds: Math.max(0, Number(act.seconds) || 0),
+            pattern: String(act.pattern || 'red_blink_3x').trim().toLowerCase()
+              || 'red_blink_3x',
+          };
         } else if (act && act.type === 'detect_align' && isCommission()) {
           o.action = { type: 'detect_align' };
         } else if (act && act.type === 'align' && !isCommission()) {
@@ -1823,6 +1896,8 @@
             type: 'align_move',
             distance_m: Math.max(0.03, Math.min(5, Number(act.distance_m) || 0.15)),
           };
+        } else if (act && act.type === 'cobra_align' && !isCommission()) {
+          o.action = { type: 'cobra_align' };
         }
         return o;
       })
@@ -2071,9 +2146,13 @@
     if (daChk) state.autoDetectAlign = !!daChk.checked;
     const startDetectAlign = camera ? !!state.autoDetectAlign : false;
     const alignChk = $('chkStartAlignNav');
+    const cobraChk = $('chkStartCobraNav');
     const withAlign = isCommission()
       ? false
-      : (alignChk ? !!alignChk.checked : true);
+      : (alignChk ? !!alignChk.checked : false);
+    const withCobra = isCommission()
+      ? false
+      : (cobraChk ? !!cobraChk.checked : false);
     const res = await StudioApi.deployStart({
       burn_restrictions: true,
       stack: 'nav2',
@@ -2081,6 +2160,7 @@
       start_camera: camera,
       start_detect_align: startDetectAlign,
       with_align: withAlign,
+      with_cobra: withCobra,
     });
     if (camera) {
       alert(
@@ -2089,9 +2169,12 @@
         + 'Open OMS Software — it shows Ready when OMS nodes are up. Do not press Run OMS.\n'
         + `${res.map || ''}`);
     } else {
+      const bits = [];
+      if (withAlign) bits.push('Align');
+      if (withCobra) bits.push('Cobra');
       alert(
         `Navigation: Nav2 started`
-        + `${withAlign ? ' with Align node' : ' (Align node off)'}.\n`
+        + `${bits.length ? ` with ${bits.join(' + ')}` : ' (Align/Cobra off)'}.\n`
         + `${res.map || ''}`);
     }
   }
@@ -2160,8 +2243,32 @@
     const on = !!s.gc_planner;
     const btnStart = $('btnGcPlannerStart');
     const btnStop = $('btnGcPlannerStop');
+    const paramsBox = $('gcPlannerParams');
     if (btnStart) btnStart.hidden = on;
     if (btnStop) btnStop.hidden = !on;
+    if (paramsBox) paramsBox.hidden = !on;
+    if (on && !state.gcParamsLoaded) {
+      loadGcPlannerParams().catch(() => {});
+    }
+    if (!on) state.gcParamsLoaded = false;
+  }
+
+  async function loadGcPlannerParams() {
+    const res = await StudioApi.gcPlannerGetParams();
+    const p = (res && res.params) || {};
+    const set = (id, key) => {
+      const el = $(id);
+      if (!el || p[key] == null) return;
+      el.value = String(p[key]);
+    };
+    set('gcSmoothPath', 'GridBased.smooth_path');
+    set('gcSmoothIter', 'GridBased.smooth_iterations');
+    set('gcMaxDev', 'GridBased.max_deviation');
+    set('gcWDist', 'GridBased.w_distance');
+    set('gcWCell', 'GridBased.w_cell_cost');
+    set('gcWInf', 'GridBased.w_inflation');
+    set('gcTurn', 'GridBased.turn_penalty');
+    state.gcParamsLoaded = true;
   }
 
   function setGcPlannerHint(text) {
@@ -2313,12 +2420,43 @@
   bindLoading('btnGcPlannerStart', async () => {
     const res = await StudioApi.gcPlannerStart({});
     setGcPlannerHint(res.message || 'GC+Planner started.');
+    state.gcParamsLoaded = false;
+    updateGcPlannerUi({ gc_planner: true });
+    try {
+      await loadGcPlannerParams();
+    } catch (e) {
+      setGcPlannerHint(`GC+Planner up; params not ready yet (${e.message})`);
+    }
   }, 'Starting GC+Planner…');
   bindLoading('btnGcPlannerStop', async () => {
     const res = await StudioApi.gcPlannerStop();
     setGcPlannerHint(res.message || 'GC+Planner stopped.');
+    state.gcParamsLoaded = false;
     if (state.simActive) exitSim();
   }, 'Stopping…');
+
+  bindLoading('btnGcApplyParams', async () => {
+    const boolVal = (id) => String(($(id) && $(id).value) || '') === 'true';
+    const numVal = (id, fallback) => {
+      const n = Number($(id) && $(id).value);
+      return Number.isFinite(n) ? n : fallback;
+    };
+    const params = {
+      'GridBased.smooth_path': boolVal('gcSmoothPath'),
+      'GridBased.smooth_iterations': Math.round(numVal('gcSmoothIter', 10)),
+      'GridBased.max_deviation': numVal('gcMaxDev', 0.05),
+      'GridBased.w_distance': numVal('gcWDist', 0.5),
+      'GridBased.w_cell_cost': numVal('gcWCell', 20),
+      'GridBased.w_inflation': numVal('gcWInf', 1),
+      'GridBased.turn_penalty': numVal('gcTurn', 16),
+    };
+    const res = await StudioApi.gcPlannerSetParams(params);
+    setGcPlannerHint(res.updated ? 'Planner params applied (live).' : 'Params read OK.');
+    if (res.params) {
+      state.gcParamsLoaded = false;
+      await loadGcPlannerParams();
+    }
+  }, 'Applying…');
 
   const btnSimEnter = $('btnSimEnter');
   if (btnSimEnter) {

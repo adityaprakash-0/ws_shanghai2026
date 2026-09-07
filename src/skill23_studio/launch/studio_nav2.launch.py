@@ -31,6 +31,7 @@ from launch_ros.actions import Node
 from skill23_studio.ros_dds import studio_dds_launch_actions
 
 from skill23_studio.align_paths import align_yaml_for_robot
+from skill23_studio.cobra_paths import cobra_yaml_for_robot
 from skill23_studio.detect_align_paths import detect_align_yaml_for_robot
 from skill23_studio.ekf_paths import ekf_yaml_for_robot
 from skill23_studio.orbbec_dabai import (
@@ -101,10 +102,16 @@ def _setup(context, *args, **kwargs):
         '1', 'true', 'yes', 'on')
     with_align = LaunchConfiguration('with_align').perform(context).lower() in (
         '1', 'true', 'yes', 'on')
+    with_cobra = LaunchConfiguration('with_cobra').perform(context).lower() in (
+        '1', 'true', 'yes', 'on')
     with_detect_align = LaunchConfiguration('with_detect_align').perform(
         context).lower() in ('1', 'true', 'yes', 'on')
     # Detect+Align only makes sense with the camera stack.
     with_detect_align = with_detect_align and with_camera
+    # Align / Cobra are nav-only helpers (no camera stack).
+    if with_camera:
+        with_align = False
+        with_cobra = False
     try:
         camera_stabilize = float(
             LaunchConfiguration('camera_stabilize_sec').perform(context))
@@ -132,6 +139,7 @@ def _setup(context, *args, **kwargs):
     nav2_params = _prepare_nav2_params(robot, share)
     detect_yaml = detect_align_yaml_for_robot(robot, share)
     align_yaml = align_yaml_for_robot(robot, share)
+    cobra_yaml = cobra_yaml_for_robot(robot, share)
     loc_launch = os.path.join(
         get_package_share_directory('nav2_bringup'), 'launch', 'localization_launch.py')
     nav_launch = os.path.join(share, 'launch', 'studio_nav2_navigation.launch.py')
@@ -195,14 +203,14 @@ def _setup(context, *args, **kwargs):
         # Optional: confidence scan gate → /scan_filtered (costmaps only).
         # Studio nav2_params use /scan today; enable only if you switch costmaps
         # to /scan_filtered and uncomment the block below.
-        # confidence_gate_node = _node(
-        #     'allterrain', 'confidence_scan_gate', 'confidence_scan_gate_node',
-        #     parameters=[gate_params_file],
-        # )
-        # actions.append(TimerAction(period=6.0, actions=[
-        #     LogInfo(msg='[studio_nav2] Launching confidence scan gate → /scan_filtered'),
-        #     confidence_gate_node,
-        # ]))
+        confidence_gate_node = _node(
+            'allterrain', 'confidence_scan_gate', 'confidence_scan_gate_node',
+            parameters=[gate_params_file],
+        )
+        actions.append(TimerAction(period=6.0, actions=[
+            LogInfo(msg='[studio_nav2] Launching confidence scan gate → /scan_filtered'),
+            confidence_gate_node,
+        ]))
 
     detect_delay = 6.0 if enable_lidar else 2.5
     if with_align:
@@ -213,6 +221,16 @@ def _setup(context, *args, **kwargs):
                 _node(
                     'skill23_studio', 'studio_align', 'align',
                     parameters=[align_yaml]),
+            ],
+        ))
+    if with_cobra:
+        actions.append(TimerAction(
+            period=detect_delay + 0.3,
+            actions=[
+                LogInfo(msg=f'[studio_nav2] cobra yaml={cobra_yaml}'),
+                _node(
+                    'skill23_studio', 'studio_cobra', 'cobra_align',
+                    parameters=[cobra_yaml]),
             ],
         ))
     if with_camera:
@@ -334,8 +352,11 @@ def generate_launch_description():
             'with_camera', default_value='false',
             description='Commissioning: Gemini E (streams off) + OMS'),
         DeclareLaunchArgument(
-            'with_align', default_value='true',
-            description='Navigation module: yaw Align / Align+Move node (no camera)'),
+            'with_align', default_value='false',
+            description='Navigation: yaw Align / Align+Move node (no camera)'),
+        DeclareLaunchArgument(
+            'with_cobra', default_value='false',
+            description='Navigation: Cobra reflectance align node (no camera)'),
         DeclareLaunchArgument(
             'with_detect_align', default_value='true',
             description='With camera: also start Detect+Align node (idle until WP cmd)'),

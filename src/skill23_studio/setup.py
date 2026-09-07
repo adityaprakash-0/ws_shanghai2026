@@ -17,6 +17,10 @@ setup(
             f for f in glob('config/*')
             if os.path.isfile(f)
         ]),
+        (os.path.join('share', package_name, 'config', 'align'),
+            glob('config/align/*')),
+        (os.path.join('share', package_name, 'config', 'cobra'),
+            glob('config/cobra/*')),
         (os.path.join('share', package_name, 'config', 'nav2_params'),
             glob('config/nav2_params/*')),
         (os.path.join('share', package_name, 'config', 'hw_params'),
@@ -35,10 +39,12 @@ setup(
         'console_scripts': [
             'studio_bridge = skill23_studio.studio_bridge_node:main',
             'studio_align = skill23_studio.nav.align_yaw_node:main',
+            'studio_align_test = skill23_studio.nav.align_test_trigger_node:main',
+            'studio_cobra = skill23_studio.nav.cobra_align_node:main',
+            'studio_cobra_test = skill23_studio.nav.cobra_test_trigger_node:main',
             'studio_detect_align = skill23_studio.nav.detect_align_node:main',
             'studio_detect_align_test = skill23_studio.nav.detect_align_test_node:main',
             'studio_detect_align_oms_test = skill23_studio.nav.detect_align_oms_test_node:main',
-            'studio_align_test = skill23_studio.nav.align_test_trigger_node:main',
             'studio_stop_stack = skill23_studio.process_manager:main_stop',
         ],
     },

@@ -100,10 +100,65 @@ void ClearancePlanner::configure(
     straight_line_only_ ? "true" : "false", smooth_path_ ? "true" : "false",
     smooth_iterations_, max_deviation_, w_distance_, w_cell_cost_, w_inflation_,
     turn_penalty_, edt_narrow_weight_);
+
+  // Live dashboard / ros2 param set without restarting planner_server.
+  dyn_params_handler_ = node->add_on_set_parameters_callback(
+    [this](const std::vector<rclcpp::Parameter> & parameters) {
+      rcl_interfaces::msg::SetParametersResult result;
+      result.successful = true;
+      const std::string prefix = name_ + ".";
+      for (const auto & p : parameters) {
+        const auto & n = p.get_name();
+        if (n.rfind(prefix, 0) != 0) {
+          continue;
+        }
+        const std::string key = n.substr(prefix.size());
+        try {
+          if (key == "smooth_path") {
+            smooth_path_ = p.as_bool();
+          } else if (key == "smooth_iterations") {
+            smooth_iterations_ = static_cast<int>(p.as_int());
+          } else if (key == "max_deviation") {
+            max_deviation_ = p.as_double();
+          } else if (key == "straight_line_only") {
+            straight_line_only_ = p.as_bool();
+          } else if (key == "w_distance") {
+            w_distance_ = p.as_double();
+          } else if (key == "w_cell_cost") {
+            w_cell_cost_ = p.as_double();
+          } else if (key == "w_inflation") {
+            w_inflation_ = p.as_double();
+          } else if (key == "turn_penalty") {
+            turn_penalty_ = p.as_double();
+          } else if (key == "narrow_wall_penalty") {
+            narrow_wall_penalty_ = p.as_double();
+          } else if (key == "edt_narrow_weight") {
+            edt_narrow_weight_ = p.as_double();
+          } else if (key == "allow_unknown") {
+            allow_unknown_ = p.as_bool();
+          } else if (key == "allow_narrow") {
+            allow_narrow_ = p.as_bool();
+          } else if (key == "shift_goal_off_inscribed") {
+            shift_goal_off_inscribed_ = p.as_bool();
+          } else if (key == "use_final_approach_orientation") {
+            use_final_approach_orientation_ = p.as_bool();
+          } else {
+            continue;
+          }
+          RCLCPP_INFO(logger_, "[%s] live param %s updated", name_.c_str(), n.c_str());
+        } catch (const std::exception & ex) {
+          result.successful = false;
+          result.reason = ex.what();
+          return result;
+        }
+      }
+      return result;
+    });
 }
 
 void ClearancePlanner::cleanup()
 {
+  dyn_params_handler_.reset();
   lethal_dist_.clear();
   costmap_ = nullptr;
   costmap_ros_.reset();

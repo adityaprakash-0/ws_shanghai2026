@@ -26,7 +26,7 @@
     <origin xyz="0 0 0.105" rpy="0 0 0"/>
   </joint>
 
-  <!-- Dual YDLIDAR mounts — same as mecanum (shared lidar_merger ±0.21) -->
+  <!-- Dual YDLIDAR mounts — optical center ±0.192 m on X (lidar_merger uses TF) -->
   <link name="imu_link"/>
   <joint name="imu_joint" type="fixed">
     <parent link="base_link"/>
@@ -38,14 +38,14 @@
   <joint name="laser_front_joint" type="fixed">
     <parent link="base_link"/>
     <child link="laser_front"/>
-    <origin xyz="0.21 0 0" rpy="0 0 0"/>
+    <origin xyz="0.192 0 0" rpy="0 0 0"/>
   </joint>
 
   <link name="laser_back"/>
   <joint name="laser_back_joint" type="fixed">
     <parent link="base_link"/>
     <child link="laser_back"/>
-    <origin xyz="-0.21 0 0" rpy="0 0 3.141592653589793"/>  
+    <origin xyz="-0.192 0 0" rpy="0 0 3.141592653589793"/>  
     <!-- 3,14 radians is 180 degrees -->
   </joint>
 

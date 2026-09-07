@@ -12,7 +12,7 @@ Also starts: control_server (sudo inside), drive node, robot_state_publisher.
 Align+Move also starts the front YDLidar → /scan/front.
 
 Heading comes from /imu (NavX), not /amcl_pose. PID/duty come from
-config/wp_align_<robot>.yaml (same file Deploy loads for that robot).
+config/align/wp_align_<robot>.yaml (same file Deploy loads for that robot).
 
 Do NOT wrap this launch in sudo — control_server is already sudo -E inside.
 Stop localize / Nav2 first (duplicate Titan / lidar).

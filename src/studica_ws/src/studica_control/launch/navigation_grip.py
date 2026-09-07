@@ -55,7 +55,7 @@ def generate_launch_description():
         parameters=[{'robot_description': robot_desc}]
     )
 
-    # 3. Sensor frames from URDF (imu_link, laser_front ±0.21, laser_back yaw=π)
+    # 3. Sensor frames from URDF (imu_link, laser_front ±0.192, laser_back yaw=π)
 
     # 4. Hardware LiDAR Drivers
     ydlidar_front_node = Node(
