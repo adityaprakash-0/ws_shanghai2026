@@ -34,6 +34,7 @@
     wpTaskIndex: 0,
     lightPatterns: [],
     gcParamsLoaded: false,
+    gcWallsLive: false,
   };
 
   const $ = (id) => document.getElementById(id);
@@ -232,7 +233,36 @@
 
   function busyStacks() {
     const stacks = (state.telemetry && state.telemetry.stacks) || {};
-    return ['nav', 'localize', 'slam', 'oms'].filter((k) => stacks[k]);
+    return ['nav', 'localize', 'slam', 'oms', 'hw_test', 'gc_planner'].filter((k) => stacks[k]);
+  }
+
+  function syncOmsOpenButtons() {
+    ['btnOpenOms', 'btnOpenOmsDeploy', 'btnOpenHwTest'].forEach((id) => {
+      const el = $(id);
+      if (!el) return;
+      el.disabled = !state.connected;
+      if (id === 'btnOpenHwTest') {
+        el.title = state.connected
+          ? 'Open Hardware Testing (linked to this Pi)'
+          : 'Connect to the Pi first, then open HW Testing';
+      } else {
+        el.title = state.connected
+          ? 'Open OMS Software (already linked to this Pi)'
+          : 'Connect to the Pi first, then open OMS Software';
+      }
+    });
+  }
+
+  function openHwTestSoftware() {
+    if (!state.connected) {
+      alert('Connect to the Pi first.\nHW Testing opens only after Studio is Online.');
+      return;
+    }
+    const url = new URL('hw_test.html', window.location.href);
+    if (state.robot) url.searchParams.set('robot', state.robot);
+    url.searchParams.set('from', 'studio');
+    url.searchParams.set('pi', StudioApi.getBaseUrl());
+    window.open(url.toString(), 'skill23-hw-test');
   }
 
   function alertIfBusy(action, ignore) {
@@ -243,17 +273,6 @@
       `Cannot ${action}: hardware already running (${which.join(', ')}).\n`
       + 'Stop that stack first so Titan is not launched twice.');
     return true;
-  }
-
-  function syncOmsOpenButtons() {
-    ['btnOpenOms', 'btnOpenOmsDeploy'].forEach((id) => {
-      const el = $(id);
-      if (!el) return;
-      el.disabled = !state.connected;
-      el.title = state.connected
-        ? 'Open OMS Software (already linked to this Pi)'
-        : 'Connect to the Pi first, then open OMS Software';
-    });
   }
 
   function openOmsSoftware() {
@@ -745,6 +764,8 @@
   }
   bindOmsOpen('btnOpenOms');
   bindOmsOpen('btnOpenOmsDeploy');
+  const btnHw = $('btnOpenHwTest');
+  if (btnHw) btnHw.onclick = () => openHwTestSoftware();
   syncOmsOpenButtons();
   $('piUrl').value = StudioApi.getBaseUrl();
 
@@ -976,6 +997,19 @@
   });
 
   StudioMap.setOnEditCells((action, cells) => {
+    if (state.gcWallsLive) {
+      StudioApi.gcWallsEdit([{ action, cells }]).then((res) => {
+        const hint = $('gcWallsHint');
+        if (hint) {
+          hint.textContent = `Walls live: ${res.cells || 0} cells`
+            + (res.costmap_cleared ? ' · costmap refreshed' : ' · published');
+        }
+      }).catch((e) => {
+        const hint = $('gcWallsHint');
+        if (hint) hint.textContent = `Walls publish failed: ${e.message || e}`;
+      });
+      return;
+    }
     state.pendingEdits.push({ action, cells });
     updateZoneHint();
   });
@@ -1092,7 +1126,15 @@
     document.querySelectorAll('.tool[data-tool]').forEach(
       (b) => b.classList.remove('active'));
     btn.classList.add('active');
+    // GC dashboard wall tools publish to /gc_planner/walls (not map.pgm).
+    state.gcWallsLive = btn.dataset.gcWall === '1';
     StudioMap.setTool(btn.dataset.tool);
+    if (state.gcWallsLive) {
+      const hint = $('gcWallsHint');
+      if (hint) {
+        hint.textContent = `${btn.dataset.tool}: paint on map — costmap updates immediately.`;
+      }
+    }
   }
 
   function updateZoneHint() {
@@ -2250,7 +2292,10 @@
     if (on && !state.gcParamsLoaded) {
       loadGcPlannerParams().catch(() => {});
     }
-    if (!on) state.gcParamsLoaded = false;
+    if (!on) {
+      state.gcParamsLoaded = false;
+      state.gcWallsLive = false;
+    }
   }
 
   async function loadGcPlannerParams() {
@@ -2264,11 +2309,51 @@
     set('gcSmoothPath', 'GridBased.smooth_path');
     set('gcSmoothIter', 'GridBased.smooth_iterations');
     set('gcMaxDev', 'GridBased.max_deviation');
+    set('gcStraight', 'GridBased.straight_line_only');
+    set('gcRoundL', 'GridBased.round_l_corners');
+    set('gcLRadius', 'GridBased.l_corner_radius');
     set('gcWDist', 'GridBased.w_distance');
     set('gcWCell', 'GridBased.w_cell_cost');
     set('gcWInf', 'GridBased.w_inflation');
     set('gcTurn', 'GridBased.turn_penalty');
+    set('gcNarrow', 'GridBased.narrow_wall_penalty');
+    set('gcEdt', 'GridBased.edt_narrow_weight');
+    set('gcRobotW', 'GridBased.robot_width');
     state.gcParamsLoaded = true;
+    bindGcWallTools();
+  }
+
+  function bindGcWallTools() {
+    const box = $('gcPlannerParams');
+    if (!box || box.dataset.gcWallsWired === '1') return;
+    box.dataset.gcWallsWired = '1';
+    bindToolButtons(box);
+    const slider = $('gcBrushSize');
+    const label = $('gcBrushLabel');
+    if (slider) {
+      slider.addEventListener('input', () => {
+        const cells = StudioMap.setBrush(slider.value);
+        if (label) label.textContent = cells;
+      });
+    }
+    const clearBtn = $('btnGcWallsClear');
+    if (clearBtn) {
+      clearBtn.onclick = () => runWithLoading(clearBtn, async () => {
+        if (!confirm('Clear all GC-drawn walls from the costmap overlay?')) return;
+        const res = await StudioApi.gcWallsClear();
+        state.gcWallsLive = false;
+        StudioMap.clearUndo();
+        const hint = $('gcWallsHint');
+        if (hint) {
+          hint.textContent = `Cleared — ${res.cells || 0} wall cells left. Reload map view if needed.`;
+        }
+        // Force map refresh from disk (drop local paint preview).
+        try {
+          const mapRes = await StudioApi.mapGet();
+          if (mapRes && mapRes.map) StudioMap.setMap(mapRes.map);
+        } catch (_) { /* ignore */ }
+      }, 'Clearing…');
+    }
   }
 
   function setGcPlannerHint(text) {
@@ -2432,6 +2517,7 @@
     const res = await StudioApi.gcPlannerStop();
     setGcPlannerHint(res.message || 'GC+Planner stopped.');
     state.gcParamsLoaded = false;
+    state.gcWallsLive = false;
     if (state.simActive) exitSim();
   }, 'Stopping…');
 
@@ -2445,10 +2531,16 @@
       'GridBased.smooth_path': boolVal('gcSmoothPath'),
       'GridBased.smooth_iterations': Math.round(numVal('gcSmoothIter', 10)),
       'GridBased.max_deviation': numVal('gcMaxDev', 0.05),
+      'GridBased.straight_line_only': boolVal('gcStraight'),
+      'GridBased.round_l_corners': boolVal('gcRoundL'),
+      'GridBased.l_corner_radius': numVal('gcLRadius', 0.30),
       'GridBased.w_distance': numVal('gcWDist', 0.5),
       'GridBased.w_cell_cost': numVal('gcWCell', 20),
       'GridBased.w_inflation': numVal('gcWInf', 1),
       'GridBased.turn_penalty': numVal('gcTurn', 16),
+      'GridBased.narrow_wall_penalty': numVal('gcNarrow', 50),
+      'GridBased.edt_narrow_weight': numVal('gcEdt', 40),
+      'GridBased.robot_width': numVal('gcRobotW', 0.38),
     };
     const res = await StudioApi.gcPlannerSetParams(params);
     setGcPlannerHint(res.updated ? 'Planner params applied (live).' : 'Params read OK.');

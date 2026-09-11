@@ -352,23 +352,43 @@ _PKILL_SAFE = (
 )
 
 
-def _list_cmdlines() -> List[tuple]:
-    rows: List[tuple] = []
-    try:
-        out = subprocess.check_output(
-            ['ps', '-eo', 'pid=,args='], text=True, timeout=3)
-    except Exception:
-        return rows
-    for line in out.splitlines():
-        line = line.strip()
-        if not line:
-            continue
+# One `ps` scan is ~50–100ms on the Pi. stacks_alive / nav2_component_status
+# used to call _cmdline_has many times per telemetry frame (~3 Hz SSE), each
+# re-running `ps` → seconds of CPU per second. Share one scan briefly.
+_CMDLINE_CACHE: List[tuple] = []
+_CMDLINE_CACHE_T = 0.0
+_CMDLINE_CACHE_LOCK = threading.Lock()
+_CMDLINE_CACHE_TTL = 1.0  # seconds — was 0.5; ps scan is costly on Pi
+
+
+def _list_cmdlines(*, force: bool = False) -> List[tuple]:
+    global _CMDLINE_CACHE, _CMDLINE_CACHE_T
+    now = time.time()
+    with _CMDLINE_CACHE_LOCK:
+        if (
+            not force
+            and _CMDLINE_CACHE
+            and (now - _CMDLINE_CACHE_T) < _CMDLINE_CACHE_TTL
+        ):
+            return _CMDLINE_CACHE
+        rows: List[tuple] = []
         try:
-            pid_s, cmd = line.split(None, 1)
-            rows.append((int(pid_s), cmd))
-        except ValueError:
-            continue
-    return rows
+            out = subprocess.check_output(
+                ['ps', '-eo', 'pid=,args='], text=True, timeout=3)
+        except Exception:
+            return _CMDLINE_CACHE if _CMDLINE_CACHE else rows
+        for line in out.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                pid_s, cmd = line.split(None, 1)
+                rows.append((int(pid_s), cmd))
+            except ValueError:
+                continue
+        _CMDLINE_CACHE = rows
+        _CMDLINE_CACHE_T = now
+        return rows
 
 
 def reap_studio_orphans(
@@ -425,17 +445,26 @@ def main_stop() -> None:
     print(f'studio_stop_stack: reaped {n} process(es)')
 
 
-def _cmdline_has(needle: str) -> bool:
-    for _pid, cmd in _list_cmdlines():
+def _cmdline_has(needle: str, rows: Optional[List[tuple]] = None) -> bool:
+    for _pid, cmd in (rows if rows is not None else _list_cmdlines()):
         if needle in cmd and not any(k in cmd for k in _KEEP_CMDS):
             return True
     return False
+
+
+def _any_cmdline(needles: Iterable[str], rows: Optional[List[tuple]] = None) -> bool:
+    data = rows if rows is not None else _list_cmdlines()
+    return any(_cmdline_has(n, data) for n in needles)
 
 
 class ProcessManager:
     def __init__(self) -> None:
         self._procs: Dict[str, ManagedProcess] = {}
         self._stack_lock = threading.Lock()
+        self._stacks_cache: Optional[Dict[str, bool]] = None
+        self._stacks_cache_t = 0.0
+        self._nav2_status_cache: Optional[Dict[str, Dict[str, Any]]] = None
+        self._nav2_status_cache_t = 0.0
 
     def running(self, name: str) -> bool:
         p = self._procs.get(name)
@@ -448,52 +477,87 @@ class ProcessManager:
 
     def stacks_alive(self) -> Dict[str, bool]:
         """Managed launch *or* leftover cmdline still present."""
-        return {
+        now = time.time()
+        if self._stacks_cache is not None and (now - self._stacks_cache_t) < 2.0:
+            return dict(self._stacks_cache)
+        rows = _list_cmdlines()
+        out = {
             'nav': (
                 self.running('nav')
-                or _cmdline_has('studio_nav2.launch.py')
-                or _cmdline_has('studio_commission.launch.py')),
+                or _any_cmdline(
+                    ('studio_nav2.launch.py', 'studio_commission.launch.py'),
+                    rows)),
             'localize': (
                 self.running('localize')
-                or _cmdline_has('studio_localize.launch.py')),
+                or _cmdline_has('studio_localize.launch.py', rows)),
             'slam': (
                 self.running('slam')
-                or _cmdline_has('slam_tele_grip.py')
-                or _cmdline_has('slam_tele_allterrain.py')
-                or _cmdline_has('slam_tele_mecanum.py')
-                or _cmdline_has('slam_tele_xdrive.py')),
+                or _any_cmdline(
+                    (
+                        'slam_tele_grip.py',
+                        'slam_tele_allterrain.py',
+                        'slam_tele_mecanum.py',
+                        'slam_tele_xdrive.py',
+                    ),
+                    rows)),
             'camera': (
                 self.running('camera')
-                or _cmdline_has('dabai.launch.py')
-                or _cmdline_has('gemini_e.launch.py')
-                or _cmdline_has('__node:=camera_container')),
-            'oms': self.oms_nodes_alive(),
+                or _any_cmdline(
+                    (
+                        'dabai.launch.py',
+                        'gemini_e.launch.py',
+                        '__node:=camera_container',
+                    ),
+                    rows)),
+            'oms': self.oms_nodes_alive(rows=rows),
             'gc_planner': (
                 self.running('gc_planner')
-                or _cmdline_has('studio_gc_planner.launch.py')
-                or _cmdline_has('lifecycle_manager_gc_planner')),
+                or _any_cmdline(
+                    (
+                        'studio_gc_planner.launch.py',
+                        'lifecycle_manager_gc_planner',
+                    ),
+                    rows)),
+            'hw_test': (
+                self.running('hw_test')
+                or _cmdline_has('test_hw.launch.py', rows)),
         }
+        self._stacks_cache = out
+        self._stacks_cache_t = now
+        return dict(out)
 
-    def oms_standalone_alive(self) -> bool:
+    def oms_standalone_alive(self, rows: Optional[List[tuple]] = None) -> bool:
         return (
             self.running('oms')
-            or _cmdline_has('test_oms.launch.py'))
+            or _cmdline_has('test_oms.launch.py', rows))
 
-    def oms_nodes_alive(self) -> bool:
+    def oms_nodes_alive(self, rows: Optional[List[tuple]] = None) -> bool:
+        data = rows if rows is not None else _list_cmdlines()
         return (
-            self.oms_standalone_alive()
+            self.oms_standalone_alive(rows=data)
             or _oms_orphans_alive()
-            or _cmdline_has('lib/oms/oms_all'))
+            or _cmdline_has('lib/oms/oms_all', data))
 
     def nav2_component_status(self) -> Dict[str, Dict[str, Any]]:
         """Process-level health for Nav2 stack status panel."""
+        now = time.time()
+        if (
+            self._nav2_status_cache is not None
+            and (now - self._nav2_status_cache_t) < 1.0
+        ):
+            return {k: dict(v) for k, v in self._nav2_status_cache.items()}
+        rows = _list_cmdlines()
         stack_up = (
             self.running('nav')
             or self.running('gc_planner')
-            or _cmdline_has('studio_nav2.launch.py')
-            or _cmdline_has('studio_gc_planner.launch.py')
-            or _cmdline_has('__node:=nav2_container')
-            or _cmdline_has('component_container_isolated'))
+            or _any_cmdline(
+                (
+                    'studio_nav2.launch.py',
+                    'studio_gc_planner.launch.py',
+                    '__node:=nav2_container',
+                    'component_container_isolated',
+                ),
+                rows))
         checks = (
             ('amcl', ('__node:=amcl', 'skill23_amcl')),
             ('map_server', ('__node:=map_server', 'nav2_map_server')),
@@ -511,7 +575,7 @@ class ProcessManager:
         }
         out: Dict[str, Dict[str, Any]] = {}
         for key, needles in checks:
-            alive = any(_cmdline_has(n) for n in needles)
+            alive = _any_cmdline(needles, rows)
             if key in composable:
                 alive = alive or stack_up
             out[key] = {
@@ -519,13 +583,15 @@ class ProcessManager:
                 'state': 'ready' if alive else 'stopped',
                 'detail': 'process up' if alive else 'not running',
             }
-        return out
+        self._nav2_status_cache = out
+        self._nav2_status_cache_t = now
+        return {k: dict(v) for k, v in out.items()}
 
     def require_stacks_idle(self, *, wanting: str) -> None:
         """Refuse to start if a *different* HW stack is already up."""
         alive = self.stacks_alive()
         blockers = [
-            n for n in ('nav', 'localize', 'slam', 'gc_planner')
+            n for n in ('nav', 'localize', 'slam', 'gc_planner', 'hw_test')
             if alive.get(n) and n != wanting
         ]
         if wanting != 'oms' and self.oms_standalone_alive():
@@ -857,7 +923,7 @@ class ProcessManager:
             self._wait_stack_idle('nav')
 
     def start_gc_planner(self, robot: str, map_yaml: str) -> ManagedProcess:
-        """Map server + global costmap (static+inflation) + planner_server only."""
+        """Map server + global costmap (static + gc_walls + inflation) + planner_server only."""
         if not map_yaml or not os.path.isfile(map_yaml):
             raise FileNotFoundError(f'map not found: {map_yaml}')
         with self._stack_lock:
@@ -917,7 +983,7 @@ class ProcessManager:
             if self.oms_nodes_alive():
                 return None
             alive = self.stacks_alive()
-            blockers = [n for n in ('nav', 'localize', 'slam') if alive.get(n)]
+            blockers = [n for n in ('nav', 'localize', 'slam', 'hw_test') if alive.get(n)]
             if blockers:
                 raise RuntimeError(
                     f'Cannot start OMS: Titan already in use ({", ".join(blockers)}). '
@@ -964,6 +1030,35 @@ class ProcessManager:
                 raise RuntimeError(
                     'OMS stop incomplete — some oms_* / test_oms processes '
                     'are still alive. Check sudo -n pkill permissions.')
+
+    def start_hw_test(self, robot: str, *, enable_lidar: bool = True) -> ManagedProcess:
+        """Launch Titan + lidars for Hardware Testing Software."""
+        if robot not in ('allterrain', 'grip', 'mecanum', 'xdrive'):
+            raise ValueError(f'unknown robot {robot}')
+        with self._stack_lock:
+            self.require_stacks_idle(wanting='hw_test')
+            if self.oms_standalone_alive() or self.oms_nodes_alive():
+                raise RuntimeError(
+                    'Cannot start HW test: OMS is using Titan. Stop OMS first.')
+            self.stop('hw_test')
+            return self._launch(
+                'hw_test',
+                [
+                    'launch', 'skill23_studio', 'test_hw.launch.py',
+                    f'robot:={robot}',
+                    f'enable_lidar:={"true" if enable_lidar else "false"}',
+                ],
+                echo_terminal=False,
+            )
+
+    def stop_hw_test(self) -> None:
+        with self._stack_lock:
+            self.stop('hw_test')
+            # Kill leftover Titan / lidars from this bench if launch died.
+            if not any(self.stacks_alive().get(k) for k in ('nav', 'localize', 'slam', 'oms')):
+                reap_studio_orphans(
+                    nav=True, camera=False, keep_pids=self._keep_pids(),
+                    force_pkill=True)
 
     def save_map(self, out_prefix: str) -> subprocess.CompletedProcess:
         """Save /map to out_prefix.yaml + .pgm via map_saver_cli (same user as bridge)."""

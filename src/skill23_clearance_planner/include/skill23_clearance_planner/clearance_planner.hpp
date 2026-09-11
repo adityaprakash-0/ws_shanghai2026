@@ -60,6 +60,9 @@ private:
   };
 
   bool isAllowedCost(unsigned char cost, bool allow_narrow) const;
+  // Position-aware: 253 cells may pass via inscribed width gate (EDT gap check).
+  bool isCellAllowed(int x, int y, bool allow_narrow) const;
+  bool inscribedWidthOk(int x, int y) const;
   bool inBounds(int x, int y) const;
   unsigned char cellCost(int x, int y) const;
   double traversalPenalty(unsigned char cost, bool allow_narrow, int x, int y) const;
@@ -80,8 +83,13 @@ private:
     GridPoint & corner, AxisMetrics & metrics) const;
   void simplifyCollinear(std::vector<GridPoint> & path) const;
   void collapseUnitStairs(std::vector<GridPoint> & path, bool allow_narrow) const;
+  // Collapse wasteful Manhattan boxes / jogs into one axis run or one L.
+  void collapseBoxDetours(std::vector<GridPoint> & path, bool allow_narrow) const;
   std::vector<GridPoint> orthogonalSmooth(
     const std::vector<GridPoint> & path, bool allow_narrow) const;
+  // Shift long axis legs into a parallel freer lane (stay in low-cost cells).
+  void preferClearerAxisLanes(
+    std::vector<GridPoint> & path, bool allow_narrow, int max_shift) const;
   void densifyAxisAligned(std::vector<GridPoint> & path, bool allow_narrow) const;
   void assignSmoothOrientations(
     nav_msgs::msg::Path & path,
@@ -98,6 +106,14 @@ private:
     double x{0.0};
     double y{0.0};
   };
+
+  // straight_line_only only: replace sharp 90° L corners with circular fillets.
+  // Straight legs stay axis-aligned; only the junction is curved.
+  std::vector<WorldPoint> roundLCornersToWorld(
+    const std::vector<GridPoint> & sparse_path, bool allow_narrow) const;
+  bool filletCornerAllowed(
+    double ox, double oy, double r,
+    double a0, double a1, bool allow_narrow) const;
 
   std::vector<WorldPoint> gridPathToWorld(const std::vector<GridPoint> & path) const;
   std::vector<WorldPoint> densifyWorldPath(
@@ -118,8 +134,16 @@ private:
 
   bool allow_unknown_{false};
   bool allow_narrow_{false};
+  // Allow 253 only when corridor gap (≈2×dist_to_254) ≥ robot_width + margin.
+  bool use_inscribed_width_gate_{false};
+  double robot_width_{0.36};
+  double inscribed_width_margin_{0.02};
   bool shift_goal_off_inscribed_{false};
   bool straight_line_only_{true};
+  // Only used when straight_line_only: fillet each 90° L junction with an arc.
+  bool round_l_corners_{false};
+  double l_corner_radius_{0.25};  // meters; clamped to ≤ half of each adjacent leg
+  int l_corner_arc_points_{8};    // samples on the quarter-circle (excl. endpoints)
   bool smooth_path_{true};
   int smooth_iterations_{10};
   double max_deviation_{0.05};

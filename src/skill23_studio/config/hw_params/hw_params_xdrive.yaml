@@ -91,7 +91,7 @@ control_server:
         topic: "duty_cycle_encoder"
 
     servo:
-      enabled: false
+      enabled: true
       sensors: ["linear_servo", "vertical_servo", "rotation_servo", "gripper_servo"]
       linear_servo:       # pin 12, continuous speed −100…100
         port: 12
@@ -131,8 +131,18 @@ control_server:
       #   echo: 15
       #   frame_id: "front_right_sonar_link"
 
+    # Sharp GP2Y infrared range sensor (template; disabled by default).
+    # port is a VMX analog-input channel — confirm wiring before enabling.
     sharp:
       enabled: false
+      publish_rate_hz: 10.0
+      sensors: ["wall_sensor","front_sensor"]
+      wall_sensor:
+        port: 22 #correspond_to 0
+        frame_id: "sharp_link"
+      front_sensor:
+        port: 23 #correspond_to 0
+        frame_id: "sharp_link"
 
     dio:
       enabled: false

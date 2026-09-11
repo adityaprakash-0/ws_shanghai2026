@@ -1,13 +1,35 @@
 # OMS pick bench sequence:
-#   home → color detect (yaw) → OMS rotate → color+depth measure →
-#   rotation_servo in → vertical up + gripper open → lift → linear → gripper close → linear home
+#   full OMS home
+#   → run pre_look_sequence in the exact listed order
+#   → color ON, detect, OMS yaw align, color+depth ON, measure depth
+#   → run post_look_sequence in the exact listed order
+#
+# Sequence templates (copy/reorder/remove names; unknown names fail safely):
+#   pre_look_sequence:
+#     rotation_servo_out  — wrist/camera OUT
+#     rotation_servo_in   — wrist/camera HOME/IN
+#     lift_goto           — lift to pick_lift_mm
+#     lift_home           — lift to upper home switch
+#     linear_pre_extend   — linear to linear_pre_extend_mm
+#     linear_home         — linear to rear home switch
+#   post_look_sequence:
+#     gripper_open        — open gripper
+#     gripper_close       — close (HOME fallback if close fails)
+#     gripper_home        — gripper HOME/closed
+#     linear_depth        — goto depth-calculated absolute position
+#     linear_home         — linear to rear home switch
+#
+# Current flow:
+#   home → rotation_servo_out → lift_goto → LOOK/ALIGN/DEPTH
+#   → gripper_open → linear_depth → gripper_close → linear_home
 #
 # Parameter groups (see also wp_detect_align.yaml):
 #   Detect (YOLO): conf_threshold, nms_iou, target_name/class, need_frames,
 #     detect_wait_sec, skip_frames, min_box_area_frac, center_u_offset
 #   Align (OMS yaw to object): oms_align_tol_deg, align_yaw_tol_deg,
 #     align_refine_max, oms_min/max_deg, oms_timeout_sec, angular_sign
-#   Depth → linear: depth_*, camera_to_gripper_mm, linear_fwd_offset_mm, linear_max_mm
+#   Depth → linear: depth_*, camera_to_gripper_mm (350), linear_pre_extend_mm (100),
+#     linear_fwd_offset_mm, linear_max_mm
 #   Pick sequence: pick_mode, pick_lift_mm, home_on_start, *_timeout_sec / topics
 #
 # Terminal 1 (no sudo — launch uses sudo internally for control_server):
@@ -70,11 +92,14 @@ detect_align_oms_test:
     oms_home_result_topic: /oms/home/result
     oms_home_timeout_sec: 180.0
     home_on_start: true
-    # linear_mm = depth_z_m×1000 − camera_to_gripper_mm + linear_fwd_offset_mm (clamp 0…linear_max_mm)
-    pick_lift_mm:300.0
-    camera_to_gripper_mm: 455.0
-    linear_fwd_offset_mm: 40.0
-    linear_max_mm: 100.0
+    pre_look_sequence: [rotation_servo_out, lift_goto]
+    post_look_sequence: [gripper_open, linear_depth, gripper_close, linear_home]
+    pick_lift_mm: 50.0
+    camera_to_gripper_mm: 230.0
+    # Used only when pre_look_sequence includes linear_pre_extend.
+    linear_pre_extend_mm: 0.0
+    linear_fwd_offset_mm: 30.0
+    linear_max_mm: 120.0
     linear_cmd_enabled: true
     linear_cmd_topic: /oms/linear/cmd
     linear_result_topic: /oms/linear/result

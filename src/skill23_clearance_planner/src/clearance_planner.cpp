@@ -51,9 +51,21 @@ void ClearancePlanner::configure(
   nav2_util::declare_parameter_if_not_declared(
     node, name_ + ".allow_narrow", rclcpp::ParameterValue(false));
   nav2_util::declare_parameter_if_not_declared(
+    node, name_ + ".use_inscribed_width_gate", rclcpp::ParameterValue(false));
+  nav2_util::declare_parameter_if_not_declared(
+    node, name_ + ".robot_width", rclcpp::ParameterValue(0.36));
+  nav2_util::declare_parameter_if_not_declared(
+    node, name_ + ".inscribed_width_margin", rclcpp::ParameterValue(0.02));
+  nav2_util::declare_parameter_if_not_declared(
     node, name_ + ".shift_goal_off_inscribed", rclcpp::ParameterValue(false));
   nav2_util::declare_parameter_if_not_declared(
     node, name_ + ".straight_line_only", rclcpp::ParameterValue(true));
+  nav2_util::declare_parameter_if_not_declared(
+    node, name_ + ".round_l_corners", rclcpp::ParameterValue(false));
+  nav2_util::declare_parameter_if_not_declared(
+    node, name_ + ".l_corner_radius", rclcpp::ParameterValue(0.25));
+  nav2_util::declare_parameter_if_not_declared(
+    node, name_ + ".l_corner_arc_points", rclcpp::ParameterValue(8));
   nav2_util::declare_parameter_if_not_declared(
     node, name_ + ".smooth_path", rclcpp::ParameterValue(true));
   nav2_util::declare_parameter_if_not_declared(
@@ -77,8 +89,14 @@ void ClearancePlanner::configure(
 
   node->get_parameter(name_ + ".allow_unknown", allow_unknown_);
   node->get_parameter(name_ + ".allow_narrow", allow_narrow_);
+  node->get_parameter(name_ + ".use_inscribed_width_gate", use_inscribed_width_gate_);
+  node->get_parameter(name_ + ".robot_width", robot_width_);
+  node->get_parameter(name_ + ".inscribed_width_margin", inscribed_width_margin_);
   node->get_parameter(name_ + ".shift_goal_off_inscribed", shift_goal_off_inscribed_);
   node->get_parameter(name_ + ".straight_line_only", straight_line_only_);
+  node->get_parameter(name_ + ".round_l_corners", round_l_corners_);
+  node->get_parameter(name_ + ".l_corner_radius", l_corner_radius_);
+  node->get_parameter(name_ + ".l_corner_arc_points", l_corner_arc_points_);
   node->get_parameter(name_ + ".smooth_path", smooth_path_);
   node->get_parameter(name_ + ".smooth_iterations", smooth_iterations_);
   node->get_parameter(name_ + ".max_deviation", max_deviation_);
@@ -92,12 +110,18 @@ void ClearancePlanner::configure(
 
   RCLCPP_INFO(
     logger_,
-    "[%s] configured: allow_unknown=%s allow_narrow=%s shift_goal_off_inscribed=%s "
-    "straight_line_only=%s smooth_path=%s smooth_iterations=%d max_deviation=%.3f "
+    "[%s] configured: allow_unknown=%s allow_narrow=%s "
+    "use_inscribed_width_gate=%s robot_width=%.3f inscribed_width_margin=%.3f "
+    "shift_goal_off_inscribed=%s straight_line_only=%s round_l_corners=%s "
+    "l_corner_radius=%.3f l_corner_arc_points=%d smooth_path=%s "
+    "smooth_iterations=%d max_deviation=%.3f "
     "w_distance=%.2f w_cell_cost=%.2f w_inflation=%.2f turn_penalty=%.2f edt_narrow_weight=%.2f",
     name_.c_str(), allow_unknown_ ? "true" : "false", allow_narrow_ ? "true" : "false",
+    use_inscribed_width_gate_ ? "true" : "false", robot_width_, inscribed_width_margin_,
     shift_goal_off_inscribed_ ? "true" : "false",
-    straight_line_only_ ? "true" : "false", smooth_path_ ? "true" : "false",
+    straight_line_only_ ? "true" : "false",
+    round_l_corners_ ? "true" : "false", l_corner_radius_, l_corner_arc_points_,
+    smooth_path_ ? "true" : "false",
     smooth_iterations_, max_deviation_, w_distance_, w_cell_cost_, w_inflation_,
     turn_penalty_, edt_narrow_weight_);
 
@@ -122,6 +146,12 @@ void ClearancePlanner::configure(
             max_deviation_ = p.as_double();
           } else if (key == "straight_line_only") {
             straight_line_only_ = p.as_bool();
+          } else if (key == "round_l_corners") {
+            round_l_corners_ = p.as_bool();
+          } else if (key == "l_corner_radius") {
+            l_corner_radius_ = p.as_double();
+          } else if (key == "l_corner_arc_points") {
+            l_corner_arc_points_ = static_cast<int>(p.as_int());
           } else if (key == "w_distance") {
             w_distance_ = p.as_double();
           } else if (key == "w_cell_cost") {
@@ -138,6 +168,12 @@ void ClearancePlanner::configure(
             allow_unknown_ = p.as_bool();
           } else if (key == "allow_narrow") {
             allow_narrow_ = p.as_bool();
+          } else if (key == "use_inscribed_width_gate") {
+            use_inscribed_width_gate_ = p.as_bool();
+          } else if (key == "robot_width") {
+            robot_width_ = p.as_double();
+          } else if (key == "inscribed_width_margin") {
+            inscribed_width_margin_ = p.as_double();
           } else if (key == "shift_goal_off_inscribed") {
             shift_goal_off_inscribed_ = p.as_bool();
           } else if (key == "use_final_approach_orientation") {
@@ -248,6 +284,41 @@ bool ClearancePlanner::isAllowedCost(unsigned char cost, bool allow_narrow) cons
   return true;
 }
 
+bool ClearancePlanner::inscribedWidthOk(int x, int y) const
+{
+  // gap ≈ 2 × distance-to-lethal (assumes opposing walls / corridor).
+  const uint16_t d = lethalDist(x, y);
+  if (d == kDistInf || d == 0) {
+    return false;
+  }
+  const double res = costmap_->getResolution();
+  const double gap_m = 2.0 * static_cast<double>(d) * res;
+  return gap_m >= (robot_width_ + inscribed_width_margin_);
+}
+
+bool ClearancePlanner::isCellAllowed(int x, int y, bool allow_narrow) const
+{
+  if (!inBounds(x, y)) {
+    return false;
+  }
+  const unsigned char cost = cellCost(x, y);
+  if (cost >= kLethal && cost != kUnknown) {
+    return false;
+  }
+  if (cost == kUnknown && !allow_unknown_) {
+    return false;
+  }
+  if (cost == kInscribed) {
+    // Width gate: allow 253 only when corridor is wide enough for the robot.
+    // Never open insufficient-width 253 via allow_narrow fallback.
+    if (use_inscribed_width_gate_) {
+      return inscribedWidthOk(x, y);
+    }
+    return allow_narrow;
+  }
+  return true;
+}
+
 double ClearancePlanner::heuristic(const GridPoint & a, const GridPoint & b) const
 {
   const int dx = std::abs(a.x - b.x);
@@ -263,7 +334,7 @@ double ClearancePlanner::traversalPenalty(unsigned char cost, bool allow_narrow,
   if (cost == kUnknown) {
     return w_inflation_;
   }
-  if (cost == kInscribed && allow_narrow) {
+  if (cost == kInscribed && (allow_narrow || use_inscribed_width_gate_)) {
     // Distance-to-254: closer to lethal => higher cost (prefer outer 253).
     const uint16_t d = lethalDist(x, y);
     const double dist = (d == kDistInf) ? 20.0 : static_cast<double>(d);
@@ -277,7 +348,7 @@ double ClearancePlanner::traversalPenalty(unsigned char cost, bool allow_narrow,
 
 bool ClearancePlanner::snapToAllowed(int & mx, int & my, bool allow_narrow, int max_r) const
 {
-  if (inBounds(mx, my) && isAllowedCost(cellCost(mx, my), allow_narrow)) {
+  if (inBounds(mx, my) && isCellAllowed(mx, my, allow_narrow)) {
     return true;
   }
   int best_d = max_r * max_r + 1;
@@ -289,7 +360,7 @@ bool ClearancePlanner::snapToAllowed(int & mx, int & my, bool allow_narrow, int 
     for (int dx = -max_r; dx <= max_r; ++dx) {
       const int nx = mx + dx;
       const int ny = my + dy;
-      if (!inBounds(nx, ny) || !isAllowedCost(cellCost(nx, ny), allow_narrow)) {
+      if (!inBounds(nx, ny) || !isCellAllowed(nx, ny, allow_narrow)) {
         continue;
       }
       const int d = dx * dx + dy * dy;
@@ -381,14 +452,14 @@ bool ClearancePlanner::axisLineFree(int x0, int y0, int x1, int y1, bool allow_n
   }
   const int n = std::max(std::abs(x1 - x0), std::abs(y1 - y0));
   if (n == 0) {
-    return inBounds(x0, y0) && isAllowedCost(cellCost(x0, y0), allow_narrow);
+    return isCellAllowed(x0, y0, allow_narrow);
   }
   const int dx = (x1 - x0) / n;
   const int dy = (y1 - y0) / n;
   for (int i = 0; i <= n; ++i) {
     const int x = x0 + i * dx;
     const int y = y0 + i * dy;
-    if (!inBounds(x, y) || !isAllowedCost(cellCost(x, y), allow_narrow)) {
+    if (!isCellAllowed(x, y, allow_narrow)) {
       return false;
     }
   }
@@ -598,7 +669,7 @@ bool ClearancePlanner::runAStar(
         continue;
       }
       const unsigned char ccost = cellCost(nx, ny);
-      if (!isAllowedCost(ccost, allow_narrow)) {
+      if (!isCellAllowed(nx, ny, allow_narrow)) {
         continue;
       }
       const int nidx = toIndex(nx, ny);
@@ -657,9 +728,10 @@ void ClearancePlanner::simplifyCollinear(std::vector<GridPoint> & path) const
 void ClearancePlanner::collapseUnitStairs(
   std::vector<GridPoint> & path, bool allow_narrow) const
 {
-  // Replace short axis zig-zags (staircases) with a single L when free.
+  // Replace remaining short axis zig-zags with a single L when free.
   // Prefer free (0–252) L; only use 253 if allow_narrow and free L fails.
-  // Reject L that raises peak/mean vs the staircase it replaces.
+  // Pick the lower-cost L corner (xy vs yx) via lShapeFreeMetrics — do not keep
+  // the staircase just because its mean was slightly cheaper.
   if (path.size() < 4) {
     return;
   }
@@ -683,10 +755,6 @@ void ClearancePlanner::collapseUnitStairs(
           if (!ok && allow_narrow) {
             ok = lShapeFreeMetrics(a.x, a.y, d.x, d.y, true, corner, link_m);
           }
-          if (ok) {
-            const AxisMetrics orig = pathMetrics(path, i, i + 3);
-            ok = metricsNotWorse(link_m, orig);
-          }
         }
         if (ok) {
           out.push_back(a);
@@ -708,11 +776,132 @@ void ClearancePlanner::collapseUnitStairs(
   simplifyCollinear(path);
 }
 
+void ClearancePlanner::collapseBoxDetours(
+  std::vector<GridPoint> & path, bool allow_narrow) const
+{
+  // Remove rectangular detours / jogs when a shorter axis run or single L is free.
+  // Example: up→right→down→up becomes a straight or one L instead of a box.
+  if (path.size() < 4) {
+    return;
+  }
+
+  auto manhattan = [](const GridPoint & a, const GridPoint & b) {
+      return std::abs(a.x - b.x) + std::abs(a.y - b.y);
+    };
+  auto subpathLen = [&](size_t i, size_t j) {
+      int len = 0;
+      for (size_t k = i; k < j; ++k) {
+        len += manhattan(path[k], path[k + 1]);
+      }
+      return len;
+    };
+
+  bool changed = true;
+  int guard = 0;
+  while (changed && guard++ < 16) {
+    changed = false;
+    simplifyCollinear(path);
+    if (path.size() < 4) {
+      return;
+    }
+
+    for (size_t i = 0; i + 3 < path.size(); ++i) {
+      size_t best_j = 0;
+      GridPoint best_corner{0, 0};
+      bool best_has_corner = false;
+      int best_save = 0;
+
+      for (size_t j = path.size() - 1; j >= i + 3; --j) {
+        const int chord = manhattan(path[i], path[j]);
+        if (chord <= 0) {
+          continue;
+        }
+        const int via = subpathLen(i, j);
+        const int save = via - chord;
+        // Need a real shortening (at least 2 cells of detour).
+        if (save < 2) {
+          continue;
+        }
+
+        const AxisMetrics orig = pathMetrics(path, i, j);
+        GridPoint corner{path[i].x, path[i].y};
+        AxisMetrics link;
+        bool ok = false;
+        bool has_corner = false;
+
+        if (path[i].x == path[j].x || path[i].y == path[j].y) {
+          ok = axisLineFree(
+            path[i].x, path[i].y, path[j].x, path[j].y, false);
+          if (!ok && allow_narrow) {
+            ok = axisLineFree(
+              path[i].x, path[i].y, path[j].x, path[j].y, true);
+          }
+          if (ok) {
+            link = axisMetrics(
+              path[i].x, path[i].y, path[j].x, path[j].y);
+          }
+        } else {
+          ok = lShapeFreeMetrics(
+            path[i].x, path[i].y, path[j].x, path[j].y, false, corner, link);
+          if (!ok && allow_narrow) {
+            ok = lShapeFreeMetrics(
+              path[i].x, path[i].y, path[j].x, path[j].y, true, corner, link);
+          }
+          if (ok) {
+            has_corner =
+              (corner.x != path[i].x || corner.y != path[i].y) &&
+              (corner.x != path[j].x || corner.y != path[j].y);
+          }
+        }
+
+        if (!ok || link.cells <= 0) {
+          continue;
+        }
+        // Allow modest mean change; never raise peak much (stay off walls).
+        if (link.peak > orig.peak + 12) {
+          continue;
+        }
+        if (link.mean() > orig.mean() + 30.0 && save < 6) {
+          continue;
+        }
+
+        best_j = j;
+        best_corner = corner;
+        best_has_corner = has_corner;
+        best_save = save;
+        break;  // farthest collapse for this i
+      }
+
+      if (best_save < 2) {
+        continue;
+      }
+
+      std::vector<GridPoint> out;
+      out.reserve(path.size());
+      for (size_t k = 0; k <= i; ++k) {
+        out.push_back(path[k]);
+      }
+      if (best_has_corner) {
+        out.push_back(best_corner);
+      }
+      for (size_t k = best_j; k < path.size(); ++k) {
+        out.push_back(path[k]);
+      }
+      path.swap(out);
+      changed = true;
+      break;
+    }
+  }
+  simplifyCollinear(path);
+}
+
 std::vector<ClearancePlanner::GridPoint> ClearancePlanner::orthogonalSmooth(
   const std::vector<GridPoint> & path, bool allow_narrow) const
 {
-  // Greedy axis / L shortcuts that must not worsen occupancy vs the A* subpath.
-  // Old behavior took the farthest free link and hugged high inflation (0–252).
+  // Collapse 4-connected A* stairs into long axis runs + single L (90°) corners.
+  // Prefer freest (lowest peak/mean) long runs — not farthest-at-any-cost (that hugged
+  // magenta/red walls). Length is rewarded so we still avoid cell-by-cell zig-zag:
+  //   score = 2.5*peak + mean - 8*(j-i)   (lower is better)
   if (path.size() < 3) {
     return path;
   }
@@ -724,16 +913,25 @@ std::vector<ClearancePlanner::GridPoint> ClearancePlanner::orthogonalSmooth(
     bool has_corner{false};
     unsigned char peak{0};
     double mean{0.0};
+    double score{0.0};
   };
 
+  auto makeScore = [](size_t i, size_t j, unsigned char peak, double mean) {
+      const double len = static_cast<double>(j > i ? j - i : 0);
+      return 2.5 * static_cast<double>(peak) + mean - 8.0 * len;
+    };
+
   auto better = [](const Candidate & a, const Candidate & b) {
+      if (std::abs(a.score - b.score) > 1e-6) {
+        return a.score < b.score;
+      }
       if (a.peak != b.peak) {
         return a.peak < b.peak;
       }
-      if (a.mean != b.mean) {
+      if (std::abs(a.mean - b.mean) > 1e-9) {
         return a.mean < b.mean;
       }
-      return a.j > b.j;  // farther wins ties
+      return a.j > b.j;
     };
 
   auto consider = [&](
@@ -741,17 +939,18 @@ std::vector<ClearancePlanner::GridPoint> ClearancePlanner::orthogonalSmooth(
     {
       const GridPoint & a = path[i];
       const GridPoint & b = path[j];
-      const AxisMetrics orig = pathMetrics(path, i, j);
 
       if (a.x == b.x || a.y == b.y) {
         if (!axisLineFree(a.x, a.y, b.x, b.y, use_narrow)) {
           return;
         }
         const AxisMetrics link = axisMetrics(a.x, a.y, b.x, b.y);
-        if (!metricsNotWorse(link, orig)) {
+        if (link.cells <= 0) {
           return;
         }
-        out.push_back({j, a, false, link.peak, link.mean()});
+        out.push_back({
+            j, a, false, link.peak, link.mean(),
+            makeScore(i, j, link.peak, link.mean())});
         return;
       }
 
@@ -760,13 +959,15 @@ std::vector<ClearancePlanner::GridPoint> ClearancePlanner::orthogonalSmooth(
       if (!lShapeFreeMetrics(a.x, a.y, b.x, b.y, use_narrow, corner, link)) {
         return;
       }
-      if (!metricsNotWorse(link, orig)) {
+      if (link.cells <= 0) {
         return;
       }
       const bool has_corner =
         (corner.x != a.x || corner.y != a.y) &&
         (corner.x != b.x || corner.y != b.y);
-      out.push_back({j, corner, has_corner, link.peak, link.mean()});
+      out.push_back({
+          j, corner, has_corner, link.peak, link.mean(),
+          makeScore(i, j, link.peak, link.mean())});
     };
 
   std::vector<GridPoint> out;
@@ -781,7 +982,7 @@ std::vector<ClearancePlanner::GridPoint> ClearancePlanner::orthogonalSmooth(
     for (size_t j = i + 1; j < path.size(); ++j) {
       consider(i, j, false, cands);
     }
-    // Pass 2: allow 253 only if no free candidate exists (including adjacent).
+    // Pass 2: allow 253 only if no free candidate exists.
     if (cands.empty() && allow_narrow) {
       for (size_t j = i + 1; j < path.size(); ++j) {
         consider(i, j, true, cands);
@@ -790,6 +991,7 @@ std::vector<ClearancePlanner::GridPoint> ClearancePlanner::orthogonalSmooth(
 
     Candidate best;
     best.j = i + 1;
+    best.score = 1e100;
     if (!cands.empty()) {
       best = cands.front();
       for (size_t k = 1; k < cands.size(); ++k) {
@@ -806,6 +1008,108 @@ std::vector<ClearancePlanner::GridPoint> ClearancePlanner::orthogonalSmooth(
   }
   out.push_back(path.back());
   return out;
+}
+
+void ClearancePlanner::preferClearerAxisLanes(
+  std::vector<GridPoint> & path, bool allow_narrow, int max_shift) const
+{
+  // After L-collapse, long legs may still sit on magenta. Slide each long axis
+  // leg to a parallel free lane with lower peak/mean (enter/exit with short jogs).
+  if (path.size() < 2 || max_shift <= 0) {
+    return;
+  }
+  simplifyCollinear(path);
+  std::vector<GridPoint> out;
+  out.reserve(path.size() * 2);
+  out.push_back(path.front());
+
+  for (size_t i = 0; i + 1 < path.size(); ++i) {
+    const GridPoint a = out.back();
+    const GridPoint b = path[i + 1];
+    if (a.x != b.x && a.y != b.y) {
+      out.push_back(b);
+      continue;
+    }
+    const int len = std::max(std::abs(b.x - a.x), std::abs(b.y - a.y));
+    // Short legs: lane-snap jogs create the "box" look — skip them.
+    if (len < 8) {
+      out.push_back(b);
+      continue;
+    }
+
+    const bool horiz = (a.y == b.y);
+    AxisMetrics best_m = axisMetrics(a.x, a.y, b.x, b.y);
+    int best_s = 0;
+    for (int s = -max_shift; s <= max_shift; ++s) {
+      if (s == 0) {
+        continue;
+      }
+      int ax = a.x;
+      int ay = a.y;
+      int bx = b.x;
+      int by = b.y;
+      if (horiz) {
+        ay += s;
+        by += s;
+      } else {
+        ax += s;
+        bx += s;
+      }
+      if (!inBounds(ax, ay) || !inBounds(bx, by)) {
+        continue;
+      }
+      if (!axisLineFree(ax, ay, bx, by, allow_narrow)) {
+        continue;
+      }
+      // Short perpendicular jogs from true endpoints onto the clearer rail.
+      if (horiz) {
+        if (!axisLineFree(a.x, a.y, ax, ay, allow_narrow) ||
+          !axisLineFree(bx, by, b.x, b.y, allow_narrow))
+        {
+          continue;
+        }
+      } else if (!axisLineFree(a.x, a.y, ax, ay, allow_narrow) ||
+        !axisLineFree(bx, by, b.x, b.y, allow_narrow))
+      {
+        continue;
+      }
+      const AxisMetrics m = axisMetrics(ax, ay, bx, by);
+      // Require a clear win — small mean gains were creating useless side-jogs.
+      const bool better_peak = m.peak + 20 < best_m.peak;
+      const bool better_mean =
+        m.peak <= best_m.peak && m.mean() + 25.0 < best_m.mean();
+      if (better_peak || better_mean) {
+        best_m = m;
+        best_s = s;
+      }
+    }
+
+    if (best_s == 0) {
+      out.push_back(b);
+      continue;
+    }
+    if (horiz) {
+      const int y2 = a.y + best_s;
+      if (y2 != a.y) {
+        out.push_back({a.x, y2});
+      }
+      out.push_back({b.x, y2});
+      if (y2 != b.y) {
+        out.push_back(b);
+      }
+    } else {
+      const int x2 = a.x + best_s;
+      if (x2 != a.x) {
+        out.push_back({x2, a.y});
+      }
+      out.push_back({x2, b.y});
+      if (x2 != b.x) {
+        out.push_back(b);
+      }
+    }
+  }
+  path.swap(out);
+  simplifyCollinear(path);
 }
 
 void ClearancePlanner::densifyAxisAligned(
@@ -869,6 +1173,171 @@ geometry_msgs::msg::Pose ClearancePlanner::makePoseFromCell(int mx, int my) cons
   p.position.z = 0.0;
   p.orientation.w = 1.0;
   return p;
+}
+
+bool ClearancePlanner::filletCornerAllowed(
+  double ox, double oy, double r,
+  double a0, double a1, bool allow_narrow) const
+{
+  // Sample quarter-circle (and endpoints) for free cells.
+  const int n = std::max(4, l_corner_arc_points_ + 1);
+  double delta = a1 - a0;
+  // Shortest signed turn within (-pi, pi]
+  while (delta > M_PI) {
+    delta -= 2.0 * M_PI;
+  }
+  while (delta <= -M_PI) {
+    delta += 2.0 * M_PI;
+  }
+  for (int k = 0; k <= n; ++k) {
+    const double t = static_cast<double>(k) / static_cast<double>(n);
+    const double a = a0 + t * delta;
+    const double wx = ox + r * std::cos(a);
+    const double wy = oy + r * std::sin(a);
+    if (!worldPointAllowed(wx, wy, allow_narrow)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+std::vector<ClearancePlanner::WorldPoint> ClearancePlanner::roundLCornersToWorld(
+  const std::vector<GridPoint> & sparse_path, bool allow_narrow) const
+{
+  const double spacing = std::max(costmap_->getResolution(), 1e-3);
+  std::vector<WorldPoint> verts = gridPathToWorld(sparse_path);
+  if (verts.size() < 3 || l_corner_radius_ <= spacing * 0.5) {
+    return densifyWorldPath(verts, spacing);
+  }
+
+  auto append_line = [&](std::vector<WorldPoint> & out, const WorldPoint & a,
+      const WorldPoint & b) {
+      const double dx = b.x - a.x;
+      const double dy = b.y - a.y;
+      const double dist = std::hypot(dx, dy);
+      if (dist < 1e-9) {
+        return;
+      }
+      const int n = std::max(1, static_cast<int>(std::ceil(dist / spacing)));
+      // Skip first point if already at `a` (caller may have appended it).
+      const bool skip0 = !out.empty() &&
+        std::hypot(out.back().x - a.x, out.back().y - a.y) < 1e-6;
+      for (int k = skip0 ? 1 : 0; k <= n; ++k) {
+        const double t = static_cast<double>(k) / static_cast<double>(n);
+        out.push_back({a.x + t * dx, a.y + t * dy});
+      }
+    };
+
+  auto unit_axis = [](double dx, double dy, double & ux, double & uy) -> bool {
+      const double ax = std::abs(dx);
+      const double ay = std::abs(dy);
+      // Must be axis-aligned (L legs).
+      if (ax < 1e-9 && ay < 1e-9) {
+        return false;
+      }
+      if (ax >= ay * 8.0) {
+        ux = dx >= 0.0 ? 1.0 : -1.0;
+        uy = 0.0;
+        return true;
+      }
+      if (ay >= ax * 8.0) {
+        ux = 0.0;
+        uy = dy >= 0.0 ? 1.0 : -1.0;
+        return true;
+      }
+      return false;
+    };
+
+  std::vector<WorldPoint> out;
+  out.reserve(verts.size() * 8);
+  out.push_back(verts.front());
+
+  for (size_t i = 1; i + 1 < verts.size(); ++i) {
+    const WorldPoint & A = verts[i - 1];
+    const WorldPoint & C = verts[i];
+    const WorldPoint & B = verts[i + 1];
+
+    double uix = 0.0, uiy = 0.0, uox = 0.0, uoy = 0.0;
+    const bool in_ok = unit_axis(C.x - A.x, C.y - A.y, uix, uiy);
+    const bool out_ok = unit_axis(B.x - C.x, B.y - C.y, uox, uoy);
+    const double len_in = std::hypot(C.x - A.x, C.y - A.y);
+    const double len_out = std::hypot(B.x - C.x, B.y - C.y);
+    const double cross = uix * uoy - uiy * uox;
+    const double dot = uix * uox + uiy * uoy;
+    const bool is_l =
+      in_ok && out_ok && std::abs(dot) < 1e-6 && std::abs(std::abs(cross) - 1.0) < 1e-6;
+
+    if (!is_l) {
+      append_line(out, out.back(), C);
+      continue;
+    }
+
+    // Radius: requested, but leave room on both legs (keep ≥1 cell of straight).
+    const double min_straight = spacing;
+    double r = std::min(
+      {std::max(0.0, l_corner_radius_),
+       0.5 * std::max(0.0, len_in - min_straight),
+       0.5 * std::max(0.0, len_out - min_straight)});
+    if (r < spacing) {
+      append_line(out, out.back(), C);
+      continue;
+    }
+
+    // Try requested radius, then shrink if arc hits obstacles.
+    bool placed = false;
+    for (int attempt = 0; attempt < 4 && !placed; ++attempt) {
+      const double rr = r * (attempt == 0 ? 1.0 : (1.0 - 0.25 * attempt));
+      if (rr < spacing) {
+        break;
+      }
+      const WorldPoint P{C.x - uix * rr, C.y - uiy * rr};
+      const WorldPoint Q{C.x + uox * rr, C.y + uoy * rr};
+      // Inward normal = rotate incoming 90° toward outgoing.
+      const double lx = -uiy;
+      const double ly = uix;
+      const double nx = cross > 0.0 ? lx : -lx;
+      const double ny = cross > 0.0 ? ly : -ly;
+      const double ox = P.x + nx * rr;
+      const double oy = P.y + ny * rr;
+      const double a0 = std::atan2(P.y - oy, P.x - ox);
+      const double a1 = std::atan2(Q.y - oy, Q.x - ox);
+
+      if (!filletCornerAllowed(ox, oy, rr, a0, a1, allow_narrow)) {
+        continue;
+      }
+
+      append_line(out, out.back(), P);
+
+      // Quarter-circle samples (exclude P; include Q).
+      double delta = a1 - a0;
+      while (delta > M_PI) {
+        delta -= 2.0 * M_PI;
+      }
+      while (delta <= -M_PI) {
+        delta += 2.0 * M_PI;
+      }
+      // Prefer the ±90° sweep matching the turn (cross sign).
+      if (cross > 0.0 && delta < 0.0) {
+        delta += 2.0 * M_PI;
+      } else if (cross < 0.0 && delta > 0.0) {
+        delta -= 2.0 * M_PI;
+      }
+      const int n_arc = std::max(2, l_corner_arc_points_);
+      for (int k = 1; k <= n_arc; ++k) {
+        const double t = static_cast<double>(k) / static_cast<double>(n_arc);
+        const double a = a0 + t * delta;
+        out.push_back({ox + rr * std::cos(a), oy + rr * std::sin(a)});
+      }
+      placed = true;
+    }
+
+    if (!placed) {
+      append_line(out, out.back(), C);
+    }
+  }
+
+  append_line(out, out.back(), verts.back());
+  return out;
 }
 
 void ClearancePlanner::assignSmoothOrientations(
@@ -1047,7 +1516,7 @@ bool ClearancePlanner::worldPointAllowed(double wx, double wy, bool allow_narrow
   if (!costmap_->worldToMap(wx, wy, mx, my)) {
     return false;
   }
-  return isAllowedCost(cellCost(static_cast<int>(mx), static_cast<int>(my)), allow_narrow);
+  return isCellAllowed(static_cast<int>(mx), static_cast<int>(my), allow_narrow);
 }
 
 std::vector<ClearancePlanner::WorldPoint> ClearancePlanner::constrainedSmoothDiagonals(
@@ -1161,8 +1630,8 @@ nav_msgs::msg::Path ClearancePlanner::createPlan(
   const int orig_gx = gx;
   const int orig_gy = gy;
 
-  // Build EDT before narrow snap / search so outer-253 preference works.
-  if (allow_narrow_) {
+  // Build EDT when width-gating 253 or when allow_narrow fallback needs EDT bias.
+  if (use_inscribed_width_gate_ || allow_narrow_) {
     buildLethalDistanceField();
   } else {
     lethal_dist_.clear();
@@ -1173,7 +1642,8 @@ nav_msgs::msg::Path ClearancePlanner::createPlan(
   // Start on inscribed (253): keep the robot cell so the path begins at the
   // real pose (snapping to a nearby free cell leaves a gap RPP/controller must
   // invent). A* seeds start without a cost check; neighbors still must be
-  // 0–252 when allow_narrow is false. Lethal/unknown start still snaps/fails.
+  // 0–252 when allow_narrow is false (unless width gate allows 253). Lethal/unknown
+  // start still snaps/fails.
   const unsigned char start_cost = cellCost(sx, sy);
   if (start_cost == kInscribed) {
     RCLCPP_WARN(
@@ -1182,7 +1652,7 @@ nav_msgs::msg::Path ClearancePlanner::createPlan(
       "(remainder of path still prefers 0–252)",
       name_.c_str(), sx, sy);
   } else if (!snapToAllowed(sx, sy, false, kSnapR) &&
-    !(allow_narrow_ && snapToAllowed(sx, sy, true, kSnapR)))
+    !(allow_narrow_ && !use_inscribed_width_gate_ && snapToAllowed(sx, sy, true, kSnapR)))
   {
     RCLCPP_ERROR(
       logger_, "[%s] Start pose cell cost=%u is blocked and no free cell nearby",
@@ -1211,7 +1681,7 @@ nav_msgs::msg::Path ClearancePlanner::createPlan(
 
   if (!goal_shifted_off_inscribed) {
     if (!snapToAllowed(gx, gy, false, kSnapR) &&
-      !(allow_narrow_ && snapToAllowed(gx, gy, true, kSnapR)))
+      !(allow_narrow_ && !use_inscribed_width_gate_ && snapToAllowed(gx, gy, true, kSnapR)))
     {
       RCLCPP_ERROR(
         logger_,
@@ -1233,10 +1703,11 @@ nav_msgs::msg::Path ClearancePlanner::createPlan(
   const GridPoint s{sx, sy};
   const GridPoint g{gx, gy};
 
-  // Always try free (0–252) first. Narrow (253 + EDT) only if allow_narrow_.
+  // Free (0–252) first; width-OK 253 already included when use_inscribed_width_gate.
+  // Blind allow_narrow fallback only when the width gate is off.
   bool found = runAStar(s, g, false, raw);
   bool used_narrow_fallback = false;
-  if (!found && allow_narrow_) {
+  if (!found && allow_narrow_ && !use_inscribed_width_gate_) {
     found = runAStar(s, g, true, raw);
     used_narrow_fallback = found;
   }
@@ -1261,7 +1732,16 @@ nav_msgs::msg::Path ClearancePlanner::createPlan(
     collapseUnitStairs(raw, used_narrow);
     raw = orthogonalSmooth(raw, used_narrow);
     simplifyCollinear(raw);
-    densifyAxisAligned(raw, used_narrow);
+    // Slide long L-legs off magenta/red into freer parallel lanes when possible.
+    preferClearerAxisLanes(raw, used_narrow, 4);
+    collapseBoxDetours(raw, used_narrow);
+    simplifyCollinear(raw);
+    raw = orthogonalSmooth(raw, used_narrow);
+    collapseBoxDetours(raw, used_narrow);
+    simplifyCollinear(raw);
+    if (!(round_l_corners_ && l_corner_radius_ > 0.0)) {
+      densifyAxisAligned(raw, used_narrow);
+    }
   }
 
   if (used_narrow_fallback) {
@@ -1283,6 +1763,20 @@ nav_msgs::msg::Path ClearancePlanner::createPlan(
       pose.pose.orientation.w = 1.0;
       path.poses.push_back(pose);
     }
+    assignTangentOrientations(path, start, goal);
+  } else if (straight_line_only_ && round_l_corners_ && l_corner_radius_ > 0.0) {
+    const std::vector<WorldPoint> world = roundLCornersToWorld(raw, used_narrow);
+    path.poses.reserve(world.size());
+    for (const auto & w : world) {
+      geometry_msgs::msg::PoseStamped pose;
+      pose.header = path.header;
+      pose.pose.position.x = w.x;
+      pose.pose.position.y = w.y;
+      pose.pose.position.z = 0.0;
+      pose.pose.orientation.w = 1.0;
+      path.poses.push_back(pose);
+    }
+    // Tangents follow the fillet so RPP turns smoothly at the arc.
     assignTangentOrientations(path, start, goal);
   } else {
     path.poses.reserve(raw.size());

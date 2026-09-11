@@ -1,0 +1,70 @@
+{
+  "waypoints": [
+    {
+      "x": -0.01,
+      "y": 0.002,
+      "yaw": 0,
+      "name": "wp1",
+      "action": {
+        "type": "wait_light",
+        "seconds": 3,
+        "pattern": "buzzer_3x"
+      }
+    },
+    {
+      "x": -0.061,
+      "y": 0.804,
+      "yaw": -1.547,
+      "name": "wp2",
+      "action": {
+        "type": "wait_light",
+        "seconds": 3,
+        "pattern": "red"
+      }
+    },
+    {
+      "x": 0.509,
+      "y": 0.767,
+      "yaw": -1.571,
+      "name": "wp3",
+      "action": {
+        "type": "wait_light",
+        "seconds": 3,
+        "pattern": "red_blink_3x"
+      }
+    },
+    {
+      "x": 0.554,
+      "y": 2.628,
+      "yaw": -1.572,
+      "name": "wp4",
+      "action": {
+        "type": "wait_light",
+        "seconds": 3,
+        "pattern": "green_blink_3x"
+      }
+    },
+    {
+      "x": -0.211,
+      "y": 3.387,
+      "yaw": 0,
+      "name": "wp5",
+      "action": {
+        "type": "wait_light",
+        "seconds": 3,
+        "pattern": "green_blink"
+      }
+    },
+    {
+      "x": 1.086,
+      "y": 3.089,
+      "yaw": -1.568,
+      "name": "wp6",
+      "action": {
+        "type": "wait_light",
+        "seconds": 3,
+        "pattern": "yellow"
+      }
+    }
+  ]
+}

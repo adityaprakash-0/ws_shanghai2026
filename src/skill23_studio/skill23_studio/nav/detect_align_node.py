@@ -48,7 +48,8 @@ from skill23_studio.nav.detect_align_geometry import (
 from skill23_studio.nav.oms_drop_sequence import run_drop_sequence
 from skill23_studio.nav.oms_pick_sequence import (
     depth_to_linear_mm,
-    run_pick_arm_and_grip,
+    run_pick_post_depth,
+    run_pick_pre_detect,
 )
 from skill23_studio.nav.wp_align_common import result_msg
 
@@ -189,9 +190,10 @@ class DetectAlignNode(Node):
         self.declare_parameter('stream_verify_timeout_sec', 12.0)
         # Commissioning oms_pick / oms_drop
         self.declare_parameter('pick_lift_mm', 0.0)
-        self.declare_parameter('camera_to_gripper_mm', 455.0)
-        self.declare_parameter('linear_fwd_offset_mm', 40.0)
-        self.declare_parameter('linear_max_mm', 100.0)
+        self.declare_parameter('camera_to_gripper_mm', 350.0)
+        self.declare_parameter('linear_pre_extend_mm', 100.0)
+        self.declare_parameter('linear_fwd_offset_mm', 0.0)
+        self.declare_parameter('linear_max_mm', 150.0)
         self.declare_parameter('oms_align_tol_deg', 1.0)
         self.declare_parameter('align_yaw_tol_deg', 2.0)
         self.declare_parameter('align_refine_max', 2)
@@ -234,6 +236,7 @@ class DetectAlignNode(Node):
         self._stream_timeout = max(2.0, float(self.get_parameter('stream_verify_timeout_sec').value))
         self._pick_lift_mm = max(0.0, float(self.get_parameter('pick_lift_mm').value))
         self._cam_grip_mm = max(0.0, float(self.get_parameter('camera_to_gripper_mm').value))
+        self._pre_extend_mm = max(0.0, float(self.get_parameter('linear_pre_extend_mm').value))
         self._linear_off_mm = float(self.get_parameter('linear_fwd_offset_mm').value)
         self._linear_max_mm = max(1.0, float(self.get_parameter('linear_max_mm').value))
         self._oms_align_tol = max(0.1, float(self.get_parameter('oms_align_tol_deg').value))
@@ -1047,6 +1050,41 @@ class DetectAlignNode(Node):
 
         self._publish_status(state='oms_pick', message=f'pick lift={lift_mm:.0f}mm')
         self._flog('info', f'OMS_PICK begin lift={lift_mm:.0f}mm')
+
+        # 1) Full home (lift up → linear rear → gripper close → rot servo in)
+        self._publish_status(state='oms_pick', message='OMS home')
+        ok_home, msg_home = self._wait_oms_home(self._oms_home_timeout)
+        if not ok_home:
+            self._finish(
+                cmd_id, False, f'OMS home failed: {msg_home}', gen, extra_out,
+                mode='oms_pick')
+            return
+
+        # 2) rotation_servo out → linear 10 cm → lift to pick height
+        def _plog(m: str, level: str = 'info') -> None:
+            self._flog(level, m)
+
+        self._publish_status(state='oms_pick', message='pre-detect arm')
+        ok_pre, msg_pre, pre_extra = run_pick_pre_detect(
+            lift_pub=self._lift_cmd_pub,
+            linear_pub=self._linear_cmd_pub,
+            rot_servo_pub=self._rot_servo_pub,
+            result_store=self._axis_results,
+            lift_mm=lift_mm,
+            pre_extend_mm=self._pre_extend_mm,
+            linear_max_mm=self._linear_max_mm,
+            lift_timeout=self._lift_timeout,
+            linear_timeout=self._linear_timeout,
+            servo_timeout=self._servo_timeout,
+            linear_enabled=self._linear_cmd_enabled,
+            log=_plog,
+        )
+        extra_out.update(pre_extra)
+        if not ok_pre:
+            self._finish(
+                cmd_id, False, msg_pre, gen, extra_out, mode='oms_pick')
+            return
+
         self._set_cam(True, False)
         if not self._wait_stream_frames(gen, self._stream_need, self._stream_timeout):
             self._finish(
@@ -1166,15 +1204,20 @@ class DetectAlignNode(Node):
                     mode='oms_pick')
                 return
             linear_mm = depth_to_linear_mm(
-                depth_m, self._cam_grip_mm, self._linear_off_mm, self._linear_max_mm)
+                depth_m, self._cam_grip_mm, self._linear_off_mm,
+                self._linear_max_mm, self._pre_extend_mm)
+            remain = max(0.0, float(linear_mm) - self._pre_extend_mm)
             extra_out['depth_z_m'] = round(depth_m, 4)
             extra_out['depth_m'] = round(depth_m, 4)
             extra_out['linear_pos_mm'] = round(linear_mm, 2)
+            extra_out['linear_remain_mm'] = round(remain, 2)
             extra_out['pick_lift_mm'] = round(lift_mm, 2)
             self._flog(
                 'info',
                 f'post-rotate yaw={bearing:+.1f}° Z={depth_m:.3f}m '
-                f'linear→{linear_mm:.0f}mm')
+                f'remain={remain:.0f}mm '
+                f'(depth−({self._cam_grip_mm:.0f}+{self._pre_extend_mm:.0f})'
+                f'+{self._linear_off_mm:.0f}) → abs {linear_mm:.0f}mm')
             if abs(bearing) <= self._align_yaw_tol:
                 break
             if refine >= self._align_refine_max:
@@ -1198,20 +1241,14 @@ class DetectAlignNode(Node):
                 mode='oms_pick')
             return
 
-        def _plog(m: str, level: str = 'info') -> None:
-            self._flog(level, m)
-
-        ok, message, pick_extra = run_pick_arm_and_grip(
-            lift_pub=self._lift_cmd_pub,
+        # gripper open → linear to target → close → linear home
+        ok, message, pick_extra = run_pick_post_depth(
             linear_pub=self._linear_cmd_pub,
-            rot_servo_pub=self._rot_servo_pub,
-            vert_pub=self._vert_pub,
             grip_pub=self._grip_pub,
             result_store=self._axis_results,
-            lift_mm=lift_mm,
             linear_mm=linear_mm,
+            pre_extend_mm=self._pre_extend_mm,
             linear_max_mm=self._linear_max_mm,
-            lift_timeout=self._lift_timeout,
             linear_timeout=self._linear_timeout,
             servo_timeout=self._servo_timeout,
             linear_enabled=self._linear_cmd_enabled,

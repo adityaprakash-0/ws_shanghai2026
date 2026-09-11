@@ -38,6 +38,7 @@
           <button class="btn btn-primary" data-go="create">Create New Map</button>
           <button class="btn btn-ghost" data-go="import">Import Map</button>
           <button class="btn btn-saffron" id="btnOpenOms" type="button">OMS Software</button>
+          <button class="btn btn-ghost" id="btnOpenHwTest" type="button">HW Testing</button>
         </div>
       </div>
       <div class="connect-card">
@@ -400,6 +401,7 @@
                 <pre class="log-box side-log-tall" id="logOrbbec">—</pre>
               </div>
             </div>
+            <div class="deploy-right-actions">
             <div class="deploy-dock-label">Relocalize</div>
             <p class="hint" id="relocHint">Reloc: idle</p>
             <div class="deploy-grid deploy-grid-3 deploy-grid-compact">
@@ -420,31 +422,68 @@
             <button class="btn btn-ghost" id="btnGcPlannerStop" type="button" hidden>Stop GC+Planner</button>
             <p class="hint" id="gcPlannerHint">Lightweight planner preview — open RViz2 (map + /global_costmap/costmap) on the Pi.</p>
             <div id="gcPlannerParams" class="gc-planner-params" hidden>
-              <div class="deploy-dock-label">Planner / smoother (live)</div>
-              <p class="hint">Changes apply immediately — no restart. Then Generate path.</p>
-              <label>smooth_path
-                <select id="gcSmoothPath"><option value="true">true</option><option value="false">false</option></select>
-              </label>
-              <label>smooth_iterations
-                <input type="number" id="gcSmoothIter" min="0" max="50" step="1" value="10">
-              </label>
-              <label>max_deviation (m)
-                <input type="number" id="gcMaxDev" min="0" max="0.5" step="0.01" value="0.05">
-              </label>
-              <label>w_distance
-                <input type="number" id="gcWDist" min="0" step="0.1" value="0.5">
-              </label>
-              <label>w_cell_cost
-                <input type="number" id="gcWCell" min="0" step="1" value="20">
-              </label>
-              <label>w_inflation
-                <input type="number" id="gcWInf" min="0" step="0.1" value="1">
-              </label>
-              <label>turn_penalty
-                <input type="number" id="gcTurn" min="0" step="1" value="16">
-              </label>
-              <button class="btn btn-saffron btn-compact" id="btnGcApplyParams" type="button"
-                style="width:100%;margin:0.35rem 0">Apply planner params</button>
+              <div class="deploy-dock-label">GC planner dashboard</div>
+              <p class="hint">Live params + drawn walls (obstacle overlay on global costmap). Does not edit map.pgm.</p>
+              <details class="gc-dash-section" open>
+                <summary>Planner / smoother</summary>
+                <label>smooth_path
+                  <select id="gcSmoothPath"><option value="true">true</option><option value="false">false</option></select>
+                </label>
+                <label>smooth_iterations
+                  <input type="number" id="gcSmoothIter" min="0" max="50" step="1" value="10">
+                </label>
+                <label>max_deviation (m)
+                  <input type="number" id="gcMaxDev" min="0" max="0.5" step="0.01" value="0.05">
+                </label>
+                <label>straight_line_only
+                  <select id="gcStraight"><option value="true">true</option><option value="false">false</option></select>
+                </label>
+                <label>round_l_corners
+                  <select id="gcRoundL"><option value="true">true</option><option value="false">false</option></select>
+                </label>
+                <label>l_corner_radius (m)
+                  <input type="number" id="gcLRadius" min="0" max="2" step="0.05" value="0.30">
+                </label>
+                <label>w_distance
+                  <input type="number" id="gcWDist" min="0" step="0.1" value="0.5">
+                </label>
+                <label>w_cell_cost
+                  <input type="number" id="gcWCell" min="0" step="1" value="20">
+                </label>
+                <label>w_inflation
+                  <input type="number" id="gcWInf" min="0" step="0.1" value="1">
+                </label>
+                <label>turn_penalty
+                  <input type="number" id="gcTurn" min="0" step="1" value="16">
+                </label>
+                <label>narrow_wall_penalty
+                  <input type="number" id="gcNarrow" min="0" step="1" value="50">
+                </label>
+                <label>edt_narrow_weight
+                  <input type="number" id="gcEdt" min="0" step="1" value="40">
+                </label>
+                <label>robot_width (m)
+                  <input type="number" id="gcRobotW" min="0.05" max="1" step="0.01" value="0.38">
+                </label>
+                <button class="btn btn-saffron btn-compact" id="btnGcApplyParams" type="button"
+                  style="width:100%;margin:0.35rem 0">Apply planner params</button>
+              </details>
+              <details class="gc-dash-section" open>
+                <summary>Walls (live costmap)</summary>
+                <p class="hint" id="gcWallsHint">Wall / Erase paint on the map → /gc_planner/walls → global costmap.</p>
+                <div class="tool-row gc-wall-tools">
+                  <button class="tool" type="button" data-tool="wall" data-gc-wall="1">Wall</button>
+                  <button class="tool" type="button" data-tool="erase" data-gc-wall="1">Erase</button>
+                  <button class="tool" type="button" data-tool="wallbox" data-gc-wall="1">Wall box</button>
+                  <button class="tool" type="button" data-tool="erasebox" data-gc-wall="1">Erase box</button>
+                </div>
+                <label class="edit-brush">
+                  <span>Brush <b id="gcBrushLabel">1</b> cells</span>
+                  <input id="gcBrushSize" type="range" min="1" max="40" step="1" value="1">
+                </label>
+                <button class="btn btn-ghost btn-compact" id="btnGcWallsClear" type="button"
+                  style="width:100%;margin:0.25rem 0">Clear all GC walls</button>
+              </details>
             </div>
             <button class="btn btn-ghost" id="btnSimEnter">Enter sim</button>
             <div id="simControls" hidden>
@@ -464,6 +503,7 @@
                 <button class="btn btn-saffron" id="btnSimGenerate">Generate</button>
               </div>
               <button class="btn btn-ghost" id="btnSimExit">Exit sim</button>
+            </div>
             </div>
           </div>
 

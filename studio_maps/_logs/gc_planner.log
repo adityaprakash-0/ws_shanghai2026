@@ -3717,3 +3717,244 @@ KeyboardInterrupt
 [planner_server-4] [ERROR] [1788704060.061236034] [planner_server]: Unable to start transition 5 from current state shuttingdown: Could not publish transition: publisher's context is invalid, at ./src/rcl/publisher.c:389, at ./src/rcl_lifecycle.c:368
 [planner_server-4] [WARN] [1788704060.061261256] [rclcpp_lifecycle]: Shutdown error in destruction of LifecycleNode: final state(shuttingdown)
 [INFO] [planner_server-4]: process has finished cleanly [pid 19919]
+
+# cmd [2026-09-08 16:44:59]: ros2 launch skill23_studio studio_gc_planner.launch.py robot:=xdrive map:=/home/vmx/skill23_ws/studio_maps/xdrive_mock_4/map.yaml
+[INFO] [launch]: All log files can be found below /home/vmx/.ros/log/2026-09-08-16-45-00-343251-vmx-adev-7409
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [launch.user]: Studio DDS: Fast DDS UDPv4, ROS_LOCALHOST_ONLY=0 (Wi‑Fi discovery ON)
+[INFO] [launch.user]: [gc_planner] map=/home/vmx/skill23_ws/studio_maps/xdrive_mock_4/map.yaml params=/tmp/tmp13j8di5z_gc_planner_xdrive.yaml
+[INFO] [launch.user]: [gc_planner] Open RViz2: Fixed Frame map, display /map and /global_costmap/costmap — then use Studio Simulate (2 points).
+[INFO] [bash-1]: process started with pid [7453]
+[INFO] [static_transform_publisher-2]: process started with pid [7456]
+[INFO] [bash-1]: process has finished cleanly [pid 7453]
+[static_transform_publisher-2] [WARN] [1788866101.237692224] []: Old-style arguments are deprecated; see --help for new-style arguments
+[static_transform_publisher-2] [INFO] [1788866101.303003714] [map_base_tf]: Spinning until stopped - publishing transform
+[static_transform_publisher-2] translation: ('0.000000', '0.000000', '0.000000')
+[static_transform_publisher-2] rotation: ('0.000000', '0.000000', '0.000000', '1.000000')
+[static_transform_publisher-2] from 'map' to 'base_footprint'
+[INFO] [map_server-3]: process started with pid [7479]
+[INFO] [planner_server-4]: process started with pid [7482]
+[INFO] [lifecycle_manager-5]: process started with pid [7484]
+[lifecycle_manager-5] [INFO] [1788866101.889265023] [lifecycle_manager_gc_planner]: Creating
+[lifecycle_manager-5] [INFO] [1788866101.922417889] [lifecycle_manager_gc_planner]: [34m[1mCreating and initializing lifecycle service clients[0m[0m
+[map_server-3] [INFO] [1788866102.033622041] [map_server]: 
+[map_server-3] 	map_server lifecycle node launched. 
+[map_server-3] 	Waiting on external lifecycle transitions to activate
+[map_server-3] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[map_server-3] [INFO] [1788866102.037056759] [map_server]: Creating
+[planner_server-4] [INFO] [1788866102.087006332] [planner_server]: 
+[planner_server-4] 	planner_server lifecycle node launched. 
+[planner_server-4] 	Waiting on external lifecycle transitions to activate
+[planner_server-4] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[planner_server-4] [INFO] [1788866102.191383937] [planner_server]: Creating
+[planner_server-4] [INFO] [1788866102.250875418] [global_costmap.global_costmap]: 
+[planner_server-4] 	global_costmap lifecycle node launched. 
+[planner_server-4] 	Waiting on external lifecycle transitions to activate
+[planner_server-4] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[planner_server-4] [INFO] [1788866102.277592303] [global_costmap.global_costmap]: Creating Costmap
+[lifecycle_manager-5] [INFO] [1788866102.877205398] [lifecycle_manager_gc_planner]: [34m[1mStarting managed nodes bringup...[0m[0m
+[lifecycle_manager-5] [INFO] [1788866102.877458708] [lifecycle_manager_gc_planner]: [34m[1mConfiguring map_server[0m[0m
+[map_server-3] [INFO] [1788866102.879123087] [map_server]: Configuring
+[map_server-3] [INFO] [1788866102.879422155] [map_io]: Loading yaml file: /home/vmx/skill23_ws/studio_maps/xdrive_mock_4/map.yaml
+[map_server-3] [INFO] [1788866102.880916278] [map_io]: resolution: 0.04
+[map_server-3] [INFO] [1788866102.881025516] [map_io]: origin[0]: -0.644
+[map_server-3] [INFO] [1788866102.881076071] [map_io]: origin[1]: -0.387
+[map_server-3] [INFO] [1788866102.881123478] [map_io]: origin[2]: 0
+[map_server-3] [INFO] [1788866102.881168995] [map_io]: free_thresh: 0.25
+[map_server-3] [INFO] [1788866102.881214606] [map_io]: occupied_thresh: 0.65
+[map_server-3] [INFO] [1788866102.881261105] [map_io]: mode: trinary
+[map_server-3] [INFO] [1788866102.881305789] [map_io]: negate: 0
+[map_server-3] [INFO] [1788866102.882445492] [map_io]: Loading image_file: /home/vmx/skill23_ws/studio_maps/xdrive_mock_4/map.pgm
+[map_server-3] [INFO] [1788866102.888138207] [map_io]: Read map /home/vmx/skill23_ws/studio_maps/xdrive_mock_4/map.pgm: 65 X 107 map @ 0.04 m/cell
+[lifecycle_manager-5] [INFO] [1788866102.909121341] [lifecycle_manager_gc_planner]: [34m[1mConfiguring planner_server[0m[0m
+[planner_server-4] [INFO] [1788866102.909827273] [planner_server]: Configuring
+[planner_server-4] [INFO] [1788866102.909965289] [global_costmap.global_costmap]: Configuring
+[planner_server-4] [INFO] [1788866102.937428532] [global_costmap.global_costmap]: Using plugin "static_layer"
+[planner_server-4] [INFO] [1788866103.002408565] [global_costmap.global_costmap]: Subscribing to the map topic (/map) with transient local durability
+[planner_server-4] [INFO] [1788866103.010197374] [global_costmap.global_costmap]: Initialized plugin "static_layer"
+[planner_server-4] [INFO] [1788866103.010345445] [global_costmap.global_costmap]: Using plugin "inflation_layer"
+[planner_server-4] [INFO] [1788866103.014085991] [global_costmap.global_costmap]: Initialized plugin "inflation_layer"
+[planner_server-4] [INFO] [1788866103.094222408] [planner_server]: Created global planner plugin GridBased of type skill23_clearance_planner/ClearancePlanner
+[planner_server-4] [INFO] [1788866103.107280551] [planner_server]: [GridBased] configured: allow_unknown=false allow_narrow=false use_inscribed_width_gate=true robot_width=0.380 inscribed_width_margin=0.020 shift_goal_off_inscribed=true straight_line_only=true smooth_path=true smooth_iterations=10 max_deviation=0.050 w_distance=0.50 w_cell_cost=20.00 w_inflation=1.00 turn_penalty=16.00 edt_narrow_weight=40.00
+[planner_server-4] [INFO] [1788866103.107460455] [planner_server]: Planner Server has GridBased  planners available.
+[lifecycle_manager-5] [INFO] [1788866103.171353673] [lifecycle_manager_gc_planner]: [34m[1mActivating map_server[0m[0m
+[map_server-3] [INFO] [1788866103.172632707] [map_server]: Activating
+[map_server-3] [INFO] [1788866103.173497432] [map_server]: Creating bond (map_server) to lifecycle manager.
+[planner_server-4] [INFO] [1788866103.179368478] [global_costmap.global_costmap]: StaticLayer: Resizing costmap to 65 X 107 at 0.040000 m/pix
+[lifecycle_manager-5] [INFO] [1788866103.299933726] [lifecycle_manager_gc_planner]: Server map_server connected with bond.
+[lifecycle_manager-5] [INFO] [1788866103.300162778] [lifecycle_manager_gc_planner]: [34m[1mActivating planner_server[0m[0m
+[planner_server-4] [INFO] [1788866103.301498569] [planner_server]: Activating
+[planner_server-4] [INFO] [1788866103.301756491] [global_costmap.global_costmap]: Activating
+[planner_server-4] [INFO] [1788866103.301874600] [global_costmap.global_costmap]: Checking transform
+[planner_server-4] [INFO] [1788866103.302538477] [global_costmap.global_costmap]: start
+[planner_server-4] [INFO] [1788866103.857495647] [planner_server]: Creating bond (planner_server) to lifecycle manager.
+[lifecycle_manager-5] [INFO] [1788866103.974197796] [lifecycle_manager_gc_planner]: Server planner_server connected with bond.
+[lifecycle_manager-5] [INFO] [1788866103.974313683] [lifecycle_manager_gc_planner]: [34m[1mManaged nodes are active[0m[0m
+[lifecycle_manager-5] [INFO] [1788866103.974402015] [lifecycle_manager_gc_planner]: [34m[1mCreating bond timer...[0m[0m
+[planner_server-4] [INFO] [1788866115.530857247] [planner_server]: [GridBased] live param GridBased.smooth_path updated
+[planner_server-4] [INFO] [1788866115.532101669] [planner_server]: [GridBased] live param GridBased.smooth_iterations updated
+[planner_server-4] [INFO] [1788866115.534459980] [planner_server]: [GridBased] live param GridBased.max_deviation updated
+[planner_server-4] [INFO] [1788866115.535613812] [planner_server]: [GridBased] live param GridBased.w_distance updated
+[WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
+[INFO] [lifecycle_manager-5]: sending signal 'SIGINT' to process[lifecycle_manager-5]
+[INFO] [planner_server-4]: sending signal 'SIGINT' to process[planner_server-4]
+[INFO] [map_server-3]: sending signal 'SIGINT' to process[map_server-3]
+[INFO] [static_transform_publisher-2]: sending signal 'SIGINT' to process[static_transform_publisher-2]
+[planner_server-4] [INFO] [1788866346.992149122] [rclcpp]: signal_handler(signum=2)
+[planner_server-4] [INFO] [1788866346.992806499] [planner_server]: Running Nav2 LifecycleNode rcl preshutdown (planner_server)
+[planner_server-4] [INFO] [1788866346.993054976] [planner_server]: Deactivating
+[planner_server-4] [INFO] [1788866346.993163604] [global_costmap.global_costmap]: Deactivating
+[ERROR] [static_transform_publisher-2]: process has died [pid 7456, exit code -2, cmd '/opt/ros/humble/lib/tf2_ros/static_transform_publisher 0 0 0 0 0 0 map base_footprint --ros-args -r __node:=map_base_tf'].
+[map_server-3] [INFO] [1788866346.992142973] [rclcpp]: signal_handler(signum=2)
+[map_server-3] [INFO] [1788866346.992892479] [map_server]: Running Nav2 LifecycleNode rcl preshutdown (map_server)
+[map_server-3] [INFO] [1788866346.993055217] [map_server]: Deactivating
+[map_server-3] [INFO] [1788866346.993124975] [map_server]: Destroying bond (map_server) to lifecycle manager.
+[lifecycle_manager-5] [INFO] [1788866346.992249731] [rclcpp]: signal_handler(signum=2)
+[lifecycle_manager-5] [INFO] [1788866346.993679391] [lifecycle_manager_gc_planner]: Running Nav2 LifecycleManager rcl preshutdown (lifecycle_manager_gc_planner)
+[lifecycle_manager-5] [INFO] [1788866346.993858851] [lifecycle_manager_gc_planner]: [34m[1mTerminating bond timer...[0m[0m
+[static_transform_publisher-2] [INFO] [1788866346.992534041] [rclcpp]: signal_handler(signum=2)
+[map_server-3] [INFO] [1788866347.005675700] [map_server]: Cleaning up
+[map_server-3] [INFO] [1788866347.005845104] [map_server]: Destroying bond (map_server) to lifecycle manager.
+[lifecycle_manager-5] [INFO] [1788866347.014601303] [rclcpp]: signal_handler(signum=2)
+[planner_server-4] [INFO] [1788866347.018641029] [rclcpp]: signal_handler(signum=2)
+[map_server-3] [INFO] [1788866347.023584035] [rclcpp]: signal_handler(signum=2)
+[map_server-3] [INFO] [1788866347.037130317] [map_server]: Destroying
+[map_server-3] [ERROR] [1788866347.037244315] [map_server]: Unable to start transition 5 from current state shuttingdown: Could not publish transition: publisher's context is invalid, at ./src/rcl/publisher.c:389, at ./src/rcl_lifecycle.c:368
+[map_server-3] [WARN] [1788866347.037277314] [rclcpp_lifecycle]: Shutdown error in destruction of LifecycleNode: final state(shuttingdown)
+[lifecycle_manager-5] [INFO] [1788866347.057602218] [lifecycle_manager_gc_planner]: Destroying lifecycle_manager_gc_planner
+[INFO] [lifecycle_manager-5]: process has finished cleanly [pid 7484]
+[INFO] [map_server-3]: process has finished cleanly [pid 7479]
+[planner_server-4] [INFO] [1788866347.303211850] [planner_server]: Destroying bond (planner_server) to lifecycle manager.
+[planner_server-4] [INFO] [1788866347.313929403] [planner_server]: Cleaning up
+[planner_server-4] [INFO] [1788866347.339618398] [global_costmap.global_costmap]: Cleaning up
+[planner_server-4] [INFO] [1788866347.364350836] [planner_server]: Destroying bond (planner_server) to lifecycle manager.
+[planner_server-4] [INFO] [1788866347.374420068] [global_costmap.global_costmap]: Destroying
+[planner_server-4] [ERROR] [1788866347.374539232] [global_costmap.global_costmap]: Unable to start transition 5 from current state shuttingdown: Could not publish transition: publisher's context is invalid, at ./src/rcl/publisher.c:389, at ./src/rcl_lifecycle.c:368
+[planner_server-4] [WARN] [1788866347.374568769] [rclcpp_lifecycle]: Shutdown error in destruction of LifecycleNode: final state(shuttingdown)
+[planner_server-4] [INFO] [1788866347.401504650] [planner_server]: Destroying
+[planner_server-4] [ERROR] [1788866347.401594204] [planner_server]: Unable to start transition 5 from current state shuttingdown: Could not publish transition: publisher's context is invalid, at ./src/rcl/publisher.c:389, at ./src/rcl_lifecycle.c:368
+[planner_server-4] [WARN] [1788866347.401620222] [rclcpp_lifecycle]: Shutdown error in destruction of LifecycleNode: final state(shuttingdown)
+[INFO] [planner_server-4]: process has finished cleanly [pid 7482]
+
+# cmd [2026-09-08 17:06:06]: ros2 launch skill23_studio studio_gc_planner.launch.py robot:=xdrive map:=/home/vmx/skill23_ws/studio_maps/xdrive_mock_4/map.yaml
+[INFO] [launch]: All log files can be found below /home/vmx/.ros/log/2026-09-08-17-06-08-272920-vmx-adev-15076
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [launch.user]: Studio DDS: Fast DDS UDPv4, ROS_LOCALHOST_ONLY=0 (Wi‑Fi discovery ON)
+[INFO] [launch.user]: [gc_planner] map=/home/vmx/skill23_ws/studio_maps/xdrive_mock_4/map.yaml params=/tmp/tmp6icch192_gc_planner_xdrive.yaml
+[INFO] [launch.user]: [gc_planner] Open RViz2: Fixed Frame map, display /map and /global_costmap/costmap — then use Studio Simulate (2 points).
+[INFO] [bash-1]: process started with pid [15109]
+[INFO] [static_transform_publisher-2]: process started with pid [15111]
+[INFO] [bash-1]: process has finished cleanly [pid 15109]
+[static_transform_publisher-2] [WARN] [1788867368.953065618] []: Old-style arguments are deprecated; see --help for new-style arguments
+[static_transform_publisher-2] [INFO] [1788867369.030302896] [map_base_tf]: Spinning until stopped - publishing transform
+[static_transform_publisher-2] translation: ('0.000000', '0.000000', '0.000000')
+[static_transform_publisher-2] rotation: ('0.000000', '0.000000', '0.000000', '1.000000')
+[static_transform_publisher-2] from 'map' to 'base_footprint'
+[INFO] [map_server-3]: process started with pid [15122]
+[INFO] [planner_server-4]: process started with pid [15124]
+[INFO] [lifecycle_manager-5]: process started with pid [15126]
+[lifecycle_manager-5] [INFO] [1788867369.696239040] [lifecycle_manager_gc_planner]: Creating
+[lifecycle_manager-5] [INFO] [1788867369.886401879] [lifecycle_manager_gc_planner]: [34m[1mCreating and initializing lifecycle service clients[0m[0m
+[map_server-3] [INFO] [1788867370.423452241] [map_server]: 
+[map_server-3] 	map_server lifecycle node launched. 
+[map_server-3] 	Waiting on external lifecycle transitions to activate
+[map_server-3] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[map_server-3] [INFO] [1788867370.434507214] [map_server]: Creating
+[lifecycle_manager-5] [INFO] [1788867372.769477912] [lifecycle_manager_gc_planner]: Waiting for service planner_server/get_state...
+[lifecycle_manager-5] [INFO] [1788867374.770321512] [lifecycle_manager_gc_planner]: Waiting for service planner_server/get_state...
+[lifecycle_manager-5] [INFO] [1788867376.771769916] [lifecycle_manager_gc_planner]: Waiting for service planner_server/get_state...
+[lifecycle_manager-5] [INFO] [1788867378.777697816] [lifecycle_manager_gc_planner]: Waiting for service planner_server/get_state...
+[lifecycle_manager-5] [INFO] [1788867380.778687339] [lifecycle_manager_gc_planner]: Waiting for service planner_server/get_state...
+[lifecycle_manager-5] [INFO] [1788867382.779672715] [lifecycle_manager_gc_planner]: Waiting for service planner_server/get_state...
+[lifecycle_manager-5] [INFO] [1788867384.826591471] [lifecycle_manager_gc_planner]: Waiting for service planner_server/get_state...
+[lifecycle_manager-5] [INFO] [1788867386.996684850] [lifecycle_manager_gc_planner]: Waiting for service planner_server/get_state...
+[lifecycle_manager-5] [INFO] [1788867389.000722987] [lifecycle_manager_gc_planner]: Waiting for service planner_server/get_state...
+[lifecycle_manager-5] [INFO] [1788867391.008661592] [lifecycle_manager_gc_planner]: Waiting for service planner_server/get_state...
+[planner_server-4] [INFO] [1788867391.623532667] [planner_server]: 
+[planner_server-4] 	planner_server lifecycle node launched. 
+[planner_server-4] 	Waiting on external lifecycle transitions to activate
+[planner_server-4] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[planner_server-4] [INFO] [1788867392.306969226] [planner_server]: Creating
+[planner_server-4] [INFO] [1788867392.648958835] [global_costmap.global_costmap]: 
+[planner_server-4] 	global_costmap lifecycle node launched. 
+[planner_server-4] 	Waiting on external lifecycle transitions to activate
+[planner_server-4] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[planner_server-4] [INFO] [1788867392.785853717] [global_costmap.global_costmap]: Creating Costmap
+[lifecycle_manager-5] [INFO] [1788867393.297363341] [lifecycle_manager_gc_planner]: Waiting for service planner_server/get_state...
+[lifecycle_manager-5] [INFO] [1788867393.512650277] [lifecycle_manager_gc_planner]: [34m[1mStarting managed nodes bringup...[0m[0m
+[lifecycle_manager-5] [INFO] [1788867393.515806055] [lifecycle_manager_gc_planner]: [34m[1mConfiguring map_server[0m[0m
+[map_server-3] [INFO] [1788867393.534557857] [map_server]: Configuring
+[map_server-3] [INFO] [1788867393.544783715] [map_io]: Loading yaml file: /home/vmx/skill23_ws/studio_maps/xdrive_mock_4/map.yaml
+[map_server-3] [INFO] [1788867393.553675300] [map_io]: resolution: 0.04
+[map_server-3] [INFO] [1788867393.554627617] [map_io]: origin[0]: -0.644
+[map_server-3] [INFO] [1788867393.554681986] [map_io]: origin[1]: -0.387
+[map_server-3] [INFO] [1788867393.554708356] [map_io]: origin[2]: 0
+[map_server-3] [INFO] [1788867393.554733059] [map_io]: free_thresh: 0.25
+[map_server-3] [INFO] [1788867393.554756818] [map_io]: occupied_thresh: 0.65
+[map_server-3] [INFO] [1788867393.554793836] [map_io]: mode: trinary
+[map_server-3] [INFO] [1788867393.554821780] [map_io]: negate: 0
+[map_server-3] [INFO] [1788867393.609096941] [map_io]: Loading image_file: /home/vmx/skill23_ws/studio_maps/xdrive_mock_4/map.pgm
+[map_server-3] [INFO] [1788867393.624788241] [map_io]: Read map /home/vmx/skill23_ws/studio_maps/xdrive_mock_4/map.pgm: 65 X 107 map @ 0.04 m/cell
+[lifecycle_manager-5] [INFO] [1788867393.731545688] [lifecycle_manager_gc_planner]: [34m[1mConfiguring planner_server[0m[0m
+[planner_server-4] [INFO] [1788867393.732837813] [planner_server]: Configuring
+[planner_server-4] [INFO] [1788867393.733187214] [global_costmap.global_costmap]: Configuring
+[planner_server-4] [INFO] [1788867393.811694063] [global_costmap.global_costmap]: Using plugin "static_layer"
+[planner_server-4] [INFO] [1788867393.916433304] [global_costmap.global_costmap]: Subscribing to the map topic (/map) with transient local durability
+[planner_server-4] [INFO] [1788867393.927010453] [global_costmap.global_costmap]: Initialized plugin "static_layer"
+[planner_server-4] [INFO] [1788867393.927168468] [global_costmap.global_costmap]: Using plugin "inflation_layer"
+[planner_server-4] [INFO] [1788867393.930453633] [global_costmap.global_costmap]: Initialized plugin "inflation_layer"
+[planner_server-4] [INFO] [1788867394.025344676] [planner_server]: Created global planner plugin GridBased of type skill23_clearance_planner/ClearancePlanner
+[planner_server-4] [INFO] [1788867394.040011753] [planner_server]: [GridBased] configured: allow_unknown=false allow_narrow=false use_inscribed_width_gate=true robot_width=0.380 inscribed_width_margin=0.020 shift_goal_off_inscribed=true straight_line_only=true round_l_corners=true l_corner_radius=0.300 l_corner_arc_points=10 smooth_path=true smooth_iterations=10 max_deviation=0.050 w_distance=0.50 w_cell_cost=20.00 w_inflation=1.00 turn_penalty=16.00 edt_narrow_weight=40.00
+[planner_server-4] [INFO] [1788867394.049115612] [planner_server]: Planner Server has GridBased  planners available.
+[lifecycle_manager-5] [INFO] [1788867394.119559120] [lifecycle_manager_gc_planner]: [34m[1mActivating map_server[0m[0m
+[map_server-3] [INFO] [1788867394.120549992] [map_server]: Activating
+[map_server-3] [INFO] [1788867394.122250981] [map_server]: Creating bond (map_server) to lifecycle manager.
+[planner_server-4] [INFO] [1788867394.123856434] [global_costmap.global_costmap]: StaticLayer: Resizing costmap to 65 X 107 at 0.040000 m/pix
+[lifecycle_manager-5] [INFO] [1788867394.262217346] [lifecycle_manager_gc_planner]: Server map_server connected with bond.
+[lifecycle_manager-5] [INFO] [1788867394.262347863] [lifecycle_manager_gc_planner]: [34m[1mActivating planner_server[0m[0m
+[planner_server-4] [INFO] [1788867394.263050795] [planner_server]: Activating
+[planner_server-4] [INFO] [1788867394.263182107] [global_costmap.global_costmap]: Activating
+[planner_server-4] [INFO] [1788867394.263230532] [global_costmap.global_costmap]: Checking transform
+[planner_server-4] [INFO] [1788867394.263594841] [global_costmap.global_costmap]: start
+[planner_server-4] [INFO] [1788867394.818168063] [planner_server]: Creating bond (planner_server) to lifecycle manager.
+[lifecycle_manager-5] [INFO] [1788867394.931497320] [lifecycle_manager_gc_planner]: Server planner_server connected with bond.
+[lifecycle_manager-5] [INFO] [1788867394.931736723] [lifecycle_manager_gc_planner]: [34m[1mManaged nodes are active[0m[0m
+[lifecycle_manager-5] [INFO] [1788867394.931832407] [lifecycle_manager_gc_planner]: [34m[1mCreating bond timer...[0m[0m
+[WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
+[map_server-3] [INFO] [1788867452.771603014] [rclcpp]: signal_handler(signum=2)
+[map_server-3] [INFO] [1788867452.772105153] [map_server]: Running Nav2 LifecycleNode rcl preshutdown (map_server)
+[map_server-3] [INFO] [1788867452.772353779] [map_server]: Deactivating
+[map_server-3] [INFO] [1788867452.772526998] [map_server]: Destroying bond (map_server) to lifecycle manager.
+[map_server-3] [INFO] [1788867452.783582157] [map_server]: Cleaning up
+[map_server-3] [INFO] [1788867452.784047334] [map_server]: Destroying bond (map_server) to lifecycle manager.
+[INFO] [lifecycle_manager-5]: sending signal 'SIGINT' to process[lifecycle_manager-5]
+[INFO] [planner_server-4]: sending signal 'SIGINT' to process[planner_server-4]
+[INFO] [map_server-3]: sending signal 'SIGINT' to process[map_server-3]
+[INFO] [static_transform_publisher-2]: sending signal 'SIGINT' to process[static_transform_publisher-2]
+[lifecycle_manager-5] [INFO] [1788867452.771702401] [rclcpp]: signal_handler(signum=2)
+[lifecycle_manager-5] [INFO] [1788867452.772351075] [lifecycle_manager_gc_planner]: Running Nav2 LifecycleManager rcl preshutdown (lifecycle_manager_gc_planner)
+[lifecycle_manager-5] [INFO] [1788867452.772500702] [lifecycle_manager_gc_planner]: [34m[1mTerminating bond timer...[0m[0m
+[ERROR] [lifecycle_manager-5]: process has died [pid 15126, exit code -2, cmd '/opt/ros/humble/lib/nav2_lifecycle_manager/lifecycle_manager --ros-args -r __node:=lifecycle_manager_gc_planner --params-file /tmp/launch_params_qwchg2w_'].
+[static_transform_publisher-2] [INFO] [1788867452.771719641] [rclcpp]: signal_handler(signum=2)
+[planner_server-4] [INFO] [1788867452.772263299] [rclcpp]: signal_handler(signum=2)
+[planner_server-4] [INFO] [1788867452.772789845] [planner_server]: Running Nav2 LifecycleNode rcl preshutdown (planner_server)
+[planner_server-4] [INFO] [1788867452.773028008] [planner_server]: Deactivating
+[planner_server-4] [INFO] [1788867452.773166672] [global_costmap.global_costmap]: Deactivating
+[ERROR] [static_transform_publisher-2]: process has died [pid 15111, exit code -2, cmd '/opt/ros/humble/lib/tf2_ros/static_transform_publisher 0 0 0 0 0 0 map base_footprint --ros-args -r __node:=map_base_tf'].
+[ERROR] [map_server-3]: process has died [pid 15122, exit code -2, cmd '/opt/ros/humble/lib/nav2_map_server/map_server --ros-args -r __node:=map_server --params-file /tmp/tmp6icch192_gc_planner_xdrive.yaml'].
+[map_server-3] [INFO] [1788867452.815341474] [map_server]: Destroying
+[map_server-3] [ERROR] [1788867452.815474490] [map_server]: Unable to start transition 5 from current state shuttingdown: Could not publish transition: publisher's context is invalid, at ./src/rcl/publisher.c:389, at ./src/rcl_lifecycle.c:368
+[map_server-3] [WARN] [1788867452.815517841] [rclcpp_lifecycle]: Shutdown error in destruction of LifecycleNode: final state(shuttingdown)
+[lifecycle_manager-5] [INFO] [1788867452.854639938] [lifecycle_manager_gc_planner]: Destroying lifecycle_manager_gc_planner
+[planner_server-4] [INFO] [1788867452.898242123] [rclcpp]: signal_handler(signum=2)
+[planner_server-4] [INFO] [1788867453.264116619] [planner_server]: Destroying bond (planner_server) to lifecycle manager.
+[planner_server-4] [INFO] [1788867453.274873617] [planner_server]: Cleaning up
+[planner_server-4] [INFO] [1788867453.303293974] [global_costmap.global_costmap]: Cleaning up
+[planner_server-4] [INFO] [1788867453.331398169] [planner_server]: Destroying bond (planner_server) to lifecycle manager.
+[planner_server-4] [INFO] [1788867453.345796956] [global_costmap.global_costmap]: Destroying
+[planner_server-4] [ERROR] [1788867453.345921713] [global_costmap.global_costmap]: Unable to start transition 5 from current state shuttingdown: Could not publish transition: publisher's context is invalid, at ./src/rcl/publisher.c:389, at ./src/rcl_lifecycle.c:368
+[planner_server-4] [WARN] [1788867453.345954694] [rclcpp_lifecycle]: Shutdown error in destruction of LifecycleNode: final state(shuttingdown)
+[planner_server-4] [INFO] [1788867453.377081300] [planner_server]: Destroying
+[planner_server-4] [ERROR] [1788867453.377223908] [planner_server]: Unable to start transition 5 from current state shuttingdown: Could not publish transition: publisher's context is invalid, at ./src/rcl/publisher.c:389, at ./src/rcl_lifecycle.c:368
+[planner_server-4] [WARN] [1788867453.377252056] [rclcpp_lifecycle]: Shutdown error in destruction of LifecycleNode: final state(shuttingdown)
+[INFO] [planner_server-4]: process has finished cleanly [pid 15124]

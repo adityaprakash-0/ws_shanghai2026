@@ -1,7 +1,10 @@
-# Minimal Nav2 params: map_server + global_costmap (static + inflation) + planner_server.
-# No obstacle layer, no local costmap, no controller / BT / AMCL.
-# Used by studio_gc_planner.launch.py for dashboard path preview + RViz global costmap.
-# Both planners are loaded; Studio Simulate picks one via planner_id.
+# Minimal Nav2 params: map_server + global costmap + planner_server.
+# Used by studio_gc_planner.launch.py for dashboard path preview + RViz.
+#
+# Layers:
+#   static_layer   — /map (map_server)
+#   gc_walls_layer — /gc_planner/walls (Studio-drawn obstacles, live)
+#   inflation_layer
 
 map_server:
   ros__parameters:
@@ -21,10 +24,19 @@ global_costmap:
       transform_tolerance: 2.0
       always_send_full_costmap: true
       robot_radius: 0.20
-      plugins: [static_layer, inflation_layer]
+      plugins: [static_layer, gc_walls_layer, inflation_layer]
       static_layer:
         plugin: nav2_costmap_2d::StaticLayer
+        map_topic: /map
         map_subscribe_transient_local: true
+      # Drawn walls from Studio GC dashboard (OccupancyGrid, unknown=-1 ignored).
+      gc_walls_layer:
+        plugin: nav2_costmap_2d::StaticLayer
+        map_topic: /gc_planner/walls
+        map_subscribe_transient_local: true
+        track_unknown_space: true
+        use_maximum: true
+        lethal_cost_threshold: 100
       inflation_layer:
         plugin: nav2_costmap_2d::InflationLayer
         inflation_radius: 0.28
@@ -34,15 +46,20 @@ planner_server:
   ros__parameters:
     use_sim_time: false
     expected_planner_frequency: 2.0
-    # GridBased: free cells only (0–252); diagonal A* + stay-on-path smooth when straight_line_only=false
     planner_plugins: [GridBased]
     GridBased:
       plugin: skill23_clearance_planner/ClearancePlanner
       use_final_approach_orientation: true
       allow_unknown: false
       allow_narrow: false
+      use_inscribed_width_gate: true
+      robot_width: 0.38
+      inscribed_width_margin: 0.02
       shift_goal_off_inscribed: true
-      straight_line_only: false
+      straight_line_only: true
+      round_l_corners: true
+      l_corner_radius: 0.30
+      l_corner_arc_points: 10
       smooth_path: true
       smooth_iterations: 10
       max_deviation: 0.05

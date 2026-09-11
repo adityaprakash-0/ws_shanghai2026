@@ -131,8 +131,15 @@ control_server:
       #   echo: 15
       #   frame_id: "front_right_sonar_link"
 
+    # Sharp GP2Y infrared range sensor (template; disabled by default).
+    # port is a VMX analog-input channel — confirm wiring before enabling.
     sharp:
       enabled: false
+      publish_rate_hz: 20.0
+      sensors: ["wall_sensor"]
+      wall_sensor:
+        port: 22
+        frame_id: "sharp_link"
 
     dio:
       enabled: false

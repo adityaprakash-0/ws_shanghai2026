@@ -120650,3 +120650,10 @@
 [09/02 19:18:50.783886][error][11609][ObV4lUvcDevicePort.cpp:828] set 2000 xioctl(VIDIOC_S_CTRL) failed, Invalid argument
 [09/02 19:29:59.267540][error][16765][ObV4lUvcDevicePort.cpp:828] set 2000 xioctl(VIDIOC_S_CTRL) failed, Invalid argument
 [09/02 19:31:29.220866][error][17264][ObV4lUvcDevicePort.cpp:828] set 2000 xioctl(VIDIOC_S_CTRL) failed, Invalid argument
+[09/08 04:27:13.395443][error][99579][ObV4lUvcDevicePort.cpp:828] set 2000 xioctl(VIDIOC_S_CTRL) failed, Invalid argument
+[09/08 04:28:41.643442][error][100831][ObV4lUvcDevicePort.cpp:828] set 2000 xioctl(VIDIOC_S_CTRL) failed, Invalid argument
+[09/08 04:31:38.793101][error][102320][ObV4lUvcDevicePort.cpp:828] set 2000 xioctl(VIDIOC_S_CTRL) failed, Invalid argument
+[09/08 04:34:14.266194][error][102816][ObV4lUvcDevicePort.cpp:828] set 2000 xioctl(VIDIOC_S_CTRL) failed, Invalid argument
+[09/11 14:57:54.764532][error][24637][ObV4lUvcDevicePort.cpp:828] set 2000 xioctl(VIDIOC_S_CTRL) failed, Invalid argument
+[09/11 15:39:01.233179][error][26994][ObV4lUvcDevicePort.cpp:828] set 2000 xioctl(VIDIOC_S_CTRL) failed, Invalid argument
+[09/11 15:55:16.789816][error][3558][ObV4lUvcDevicePort.cpp:828] set 2000 xioctl(VIDIOC_S_CTRL) failed, Invalid argument

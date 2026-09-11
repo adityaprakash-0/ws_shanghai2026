@@ -19,7 +19,7 @@
     wrist: 'down',
     roll: 'out',
     notes: [],
-    homeSeq: ['rotation', 'lift', 'linear', 'vertical', 'rotation_servo', 'gripper'],
+    homeSeq: ['lift', 'linear', 'gripper', 'rotation_servo'],
     homeTicks: {},
     lastVizKey: '',
     moving: false,
@@ -807,8 +807,8 @@
         return sendCmd({
           axis: 'vertical',
           mode: mode || 'down',
-          up_deg: num('cfgVertUp', 60),
-          down_deg: num('cfgVertDown', -40),
+          up_deg: num('cfgVertUp', 90),
+          down_deg: num('cfgVertDown', -90),
         });
       }
       if (axis === 'rotation_servo' && !mode) {
@@ -827,8 +827,8 @@
         return sendCmd({
           axis: 'rotation_servo',
           mode,
-          home_deg: num('cfgRotServoHome', 0),
-          alt_deg: num('cfgRotServoAlt', 110),
+          home_deg: num('cfgRotServoHome', -30),
+          alt_deg: num('cfgRotServoAlt', -150),
         });
       }
       if (axis === 'gripper' && !mode) {
@@ -843,7 +843,7 @@
           axis: 'gripper',
           mode,
           home_deg: num('cfgGripClose', 150),
-          alt_deg: num('cfgGripOpen', -150),
+          alt_deg: num('cfgGripOpen', -80),
         });
       }
       return sendCmd({ axis, mode: mode || 'goto' });
@@ -868,16 +868,18 @@
         max_mm: num('maxLinear', 110),
       },
       oms_vertical: {
-        down_deg: num('cfgVertDown', -40),
-        up_deg: num('cfgVertUp', 60),
+        down_deg: num('cfgVertDown', -90),
+        up_deg: num('cfgVertUp', 90),
       },
       oms_rotation_servo: {
-        home_deg: num('cfgRotServoHome', 0),
-        alt_deg: num('cfgRotServoAlt', 110),
+        home_deg: num('cfgRotServoHome', -30),
+        alt_deg: num('cfgRotServoAlt', -150),
+        alt_mode: 'out',
       },
       oms_gripper: {
         home_deg: num('cfgGripClose', 150),
-        alt_deg: num('cfgGripOpen', -150),
+        alt_deg: num('cfgGripOpen', -80),
+        alt_mode: 'open',
       },
       oms_home: {
         sequence: state.homeSeq.slice(),

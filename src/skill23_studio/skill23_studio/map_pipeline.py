@@ -583,3 +583,41 @@ def import_map_files(
         pass
     write_meta(name, robot=robot, imported_from=str(src_y), created_at=time.time())
     return d / 'map.yaml'
+
+
+def gc_walls_path(name: str) -> Path:
+    return project_dir(name) / 'gc_walls.json'
+
+
+def load_gc_walls(name: str) -> List[List[int]]:
+    """Return [[gx, gy], ...] wall cells for GC planner overlay (not map.pgm)."""
+    path = gc_walls_path(name)
+    if not path.is_file():
+        return []
+    try:
+        raw = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return []
+    cells: List[List[int]] = []
+    if isinstance(raw, dict):
+        raw = raw.get('cells') or []
+    if not isinstance(raw, list):
+        return []
+    for cell in raw:
+        try:
+            cells.append([int(cell[0]), int(cell[1])])
+        except (TypeError, ValueError, IndexError):
+            continue
+    return cells
+
+
+def save_gc_walls(name: str, cells: List[List[int]]) -> Path:
+    d = project_dir(name)
+    d.mkdir(parents=True, exist_ok=True)
+    path = gc_walls_path(name)
+    uniq = sorted({(int(c[0]), int(c[1])) for c in cells if len(c) >= 2})
+    path.write_text(json.dumps({
+        'cells': [[gx, gy] for gx, gy in uniq],
+        'updated_at': time.time(),
+    }, indent=2) + '\n')
+    return path

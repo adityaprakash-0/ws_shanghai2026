@@ -170,7 +170,9 @@ detect_align_oms_test:
     oms_timeout_sec: 25.0
     max_oms_moves: 8
     linear_fwd_offset_mm: 0.0        # add/subtract from computed linear stroke (mm)
-    linear_max_mm: 110.0             # clamp linear extension
+    linear_max_mm: 150.0             # clamp linear extension
+    camera_to_gripper_mm: 350.0      # cam→gripper at linear home; + pre_extend in depth math
+    linear_pre_extend_mm: 100.0      # 10 cm standoff before detect (pick sequence)
     linear_cmd_enabled: false        # true → send /oms/linear/cmd after depth
     linear_cmd_topic: /oms/linear/cmd
     pick_mode: false                 # true → full pick sequence (see oms_pick yaml)

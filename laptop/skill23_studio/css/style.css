@@ -526,7 +526,9 @@ input, select {
   top: 5.4rem;
   bottom: 11.5rem;
   width: min(280px, 34%);
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .deploy-hud.module-nav .deploy-dock-right {
   width: min(300px, 36%);
@@ -541,6 +543,60 @@ input, select {
   background: transparent;
   padding: 0;
   margin-bottom: 0.35rem;
+}
+.deploy-right-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 1;
+  margin-top: 0.25rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid rgba(0, 0, 128, 0.12);
+}
+.deploy-side-logs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: min(26vh, 12rem);
+  overflow: hidden;
+}
+.deploy-side-log {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+.log-box.side-log-tall {
+  max-height: min(22vh, 10rem);
+  min-height: 4.5rem;
+  font-size: 0.62rem;
+  line-height: 1.35;
+  overflow: auto;
+  flex: 1 1 auto;
+}
+/* Nav module: one nav log only — keep it capped so Reloc/Simulate never overlap */
+.deploy-hud.module-nav .deploy-side-logs {
+  flex: 0 0 auto;
+  max-height: min(24vh, 11rem);
+}
+.deploy-hud.module-nav .log-box.side-log-tall {
+  max-height: min(20vh, 9.5rem);
+  min-height: 4rem;
+}
+.deploy-hud.module-nav #sideLogDaWrap,
+.deploy-hud.module-nav #sideLogCamWrap {
+  display: none !important;
+}
+.deploy-hud.module-commission #sideLogNavWrap {
+  display: none !important;
+}
+.deploy-hud.module-commission .deploy-side-logs {
+  max-height: min(36vh, 16rem);
 }
 .deploy-dock-teleop {
   left: 0.55rem;
@@ -605,34 +661,6 @@ input, select {
 }
 .deploy-dock-bottom .node-status-panel li {
   align-items: flex-start;
-}
-.deploy-side-logs {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  flex: 1;
-  min-height: 0;
-}
-.deploy-side-log {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  flex: 1;
-}
-.log-box.side-log-tall {
-  max-height: min(28vh, 14rem);
-  min-height: 6rem;
-  font-size: 0.62rem;
-  line-height: 1.35;
-  overflow: auto;
-  flex: 1;
-}
-.deploy-hud.module-nav #sideLogDaWrap,
-.deploy-hud.module-nav #sideLogCamWrap {
-  display: none !important;
-}
-.deploy-hud.module-commission #sideLogNavWrap {
-  display: none !important;
 }
 .deploy-bottom-logs {
   flex: 1;
@@ -972,6 +1000,8 @@ input, select {
   border-radius: 6px;
   display: grid;
   gap: 0.28rem;
+  max-height: min(52vh, 420px);
+  overflow: auto;
 }
 .gc-planner-params label {
   display: flex;
@@ -983,6 +1013,26 @@ input, select {
 .gc-planner-params select {
   font-size: 0.78rem;
   padding: 0.2rem 0.35rem;
+}
+.gc-dash-section {
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  padding-top: 0.35rem;
+  margin-top: 0.15rem;
+}
+.gc-dash-section summary {
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin-bottom: 0.3rem;
+}
+.gc-wall-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0.2rem 0;
+}
+.deploy-hud.module-commission #gcPlannerParams {
+  display: none !important;
 }
 .deploy-hud.module-commission #btnDeployNav2 {
   display: none !important;
@@ -1020,6 +1070,7 @@ input, select {
   display: none !important;
 }
 .deploy-hud.module-commission .deploy-dock-right .deploy-dock-label:not(.deploy-logs-label),
+.deploy-hud.module-commission .deploy-right-actions,
 .deploy-hud.module-commission #relocHint,
 .deploy-hud.module-commission #btnRelocSpin,
 .deploy-hud.module-commission #btnRelocFront,

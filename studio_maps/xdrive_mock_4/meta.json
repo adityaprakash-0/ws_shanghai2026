@@ -1,0 +1,12 @@
+{
+  "robot": "xdrive",
+  "mode": "offline",
+  "created_at": 1788870070.649033,
+  "name": "xdrive_mock_4",
+  "updated_at": 1788870070.649674,
+  "resolution": 0.04,
+  "max_laser_range": 10.0,
+  "min_laser_range": 0.05,
+  "phase": "mode",
+  "saved_at": 1788865035.057372
+}

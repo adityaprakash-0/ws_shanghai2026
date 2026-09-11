@@ -1291,8 +1291,9 @@ class LinearAxis(_EncoderAxis):
         self._speed_max = max(5.0, min(100.0, abs(cfg.f('speed', 30.0))))
         self._speed_min = max(
             5.0, min(self._speed_max, abs(cfg.f('speed_min', 12.0))))
+        # Home may be gentler than cruise (was incorrectly forced ≥ speed_max).
         self._home_speed = max(
-            self._speed_max, min(100.0, abs(cfg.f('home_speed', 30.0))))
+            self._speed_min, min(self._speed_max, abs(cfg.f('home_speed', 20.0))))
         self._speed_sign = -1.0 if cfg.f('speed_sign', -1.0) < 0.0 else 1.0
         self._ticks_sign = -1.0 if cfg.f('ticks_sign', 1.0) < 0.0 else 1.0
         self._min_mm = cfg.f('min_mm', 0.0)
@@ -1310,6 +1311,23 @@ class LinearAxis(_EncoderAxis):
         self._enc_max_jump = max(20.0, cfg.f('enc_max_jump_ticks', 80.0))
         self._pos_alpha = max(0.05, min(1.0, cfg.f('pos_filter_alpha', 0.35)))
         self._approach_mm = max(self._tol * 2.0, cfg.f('approach_mm', 8.0))
+        # A continuous Smart Servo has a non-zero breakaway command and coasts
+        # after stop.  Near a target, sustained +/-speed_min makes the rail hunt
+        # past the setpoint.  Use short breakaway pulses and measure after coast.
+        self._precision_zone = max(
+            self._approach_mm, cfg.f('precision_zone_mm', 30.0))
+        self._precision_speed = max(
+            self._speed_min,
+            min(self._speed_max, abs(cfg.f('precision_speed', self._speed_max))))
+        self._precision_pulse = max(
+            self._dt, min(0.30, cfg.f('precision_pulse_sec', 0.20)))
+        self._precision_pulse_min = max(
+            self._dt,
+            min(self._precision_pulse, cfg.f('precision_pulse_min_sec', 0.10)))
+        self._precision_full_error = max(
+            self._tol * 2.0, cfg.f('precision_full_pulse_error_mm', 18.0))
+        self._precision_coast = max(
+            self._dt, min(1.0, cfg.f('precision_coast_sec', 0.35)))
         measured = cfg.f('ticks_per_mm', 0.0)
         if measured > 0.0:
             self._ticks_per_mm = measured
@@ -1329,6 +1347,7 @@ class LinearAxis(_EncoderAxis):
         self._limit_release_t0: Optional[float] = None
         self._limit_reset_lock = threading.Lock()
         self._last_speed = 0.0
+        self._left_home_stop_until = 0.0
 
         srv = cfg.s('titan_service', '/titan1/titan_cmd')
         home_topic = cfg.s('home_limit_topic', '/titan1/m_0/limit_fwd')
@@ -1354,8 +1373,8 @@ class LinearAxis(_EncoderAxis):
         node.get_logger().info(
             f'OMS linear  Cypher M{self._enc_motor}  '
             f'ticks/mm={self._ticks_per_mm:.2f} ({self._tpm_source})  '
-            f'speed={self._speed_max:.0f}  home={home_topic}  '
-            f'motion_log={self._motion_log}')
+            f'speed={self._speed_max:.0f}  speed_sign={self._speed_sign:+.0f}  '
+            f'home={home_topic}  motion_log={self._motion_log}')
 
     def _pos_from_ticks(self, ticks: float) -> float:
         return self._ticks_sign * (
@@ -1388,18 +1407,37 @@ class LinearAxis(_EncoderAxis):
             self._mlog('sample')
 
     def _on_limit(self, msg: Bool) -> None:
-        self._home_sw = bool(msg.data)
-        if self._home_sw:
-            self._limit_release_t0 = None
-            if self._limit_handled:
-                return
-            if self._state in ('homing', 'goto'):
-                return
+        pressed = bool(msg.data)
+        rising = pressed and not self._home_sw
+        falling = (not pressed) and self._home_sw
+        self._home_sw = pressed
+        if not pressed:
+            # The switch can remain pressed while the rail builds speed. Stop
+            # at its release edge so a long command does not coast tens of mm
+            # before precision control gets its first useful position.
+            if (
+                falling
+                and self._state == 'goto'
+                and (self._last_speed * self._speed_sign) > 0.0
+            ):
+                self.stop()
+                self._left_home_stop_until = time.time() + self._precision_coast
+                self.log('info', 'home switch released → stop and measure coast')
+            return
+
+        self._limit_release_t0 = None
+        if rising:
+            # Hard stop first — continuous servo holds last cmd until we publish 0.
+            self.stop()
+            self.log('info', 'linear limit rising → stop + software zero (no encoder reset)')
+            if not self._limit_handled:
+                self._limit_handled = True
+                threading.Thread(
+                    target=self._limit_pressed_reset, daemon=True).start()
+        elif not self._limit_handled:
             self._limit_handled = True
             threading.Thread(
                 target=self._limit_pressed_reset, daemon=True).start()
-            return
-        # Released — debounce in publish_status before arming next reset.
 
     def _maybe_clear_limit_handled(self) -> None:
         if self._home_sw or not self._limit_handled:
@@ -1414,21 +1452,19 @@ class LinearAxis(_EncoderAxis):
             self._limit_release_t0 = None
 
     def _latch_home_at_limit(self) -> None:
-        """Software zero at rear limit. Cypher reset is best-effort; never wait for 0."""
+        """Software zero at rear limit. Never reset Cypher — home_ticks only."""
         with self._home_latch_lock:
             self.stop()
-            if self._titan.service_is_ready():
-                self._titan_call(
-                    self._titan, self._enc_motor, 'reset_encoder', 0.0, 2.0)
+            raw = float(self._ticks) if self._ticks is not None else 0.0
+            # Quick median without long wait (limit already pressed).
             samples: list[float] = []
             t0 = time.time()
-            while rclpy.ok() and (time.time() - t0) < 0.30:
+            while rclpy.ok() and (time.time() - t0) < 0.12:
                 if self._ticks is not None:
                     samples.append(float(self._ticks))
                 time.sleep(0.02)
-            raw = (
-                float(statistics.median(samples))
-                if samples else float(self._ticks or 0.0))
+            if samples:
+                raw = float(statistics.median(samples))
             self._home_ticks = raw
             self._last_good_ticks = raw
             self._pos_mm = 0.0
@@ -1439,22 +1475,21 @@ class LinearAxis(_EncoderAxis):
             self.log(
                 'info',
                 f'software home latched raw_ticks={raw:.1f} '
-                f'(Cypher reset best-effort, pos=0 mm)')
+                f'(no Cypher reset, pos=0 mm)')
             self._mlog('homed', force=True)
 
     def _limit_pressed_reset(self) -> None:
         if not self._limit_reset_lock.acquire(blocking=False):
             return
         try:
-            if self._home_sw and self._homed:
-                self.log('info', 'linear home limit pressed → re-latch software zero')
-            else:
-                self.log('info', 'linear home limit pressed → latch software zero')
+            if not self._home_sw:
+                return
+            self.log('info', 'linear home limit → software zero only')
             self._latch_home_at_limit()
-            self._mlog('limit_reset', force=True)
+            self._mlog('limit_zero', force=True)
             self.log(
                 'info',
-                f'limit latch done raw={self._ticks} home_ticks={self._home_ticks:.1f}')
+                f'limit zero done raw={self._ticks} home_ticks={self._home_ticks:.1f}')
         finally:
             self._limit_reset_lock.release()
 
@@ -1515,7 +1550,7 @@ class LinearAxis(_EncoderAxis):
         self.log('info' if ok else 'warn', f'result ok={ok} {message}')
 
     def _titan_reset(self) -> bool:
-        """Fire Cypher reset once — position always uses software home_ticks."""
+        """Optional diagnostic only — limit/home path never calls this."""
         if not self._titan.service_is_ready():
             self.log('warn', 'reset_encoder: titan not ready')
             return False
@@ -1525,17 +1560,16 @@ class LinearAxis(_EncoderAxis):
         self.log(
             'info',
             f'reset_encoder sent ok={ok} raw_ticks={self._ticks} '
-            '(software latch is authoritative)')
+            '(not used on limit — software home_ticks is authoritative)')
         return ok
 
     def _apply_speed(self, speed: float) -> None:
         speed = max(-100.0, min(100.0, float(speed)))
-        if self._home_sw and speed > 0.0:
+        # On rear limit: never command rearward. Forward leave-home only.
+        if self._home_sw and (speed * self._speed_sign) < 0.0:
             speed = 0.0
         if abs(speed) < 1e-9:
-            if abs(self._last_speed) > 1e-9:
-                self._last_speed = 0.0
-                self._linear_pub.publish(Float64(data=0.0))
+            self.stop()
             return
         step = max(0.5, self._duty_step * 100.0)
         if abs(speed - self._last_speed) < step:
@@ -1545,7 +1579,12 @@ class LinearAxis(_EncoderAxis):
 
     def stop(self) -> None:
         self._last_speed = 0.0
-        self._linear_pub.publish(Float64(data=0.0))
+        # Burst zeros so continuous Smart Servo 200 actually coasts to stop.
+        for _ in range(3):
+            try:
+                self._linear_pub.publish(Float64(data=0.0))
+            except Exception:
+                break
 
     def emergency_stop(self) -> None:
         try:
@@ -1557,18 +1596,40 @@ class LinearAxis(_EncoderAxis):
         self._latch_home_at_limit()
         self._state = 'idle'
 
+    def _fwd_speed(self, mag: float) -> float:
+        """Command that increases pos_mm (leave rear home)."""
+        return self._speed_sign * abs(mag)
+
+    def _rear_speed(self, mag: float) -> float:
+        """Command that decreases pos_mm / drives onto rear limit."""
+        return -self._speed_sign * abs(mag)
+
     def _drive_until_home(self, speed: float, timeout: float, gen: int) -> str:
-        """Backward (+speed, teleop G) until limit_fwd."""
-        self._apply_speed(speed)
+        """Drive toward rear limit; creep near zero but never below breakaway speed."""
+        approach_mm = max(self._tol * 3.0, float(self.cfg.f('home_approach_mm', 20.0)))
+        # Continuous Smart Servo needs ~10+ or it won't overcome stiction.
+        breakaway = max(10.0, self._speed_min)
+        creep = max(breakaway, min(abs(speed), self._home_speed))
         t0 = time.time()
         last_move = time.time()
         last_ticks = self._ticks
-        stall_arm = t0 + 1.2
+        stall_arm = t0 + 2.0
         while self._alive(gen):
             if self._home_sw:
+                self.stop()
                 return 'home'
+            cmd = speed
+            if self._ticks is not None:
+                pos = self._pos_from_ticks(float(self._ticks))
+                if 0.0 <= pos <= approach_mm:
+                    cmd = self._rear_speed(creep)
+                elif pos < 0.0:
+                    # Past software zero, still no switch — keep creeping onto switch.
+                    cmd = self._rear_speed(creep)
+            self._apply_speed(cmd)
             now = time.time()
             if now - t0 >= timeout:
+                self.stop()
                 return 'timeout'
             ticks = self._ticks
             if ticks is not None and last_ticks is not None:
@@ -1577,27 +1638,31 @@ class LinearAxis(_EncoderAxis):
                     last_ticks = ticks
                 elif (
                     now >= stall_arm
-                    and abs(speed) >= self._speed_min
-                    and (now - last_move) >= self._stall_sec
+                    and abs(cmd) >= breakaway
+                    and (now - last_move) >= max(1.5, self._stall_sec)
                 ):
+                    self.stop()
                     return 'stall'
             time.sleep(self._dt)
+        self.stop()
         return 'cancel'
 
     def _search_home(self, gen: int) -> bool:
         self._state = 'homing'
-        self._homed = False
+        # Keep prior home_ticks so pos_from_ticks still works for approach creep.
         if self._home_sw:
+            self.stop()
             self._mark_home()
             return True
         self._cmd_text = 'home'
         self._cmd_target = 0.0
+        rear = self._rear_speed(self._home_speed)
         self.log(
             'info',
-            f'home backward speed=+{self._home_speed:.0f}  '
-            f'home_sw={self._home_sw} ticks={self._ticks}')
-        outcome = self._drive_until_home(
-            self._home_speed, self._home_timeout, gen)
+            f'home rearward cmd={rear:+.0f}  speed_sign={self._speed_sign:+.0f}  '
+            f'home_sw={self._home_sw} ticks={self._ticks} '
+            f'approach≤{self.cfg.f("home_approach_mm", 20.0):.0f}mm')
+        outcome = self._drive_until_home(rear, self._home_timeout, gen)
         if outcome == 'home':
             self._mark_home()
             return True
@@ -1617,16 +1682,24 @@ class LinearAxis(_EncoderAxis):
             self._pos_filt = self._pos_from_ticks(self._ticks)
             self._pos_mm = self._pos_filt
         start_pos = self._pos_now(for_control=True)
+        start_ticks = self._ticks
         t0 = time.time()
         in_tol_t: Optional[float] = None
         last = time.time()
+        ticks_warn = False
+        last_tick_move = time.time()
+        last_tick_val = start_ticks
+        precision_settled = False
+        # Only treat as encoder-dead if commanding hard enough to move the rail.
+        breakaway = max(10.0, self._speed_min)
+        enc_stall_abort = max(3.5, self._stall_sec * 4.0)
         self._cmd_text = f'goto {target:.1f}'
         self._cmd_target = target
         self.log(
             'info',
             f'goto {target:.1f} mm from {start_pos:.1f} mm  '
             f'home_sw={int(self._home_sw)} ticks={self._ticks} '
-            f'home_ticks={self._home_ticks:.1f}')
+            f'home_ticks={self._home_ticks:.1f} speed_sign={self._speed_sign:+.0f}')
         self._mlog('goto_start', force=True)
         while self._alive(gen):
             now = time.time()
@@ -1635,6 +1708,10 @@ class LinearAxis(_EncoderAxis):
                 self._state = 'idle'
                 self.log('error', f'goto timeout pos={self._pos_now(for_control=True):.1f} mm')
                 return 'timeout'
+            if now < self._left_home_stop_until:
+                self.stop()
+                time.sleep(self._dt)
+                continue
             if self._home_sw and target <= self._min_mm + self._tol:
                 self._mark_home()
                 return 'ok'
@@ -1642,6 +1719,48 @@ class LinearAxis(_EncoderAxis):
             err = target - pos
             dt = max(self._dt, now - last)
             last = now
+            ticks = self._ticks
+            if (
+                ticks is not None
+                and last_tick_val is not None
+                and abs(float(ticks) - float(last_tick_val)) >= self._stall_ticks
+            ):
+                last_tick_move = now
+                last_tick_val = ticks
+            elif ticks is not None and last_tick_val is None:
+                last_tick_val = ticks
+                last_tick_move = now
+            if (
+                not ticks_warn
+                and now - t0 >= 1.5
+                and abs(self._last_speed) >= breakaway
+                and ticks is not None
+                and start_ticks is not None
+                and abs(float(ticks) - float(start_ticks)) < self._stall_ticks
+            ):
+                ticks_warn = True
+                self.log(
+                    'warn',
+                    f'encoder M3 not changing (ticks={ticks}) while '
+                    f'cmd={self._last_speed:+.1f} — check Cypher on Titan1 M3 / '
+                    f'/titan1/m_3/encoder; if motion is wrong way flip speed_sign')
+            # Stall abort only when cmd is above breakaway (low cmd ≠ dead encoder).
+            if (
+                abs(self._last_speed) >= breakaway
+                and not self._home_sw
+                and ticks is not None
+                and (now - last_tick_move) >= enc_stall_abort
+                and (now - t0) >= enc_stall_abort
+            ):
+                self.stop()
+                self._state = 'idle'
+                self.log(
+                    'error',
+                    f'goto aborted — encoder stall ticks={ticks} '
+                    f'pos={pos:.1f} mm (wanted {target:.1f} mm). '
+                    f'Fix Cypher M3 wiring/topic before closed-loop moves.')
+                self._mlog('enc_stall', force=True)
+                return 'encoder stall'
             if abs(err) <= self._tol:
                 self.stop()
                 if in_tol_t is None:
@@ -1660,18 +1779,66 @@ class LinearAxis(_EncoderAxis):
                     self.stop()
                     self._mark_home()
                     return 'ok'
+                # Leave the physical switch at minimum usable speed.  Using
+                # cruise speed here caused a 40 mm command to coast past 50 mm
+                # before the first useful encoder correction.
                 if self._home_sw and err > self._tol:
-                    self._apply_speed(-self._speed_max)
+                    leave = self._fwd_speed(self._speed_min)
+                    if abs(self._last_speed) < 1.0:
+                        self.log(
+                            'info',
+                            f'leave-home cmd={leave:+.0f} '
+                            f'(pos={pos:.1f} home_sw={int(self._home_sw)})')
+                    self._apply_speed(leave)
+                elif abs(err) <= self._precision_zone:
+                    # On first entering precision control, stop the previous
+                    # sustained move and measure its coast before adding a pulse.
+                    if not precision_settled and abs(self._last_speed) >= 1.0:
+                        self.stop()
+                        if not self._sleep(self._precision_coast, self._dt):
+                            return 'cancel'
+                        precision_settled = True
+                        continue
+                    precision_settled = True
+                    # Never ask for a sustained command below breakaway.  Pulse
+                    # at loaded precision speed, stop, then let the encoder report the
+                    # coasted position before deciding the next direction.
+                    pulse = (
+                        self._fwd_speed(self._precision_speed)
+                        if err > 0.0 else self._rear_speed(self._precision_speed))
+                    pulse_sec = max(
+                        self._precision_pulse_min,
+                        self._precision_pulse * min(
+                            1.0, abs(err) / self._precision_full_error))
+                    self._apply_speed(pulse)
+                    # Refresh throughout the pulse; one 80 ms command only
+                    # twitched the motor and did not move the loaded rack.
+                    pulse_until = time.time() + pulse_sec
+                    while self._alive(gen) and time.time() < pulse_until:
+                        self._linear_pub.publish(Float64(data=pulse))
+                        self._last_speed = pulse
+                        time.sleep(self._dt)
+                    if not self._alive(gen):
+                        self.stop()
+                        return 'cancel'
+                    self.stop()
+                    if not self._sleep(self._precision_coast, self._dt):
+                        return 'cancel'
                 else:
+                    precision_settled = False
                     raw = self._speed_sign * self._pid.update(err, dt)
                     if abs(err) <= self._approach_mm:
                         cap = self._speed_max * min(
                             1.0, abs(err) / max(self._tol, self._approach_mm))
+                        # Near target: allow below cruise breakaway so we don't hunt ±12.
+                        near_floor = max(6.0, self._speed_min * 0.65)
                         speed = max(-cap, min(cap, raw * self._speed_max))
                         if abs(err) <= self._tol * 1.5 and abs(speed) < 6.0:
                             speed = 0.0
+                        elif abs(speed) > 1e-9 and abs(speed) < near_floor:
+                            speed = math.copysign(near_floor, speed)
                     else:
-                        speed = _shape(raw, self._speed_min, self._speed_max)
+                        speed = _shape(raw, breakaway, self._speed_max)
                     self._apply_speed(speed)
             time.sleep(self._dt)
         self.stop()
@@ -1759,6 +1926,9 @@ class ServoAxis(_Axis):
         self._alt = cfg.f(self.alt_key, 0.0)
         self._alt_mode = cfg.s('alt_mode', 'alt').strip().lower()
         self._settle = max(0.2, cfg.f('settle_sec', 0.8))
+        # Standard PWM servos jump instantly; optional software ramp (°/s).
+        self._slew_dps = max(0.0, cfg.f('slew_deg_per_sec', 0.0))
+        self._slew_hz = max(5.0, cfg.f('slew_hz', 20.0))
         self._pose = 'unknown'
         self._angle: Optional[float] = None
         self._status_last = 0.0
@@ -1766,7 +1936,18 @@ class ServoAxis(_Axis):
         self._status_hz_idle = max(0.5, cfg.f('status_hz_idle', 2.0))
 
         srv = cfg.s('service', default_service)
+        # Studica PWM path: /<name>/cmd Float64 → SetAngle → PWMGenerator_SetDutyCycle.
+        # Prefer this over SetData for ramps (no service round-trip / timing hacks).
+        hw_cmd = cfg.s('hw_cmd_topic', '')
+        if not hw_cmd:
+            # /rotation_servo/set_servo → /rotation_servo/cmd
+            if srv.endswith('/set_servo'):
+                hw_cmd = srv[: -len('/set_servo')] + '/cmd'
+            else:
+                hw_cmd = f'/{topic}/cmd'
         self._cli = node.create_client(SetData, srv, callback_group=self.group)
+        self._hw_cmd_pub = node.create_publisher(Float64, hw_cmd, 10)
+        self._hw_cmd_topic = hw_cmd
         self._result_pub = node.create_publisher(
             String, f'/oms/{topic}/result', 10)
         self._status_pub = node.create_publisher(
@@ -1781,8 +1962,11 @@ class ServoAxis(_Axis):
         node.get_logger().info(self.banner(srv))
 
     def banner(self, srv: str) -> str:
-        return (f'OMS {self.label}  {srv}  home={self._home:g}°  '
-                f'{self._alt_mode}={self._alt:g}°')
+        slew = (
+            f'  slew={self._slew_dps:g}°/s'
+            if self._slew_dps > 0.0 else '  slew=off')
+        return (f'OMS {self.label}  {srv}  pwm={self._hw_cmd_topic}  '
+                f'home={self._home:g}°  {self._alt_mode}={self._alt:g}°{slew}')
 
     def publish_status(self) -> None:
         moving = self._state not in ('idle', 'boot', 'unknown')
@@ -1827,11 +2011,23 @@ class ServoAxis(_Axis):
                 return True
         return self._cli.service_is_ready()
 
-    def _set_angle(self, deg: float) -> bool:
+    def _set_angle(self, deg: float, *, confirm: bool = False) -> bool:
+        """Write PWM duty via Studica /cmd (angle → SetAngle → SetDutyCycle).
+
+        Standard servos have no hardware velocity — slow motion = stepped angles.
+        ``confirm=True`` also hits set_servo once (final latch / readiness check).
+        """
+        deg_i = float(int(round(float(deg))))
+        try:
+            self._hw_cmd_pub.publish(Float64(data=deg_i))
+        except Exception:
+            pass
+        if not confirm:
+            return True
         if not self._cli.service_is_ready():
             return False
         req = SetData.Request()
-        req.initparams.speed = float(deg)
+        req.initparams.speed = deg_i
         fut = self._cli.call_async(req)
         t0 = time.time()
         while rclpy.ok() and not fut.done() and (time.time() - t0) < 8.0:
@@ -1865,16 +2061,57 @@ class ServoAxis(_Axis):
         return 'ok'
 
     def _goto_deg(self, target: float) -> bool:
+        """Drive standard servo by stepping PWM duty (degrees).
+
+        Hardware has no velocity input — only PWM angle. Slow motion = publish
+        successive angles on /<servo>/cmd (SetAngle → SetDutyCycle).
+        """
         self._state = 'goto'
+        target = float(int(round(float(target))))
+        start = float(self._angle) if self._angle is not None else float(target)
+        start = float(int(round(start)))
         ok = False
-        for attempt in range(1, 6):
-            ok = self._set_angle(target)
-            if ok:
-                break
-            self.log('warn', f'attempt {attempt}/5 failed — retry')
-            time.sleep(1.0)
+        used_slew = False
+        if self._slew_dps <= 0.0 or abs(target - start) < 1.0:
+            for attempt in range(1, 6):
+                ok = self._set_angle(target, confirm=True)
+                if ok:
+                    break
+                self.log('warn', f'attempt {attempt}/5 failed — retry')
+                time.sleep(0.25)
+        else:
+            # Integer-degree PWM ramp — Studica SetAngle uses int degrees.
+            used_slew = True
+            dt = 1.0 / self._slew_hz
+            step = max(1.0, round(self._slew_dps * dt))
+            cur = start
+            direction = 1.0 if target >= start else -1.0
+            self.log(
+                'info',
+                f'pwm ramp {start:g}° → {target:g}° at ~{self._slew_dps:g}°/s '
+                f'(step={step:g}° via {self._hw_cmd_topic})')
+            t_next = time.time()
+            while abs(target - cur) > step:
+                cur = cur + direction * step
+                if (direction > 0 and cur > target) or (
+                        direction < 0 and cur < target):
+                    cur = target
+                self._set_angle(cur, confirm=False)
+                self._angle = cur
+                t_next += dt
+                sleep_for = t_next - time.time()
+                if sleep_for > 0.0:
+                    time.sleep(sleep_for)
+            ok = self._set_angle(target, confirm=True)
+            if not ok:
+                # Topic already updated; service confirm optional.
+                self._set_angle(target, confirm=False)
+                ok = True
         if ok:
-            time.sleep(self._settle)
+            # After a PWM ramp the horn is already at target — short settle only.
+            settle = min(self._settle, 0.25) if used_slew else self._settle
+            if settle > 0.0:
+                time.sleep(settle)
             self._angle = target
             self._pose = self._pose_of(target)
             self._homed = abs(target - self._home) < 0.5
@@ -1946,24 +2183,24 @@ class ServoAxis(_Axis):
 
 
 class RotationServoAxis(ServoAxis):
-    """Rotation wrist: home = out (0°), alt = in (110°)."""
+    """Rotation wrist: home = in (yaml home_deg), alt = out (yaml alt_deg)."""
 
-    home_label = 'out'
+    home_label = 'in'
 
     def _resolve_mode(self, mode: str) -> tuple[str, float]:
         mode = (mode or self.home_label).strip().lower()
         # Primary names: in / out. Keep old horiz/vert aliases for any stale clients.
-        if mode in ('in', 'i', 'horizontal', 'horiz', 'h'):
-            return 'in', self._alt
-        if mode in ('home', 'out', 'o', 'vertical', 'vert', 'v'):
-            return 'out', self._home
+        if mode in ('in', 'i', 'horizontal', 'horiz', 'h', 'home'):
+            return 'in', self._home
+        if mode in ('out', 'o', 'vertical', 'vert', 'v'):
+            return 'out', self._alt
         if mode == 'goto':
             return 'goto', self._home
         return mode, self._home
 
     def _pose_of(self, target: float) -> str:
-        return ('out' if abs(target - self._home) < 0.5
-                else 'in')
+        return ('in' if abs(target - self._home) < 0.5
+                else 'out')
 
 
 class VerticalServoAxis(ServoAxis):

@@ -25,12 +25,12 @@
     camera_ty_mm: 0,
     camera_tz_mm: 520,
     vertical_servo_down_deg: -90,
-    vertical_servo_up_deg: 0,
-    rotation_servo_in_deg: 110,
-    rotation_servo_out_deg: 0,
+    vertical_servo_up_deg: 90,
+    rotation_servo_in_deg: -30,
+    rotation_servo_out_deg: -150,
     // aliases kept for older saved viz configs
-    rotation_servo_horizontal_deg: 110,
-    rotation_servo_vertical_deg: 0,
+    rotation_servo_horizontal_deg: -30,
+    rotation_servo_vertical_deg: -150,
     gripper_open_norm: 0,
     gripper_closed_norm: 1,
   };

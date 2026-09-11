@@ -203,14 +203,14 @@ def _setup(context, *args, **kwargs):
         # Optional: confidence scan gate → /scan_filtered (costmaps only).
         # Studio nav2_params use /scan today; enable only if you switch costmaps
         # to /scan_filtered and uncomment the block below.
-        confidence_gate_node = _node(
-            'allterrain', 'confidence_scan_gate', 'confidence_scan_gate_node',
-            parameters=[gate_params_file],
-        )
-        actions.append(TimerAction(period=6.0, actions=[
-            LogInfo(msg='[studio_nav2] Launching confidence scan gate → /scan_filtered'),
-            confidence_gate_node,
-        ]))
+        # confidence_gate_node = _node(
+        #     'allterrain', 'confidence_sclearcan_gate', 'confidence_scan_gate_node',
+        #     parameters=[gate_params_file],
+        # )
+        # actions.append(TimerAction(period=6.0, actions=[
+        #     LogInfo(msg='[studio_nav2] Launching confidence scan gate → /scan_filtered'),
+        #     confidence_gate_node,
+        # ]))
 
     detect_delay = 6.0 if enable_lidar else 2.5
     if with_align:

@@ -251,11 +251,18 @@ def mm_to_ticks(mm: float, ticks_per_mm: float) -> float:
 
 
 # --- Linear (Cypher Max on Titan1 M3, quadrature) ---
-# Studica Cypher Max: 512 CPR × 4 (quadrature) = 2048 counts/rev.
-# Titan reset_encoder on M3 clears the quadrature counter (same as M2 rotation).
+# Studica Cypher Max: 512 CPR × 4 (quadrature) = 2048 counts/rev on the shaft.
+# Drive: continuous Smart Servo spins a pinion on a rack (not a 50 mm leadscrew).
+#   mm_per_rev = π × pitch_diameter_mm
+#              = π × module × teeth
+# Calibrate: command known travel, measure physical mm, then
+#   mm_per_rev = 2048 × physical_mm / |Δticks|
+# Bench 70 mm cmd → ~120 mm physical, |Δticks|=2936 → mm_per_rev ≈ 83.7
+#   (pitch dia ≈ 26.6 mm, e.g. ~module 1 × 27T).
 
 CYPHER_MAX_CPR = 512.0
 CYPHER_QUADRATURE = 4.0
+LINEAR_MM_PER_REV_DEFAULT = 83.7  # rack & pinion (calibrated)
 
 
 def cypher_ticks_per_rev(
@@ -264,11 +271,26 @@ def cypher_ticks_per_rev(
     return float(encoder_cpr) * float(quadrature)
 
 
+def rack_mm_per_rev(
+        pitch_diameter_mm: float = 0.0,
+        module_mm: float = 0.0,
+        teeth: float = 0.0) -> float:
+    """Linear travel per pinion revolution on a rack.
+
+    Prefer pitch_diameter_mm if known; else module × teeth (metric pinion).
+    """
+    if pitch_diameter_mm > 0.0:
+        return math.pi * float(pitch_diameter_mm)
+    if module_mm > 0.0 and teeth > 0.0:
+        return math.pi * float(module_mm) * float(teeth)
+    return LINEAR_MM_PER_REV_DEFAULT
+
+
 def ticks_per_linear_mm(
         encoder_cpr: float = CYPHER_MAX_CPR,
         quadrature: float = CYPHER_QUADRATURE,
-        mm_per_rev: float = 50.0) -> float:
-    """mm_per_rev = linear travel for one Cypher revolution (calibrate on bench)."""
+        mm_per_rev: float = LINEAR_MM_PER_REV_DEFAULT) -> float:
+    """mm_per_rev = rack travel for one Cypher/pinion revolution."""
     mm = max(0.1, float(mm_per_rev))
     return cypher_ticks_per_rev(encoder_cpr, quadrature) / mm
 

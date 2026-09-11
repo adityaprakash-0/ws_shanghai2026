@@ -28,12 +28,18 @@ from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from rclpy.time import Time
-from sensor_msgs.msg import BatteryState, LaserScan
-from std_msgs.msg import Bool, Empty, Float64, String
+from sensor_msgs.msg import BatteryState, Imu, LaserScan, Range
+from std_msgs.msg import Bool, Empty, Float32, Float64, String
 from std_srvs.srv import SetBool
 from tf2_ros import Buffer, TransformException, TransformListener
 
 from skill23_studio import map_pipeline as maps
+from skill23_studio.hw_test_monitor import (
+    HwLiveStore,
+    build_channel_specs,
+    laser_min_range,
+    yaw_from_quat,
+)
 from skill23_studio.nav.light_tower_patterns import (
     get_pattern,
     list_patterns,
@@ -108,6 +114,13 @@ OMS_HARDWARE = [
 
 # Plenty for the ~40 lines the dashboard shows, without reading whole logs.
 _LOG_TAIL_BYTES = 16_384
+# Telemetry SSE: longer TTL = less JSON/ps work on the Pi while dashboards idle.
+_SNAPSHOT_CACHE_TTL = 1.5
+_LOG_CACHE_TTL = 3.0
+_SSE_SLEEP_S = 1.5
+_ODOM_MIN_DT = 0.10   # ≤10 Hz odom bookkeeping
+_AMCL_MIN_DT = 0.10
+_SCAN_IDLE_EVERY = 5  # process 1 of N scans when not mapping/hw_test
 
 
 def _ros_string(data: Any) -> str:
@@ -292,14 +305,17 @@ class StudioBridge(Node):
         )
         self.create_subscription(
             PoseWithCovarianceStamped, '/amcl_pose', self._on_amcl, 10)
-        self.create_subscription(Odometry, '/odometry/filtered', self._on_odom, 10)
-        self.create_subscription(Odometry, '/odom', self._on_odom, 10)
+        self._odom_prefer_filtered = False
+        self.create_subscription(
+            Odometry, '/odometry/filtered', self._on_odom_filtered, 10)
+        self.create_subscription(Odometry, '/odom', self._on_odom_raw, 10)
         self.create_subscription(OccupancyGrid, '/map', self._on_map, qos)
         self.create_subscription(Path, '/plan', self._on_path, 10)
         self.create_subscription(BatteryState, '/battery_state', self._on_battery, 10)
-        self.create_subscription(
-            LaserScan, str(self.get_parameter('scan_topic').value),
-            self._on_scan, qos_profile_sensor_data)
+        # /scan is subscribed lazily — constantly decoding LaserScan when Nav2
+        # lidars are up was a major studio_bridge CPU cost.
+        self._scan_sub = None
+        self._scan_sub_wanted = False
 
         self._initialpose = self.create_publisher(
             PoseWithCovarianceStamped, '/initialpose', 10)
@@ -312,6 +328,16 @@ class StudioBridge(Node):
             ClearEntireCostmap, 'local_costmap/clear_entirely_local_costmap')
         self._clear_global_cli = self.create_client(
             ClearEntireCostmap, 'global_costmap/clear_entirely_global_costmap')
+        # GC walls publisher is created only while GC+Planner runs (otherwise
+        # /gc_planner/walls stays advertised forever and confuses topic lists).
+        self._gc_walls_pub = None
+        self._gc_walls_qos = QoSProfile(
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self._gc_walls_cells: set = set()  # {(gx, gy), ...} occupied overlay
+        self._gc_walls_meta: Optional[Dict[str, Any]] = None
         self._nav2_goal_handle = None
         self._cmd_vel = self.create_publisher(Twist, '/cmd_vel', 10)
         # Public intent signal: subscribers (laptop vision) can use it to know
@@ -414,16 +440,35 @@ class StudioBridge(Node):
                 String, f'/oms/{axis}/result',
                 lambda m, a=axis: self._on_oms_result(a, m), 10)
 
-        self.create_timer(0.1, self._reloc_tick)
-        self.create_timer(0.1, self._nav2_seq_tick)
-        self.create_timer(0.2, self._trail_tick)
-        self.create_timer(0.5, self._cam_tick)
+        self.create_timer(0.25, self._reloc_tick)
+        self.create_timer(0.25, self._nav2_seq_tick)
+        # Trail is only shipped during mapping — no TF spam otherwise.
+        self.create_timer(1.0, self._trail_tick)
+        self.create_timer(1.0, self._cam_tick)
+        self.create_timer(2.0, self._scan_sub_tick)
+        self._snapshot_cache: Optional[Dict[str, Any]] = None
+        self._snapshot_cache_t = 0.0
+        self._logs_cache: Optional[Dict[str, str]] = None
+        self._logs_cache_t = 0.0
+        self._sse_clients = 0
+        self._toggle_ready_cache = False
+        self._toggle_ready_cache_t = 0.0
+        self._scan_cb_n = 0
+        self._path_pts_cached = None
+        # Hardware Testing Software (lazy subscriptions while stack is up).
+        self._hw_store = HwLiveStore()
+        self._hw_subs: List[Any] = []
+        self._hw_topic_ids: Dict[str, List[str]] = {}
         maps.ensure_root()
         threading.Thread(target=self._run_http, daemon=True).start()
         self.get_logger().info(f'Studio bridge HTTP :{self.http_port}')
 
     # ── ROS callbacks ───────────────────────────────────────────────────
     def _on_amcl(self, msg: PoseWithCovarianceStamped) -> None:
+        now = time.time()
+        # Do not bump stamp on skip — otherwise continuous AMCL never fully updates.
+        if self._amcl_stamp > 0.0 and (now - self._amcl_stamp) < _AMCL_MIN_DT:
+            return
         ps = pose_cov_to_stamped(msg)
         x = float(ps.pose.position.x)
         y = float(ps.pose.position.y)
@@ -433,15 +478,33 @@ class StudioBridge(Node):
         self._amcl_ok = True
         cov = msg.pose.covariance
         self._amcl_cov = float(cov[0] + cov[7]) if len(cov) > 7 else 99.0
-        self._amcl_stamp = time.time()
+        self._amcl_stamp = now
+
+    def _on_odom_filtered(self, msg: Odometry) -> None:
+        self._odom_prefer_filtered = True
+        self._on_odom(msg)
+
+    def _on_odom_raw(self, msg: Odometry) -> None:
+        # Ignore wheel /odom while EKF filtered is fresh (halves callback load).
+        if (
+            self._odom_prefer_filtered
+            and self._odom_stamp > 0.0
+            and (time.time() - self._odom_stamp) < 1.0
+        ):
+            return
+        self._on_odom(msg)
 
     def _on_odom(self, msg: Odometry) -> None:
+        now = time.time()
+        if self._odom_stamp > 0.0 and (now - self._odom_stamp) < _ODOM_MIN_DT:
+            tw = msg.twist.twist
+            self._odom_speed = math.hypot(float(tw.linear.x), float(tw.linear.y))
+            return
         ps = PoseStamped()
         ps.header = msg.header
         ps.pose = msg.pose.pose
         self._odom_pose = ps
-        self._odom_stamp = time.time()
-        # Lightweight motion signal for EKF health (no extra pubs).
+        self._odom_stamp = now
         tw = msg.twist.twist
         self._odom_speed = math.hypot(float(tw.linear.x), float(tw.linear.y))
         self._odom_frame = str(msg.header.frame_id or '')
@@ -460,9 +523,11 @@ class StudioBridge(Node):
 
     def _clear_nav_paths(self) -> None:
         self._path = None
+        self._path_pts_cached = None
 
     def _on_path(self, msg: Path) -> None:
         self._path = msg
+        self._path_pts_cached = None
 
     def _using_nav2(self) -> bool:
         stack = str(self.session.get('nav_stack') or '')
@@ -1356,6 +1421,107 @@ class StudioBridge(Node):
                 f'Nav2 costmap clear partial/failed local={local_ok} global={global_ok}')
         return {'ok': ok, 'local': local_ok, 'global': global_ok}
 
+    def _hw_test_stop_subs(self) -> None:
+        for sub in self._hw_subs:
+            try:
+                self.destroy_subscription(sub)
+            except Exception:
+                pass
+        self._hw_subs = []
+        self._hw_topic_ids = {}
+        self._hw_store.clear()
+
+    def _hw_bind_topic(self, topic: str, channel_id: str) -> None:
+        self._hw_topic_ids.setdefault(topic, []).append(channel_id)
+
+    def _hw_test_start_subs(self, robot: str) -> Dict[str, Any]:
+        self._hw_test_stop_subs()
+        specs = build_channel_specs(robot, include_lidar=True)
+        self._hw_store.reset(robot, specs)
+        for spec in specs:
+            self._hw_bind_topic(spec['topic'], spec['id'])
+
+        subscribed = set()
+
+        def sub_once(topic: str, msg_type, cb, qos=10) -> None:
+            if topic in subscribed or topic in ('/battery_state', '/scan'):
+                return
+            subscribed.add(topic)
+            self._hw_subs.append(
+                self.create_subscription(msg_type, topic, cb, qos))
+
+        for topic, ids in list(self._hw_topic_ids.items()):
+            if topic in ('/battery_state', '/scan'):
+                continue
+            msg_hint = ''
+            for spec in specs:
+                if spec['topic'] == topic:
+                    msg_hint = str(spec.get('msg') or '')
+                    break
+            if 'LaserScan' in msg_hint:
+                # YDLidar offers BEST_EFFORT SensorDataQoS. A default depth-10
+                # subscription is RELIABLE and therefore incompatible.
+                sub_once(
+                    topic, LaserScan,
+                    lambda m, t=topic: self._hw_on_laser(t, m),
+                    qos_profile_sensor_data)
+            elif 'Imu' in msg_hint:
+                sub_once(topic, Imu, lambda m, t=topic: self._hw_on_imu(t, m))
+            elif 'Range' in msg_hint:
+                sub_once(topic, Range, lambda m, t=topic: self._hw_on_range(t, m))
+            elif 'Bool' in msg_hint:
+                sub_once(topic, Bool, lambda m, t=topic: self._hw_on_bool(t, m))
+            elif 'Float32' in msg_hint:
+                sub_once(topic, Float32, lambda m, t=topic: self._hw_on_f32(t, m))
+            elif 'String' in msg_hint:
+                sub_once(topic, String, lambda m, t=topic: self._hw_on_string(t, m))
+            else:
+                sub_once(topic, Float64, lambda m, t=topic: self._hw_on_f64(t, m))
+
+        return {
+            'ok': True,
+            'robot': robot,
+            'channels': len(specs),
+            'topics': sorted(self._hw_topic_ids.keys()),
+        }
+
+    def _hw_on_f64(self, topic: str, msg: Float64) -> None:
+        for cid in self._hw_topic_ids.get(topic, []):
+            self._hw_store.set_value(cid, round(float(msg.data), 3), topic)
+
+    def _hw_on_f32(self, topic: str, msg: Float32) -> None:
+        for cid in self._hw_topic_ids.get(topic, []):
+            self._hw_store.set_value(cid, round(float(msg.data), 4), topic)
+
+    def _hw_on_bool(self, topic: str, msg: Bool) -> None:
+        for cid in self._hw_topic_ids.get(topic, []):
+            self._hw_store.set_value(cid, bool(msg.data), topic)
+
+    def _hw_on_string(self, topic: str, msg: String) -> None:
+        for cid in self._hw_topic_ids.get(topic, []):
+            self._hw_store.set_value(cid, _ros_string(msg.data)[:64], topic)
+
+    def _hw_on_range(self, topic: str, msg: Range) -> None:
+        r = float(msg.range)
+        val = None if not math.isfinite(r) else round(r, 3)
+        for cid in self._hw_topic_ids.get(topic, []):
+            self._hw_store.set_value(cid, val, topic)
+
+    def _hw_on_imu(self, topic: str, msg: Imu) -> None:
+        q = msg.orientation
+        yaw = yaw_from_quat(float(q.x), float(q.y), float(q.z), float(q.w))
+        deg = round(math.degrees(yaw), 2)
+        for cid in self._hw_topic_ids.get(topic, []):
+            if cid.endswith('.yaw') or 'yaw' in cid:
+                self._hw_store.set_value(cid, deg, topic)
+
+    def _hw_on_laser(self, topic: str, msg: LaserScan) -> None:
+        d = laser_min_range(msg.ranges, msg.range_min, msg.range_max)
+        if d is None:
+            return
+        for cid in self._hw_topic_ids.get(topic, []):
+            self._hw_store.set_value(cid, round(d, 3), topic)
+
     def _on_battery(self, msg: BatteryState) -> None:
         v = float(msg.voltage)
         p = float(msg.percentage)
@@ -1370,12 +1536,19 @@ class StudioBridge(Node):
             pct = p * 100.0 if p <= 1.0 else p
         elif not math.isnan(v):
             pct = max(0.0, min(100.0, (v - 10.0) / 4.0 * 100.0))
+        volt = 0.0 if math.isnan(v) else v
         self._battery = {
-            'voltage': round(v, 2) if not math.isnan(v) else 0.0,
+            'voltage': round(volt, 2),
             'percentage': round(pct, 1),
-            'valid': not math.isnan(v),
-            'source': '/battery_state',
+            'valid': True,
+            'source': 'battery_state',
         }
+        if self._hw_store.active:
+            for cid in self._hw_topic_ids.get('/battery_state', []):
+                if 'percent' in cid:
+                    self._hw_store.set_value(cid, round(pct, 1), '/battery_state')
+                else:
+                    self._hw_store.set_value(cid, round(volt, 2), '/battery_state')
 
     def _cam_log(self, line: str) -> None:
         stamp = time.strftime('%H:%M:%S')
@@ -1982,6 +2155,18 @@ class StudioBridge(Node):
             return True
         return False
 
+    def _cached_toggle_ready(self) -> bool:
+        now = time.time()
+        if (now - self._toggle_ready_cache_t) < 2.0:
+            return self._toggle_ready_cache
+        try:
+            ready = bool(self._orbbec_color_cli().service_is_ready())
+        except Exception:
+            ready = False
+        self._toggle_ready_cache = ready
+        self._toggle_ready_cache_t = now
+        return ready
+
     def _orbbec_color_cli(self):
         if self._toggle_color_cli.service_is_ready():
             return self._toggle_color_cli
@@ -2147,9 +2332,58 @@ class StudioBridge(Node):
             if self._cam_stream_allowed():
                 self._toggle_orbbec(color=True)
 
+    def _scan_sub_tick(self) -> None:
+        """Subscribe to /scan only while lidar stacks (or HW test) need it."""
+        stacks = self.pm.stacks_alive()
+        want = bool(
+            stacks.get('nav')
+            or stacks.get('localize')
+            or stacks.get('slam')
+            or stacks.get('hw_test')
+            or self.session.get('phase') == 'mapping'
+        )
+        if want == self._scan_sub_wanted:
+            return
+        self._scan_sub_wanted = want
+        topic = str(self.get_parameter('scan_topic').value)
+        if want and self._scan_sub is None:
+            self._scan_sub = self.create_subscription(
+                LaserScan, topic, self._on_scan, qos_profile_sensor_data)
+            self.get_logger().info(f'Subscribed {topic} (lidar stack up)')
+        elif (not want) and self._scan_sub is not None:
+            try:
+                self.destroy_subscription(self._scan_sub)
+            except Exception:
+                pass
+            self._scan_sub = None
+            self._scan = []
+            self.get_logger().info(f'Unsubscribed {topic} (no lidar stack)')
+
     def _on_scan(self, msg: LaserScan) -> None:
-        # Keep a sparse point cloud for reloc freshness only — the dashboard
-        # no longer draws scans (saves SSE bandwidth on the Pi).
+        # Always track freshness; avoid heavy point cloud work unless mapping
+        # or Hardware Testing needs lidar scalars.
+        now = time.time()
+        self._scan_stamp = now
+        self._scan_msg_stamp = Time.from_msg(msg.header.stamp)
+        self._scan_raw_count = len(msg.ranges)
+        self._scan_cb_n += 1
+
+        hw_active = bool(self._hw_store.active)
+        mapping = self.session.get('phase') == 'mapping'
+        # Downsample callbacks: lidar is ~10 Hz; keep health cheap under Nav2.
+        if not mapping and not hw_active:
+            if self._scan_cb_n % _SCAN_IDLE_EVERY != 0:
+                return
+            step = max(1, len(msg.ranges) // 60)
+            valid = 0
+            for i in range(0, len(msg.ranges), step):
+                r = float(msg.ranges[i])
+                if math.isfinite(r) and msg.range_min < r < msg.range_max:
+                    valid += 1
+            self._scan_valid_count = valid
+            self._scan = []
+            return
+
         pts = []
         angle = msg.angle_min
         step = max(1, len(msg.ranges) // 180)
@@ -2158,17 +2392,20 @@ class StudioBridge(Node):
             r = float(msg.ranges[i])
             if math.isfinite(r) and msg.range_min < r < msg.range_max:
                 valid += 1
-                if len(pts) < 32:
+                if mapping and len(pts) < 32:
                     pts.append({
                         'x': round(r * math.cos(angle), 3),
                         'y': round(r * math.sin(angle), 3),
                     })
             angle += msg.angle_increment * step
-        self._scan = pts
-        self._scan_raw_count = len(msg.ranges)
+        self._scan = pts if mapping else []
         self._scan_valid_count = valid
-        self._scan_stamp = time.time()
-        self._scan_msg_stamp = Time.from_msg(msg.header.stamp)
+
+        if hw_active:
+            d = laser_min_range(msg.ranges, msg.range_min, msg.range_max)
+            if d is not None:
+                for cid in self._hw_topic_ids.get('/scan', []):
+                    self._hw_store.set_value(cid, round(d, 3), '/scan')
 
     @staticmethod
     def _pose_from_transform(t) -> PoseStamped:
@@ -2198,6 +2435,9 @@ class StudioBridge(Node):
         return self._pose_from_transform(t)
 
     def _trail_tick(self) -> None:
+        # Dashboard only draws trail while mapping; skip TF lookups otherwise.
+        if self.session.get('phase') != 'mapping':
+            return
         ps = self._try_map_pose()
         if ps is None:
             return
@@ -2381,6 +2621,14 @@ class StudioBridge(Node):
             for p in path.poses[:limit]
         ]
 
+    def _nav_path_pts(self) -> list:
+        if self._path is None:
+            return []
+        cached = getattr(self, '_path_pts_cached', None)
+        if cached is None:
+            self._path_pts_cached = self._path_pts(self._path)
+        return list(self._path_pts_cached or [])
+
     def _clear_live_map(self) -> None:
         """Drop in-memory /map so the UI loads project files (full resolution)."""
         self._map = None
@@ -2448,12 +2696,19 @@ class StudioBridge(Node):
         }
 
     def snapshot(self, last_map_rev: Optional[int] = None) -> Dict[str, Any]:
+        now = time.time()
+        if (
+            self._snapshot_cache is not None
+            and (now - self._snapshot_cache_t) < _SNAPSHOT_CACHE_TTL
+        ):
+            snap = dict(self._snapshot_cache)
+            snap['ts'] = now
+            if last_map_rev is not None and last_map_rev == snap.get('map_rev'):
+                snap['map'] = None
+            return snap
+
         map_payload = self._map_payload()
         map_rev = self._map_revision(map_payload)
-        # The grid dominates the frame size; a stream that already has this
-        # revision keeps drawing its copy.
-        if last_map_rev is not None and last_map_rev == map_rev:
-            map_payload = None
 
         warnings = list(self.session.get('warnings') or [])
         if self.session.get('phase') == 'mapping':
@@ -2462,6 +2717,7 @@ class StudioBridge(Node):
                 'Keep lidars clear of people and clutter',
                 'Loop-close corridors for a better map',
             ]
+        stacks = self.pm.stacks_alive()
         nodes = self.pm.nav2_component_status()
         # Enrich lidar / EKF with live rates already tracked — no extra pubs.
         scan_age = (
@@ -2501,11 +2757,11 @@ class StudioBridge(Node):
         # Do not ship scan points / trail over SSE — UI draws map+path+WPs only.
         phase = self.session.get('phase') or ''
         send_overlay = phase == 'mapping'
-        return {
-            'ts': time.time(),
+        snap = {
+            'ts': now,
             'session': dict(self.session),
             'processes': self.pm.list_running(),
-            'stacks': self.pm.stacks_alive(),
+            'stacks': stacks,
             'pose': self._live_pose(),
             'amcl': {
                 'ok': self._amcl_ok,
@@ -2523,7 +2779,7 @@ class StudioBridge(Node):
             'scan_age': scan_age,
             'trail': self._trail[-500:] if send_overlay else [],
             'nav_stack': self.session.get('nav_stack', 'nav2'),
-            'path': self._path_pts(self._path),
+            'path': self._nav_path_pts(),
             'planner_path': [],
             'smoothed_path': [],
             'sim': {
@@ -2565,6 +2821,9 @@ class StudioBridge(Node):
             'detect_align': dict(self._detect_align),
             'commission': self._commission_snapshot(),
             'oms': self._oms_snapshot(),
+            'hw_test': self._hw_store.snapshot(only_live=True) if self._hw_store.active else {
+                'ok': True, 'active': False, 'groups': {}, 'live_channels': 0,
+            },
             'camera': {
                 'on': self._cam_wanted(),
                 'ui': self._cam_ui,
@@ -2572,10 +2831,10 @@ class StudioBridge(Node):
                 'killed': bool(self._cam_forbid_autostart),
                 'process': (
                     self.pm.running('camera')
-                    or bool(self.pm.stacks_alive().get('camera'))),
+                    or bool(stacks.get('camera'))),
                 'stream': bool(self._cam_stream),
                 'depth_stream': bool(self._cam_depth_stream),
-                'toggle_ready': self._orbbec_color_cli().service_is_ready(),
+                'toggle_ready': self._cached_toggle_ready(),
                 # Consumers subscribe to these Orbbec topics directly.
                 'topics': {
                     'color': '/camera/color/image_raw',
@@ -2585,6 +2844,12 @@ class StudioBridge(Node):
                 'logs': list(self._cam_logs[-40:]),
             },
         }
+        self._snapshot_cache = dict(snap)
+        self._snapshot_cache_t = now
+        out = dict(snap)
+        if last_map_rev is not None and last_map_rev == map_rev:
+            out['map'] = None
+        return out
 
     def _robot_dims(self) -> Dict[str, float]:
         robot = self.session.get('robot') or 'grip'
@@ -2593,13 +2858,19 @@ class StudioBridge(Node):
         return {'length': 0.43, 'width': 0.40}
 
     def _process_logs(self, max_lines: int = 40) -> Dict[str, str]:
+        now = time.time()
+        if (
+            self._logs_cache is not None
+            and (now - self._logs_cache_t) < _LOG_CACHE_TTL
+            and max_lines <= 40
+        ):
+            return dict(self._logs_cache)
         out: Dict[str, str] = {}
         log_dir = FsPath(os.path.expanduser('~/skill23_ws/studio_maps/_logs'))
         for name in ('slam', 'nav', 'localize', 'camera', 'detect_align', 'oms'):
             path = log_dir / f'{name}.log'
             try:
-                # Read only the tail: nav.log grows to megabytes during a run
-                # and telemetry asks for this ~3x/s.
+                # Read only the tail: nav.log grows to megabytes during a run.
                 with open(path, 'rb') as fh:
                     fh.seek(0, os.SEEK_END)
                     size = fh.tell()
@@ -2613,7 +2884,10 @@ class StudioBridge(Node):
                 out[name] = ''
         running = self.pm.list_running()
         out['running'] = ', '.join(running) if running else '(none)'
-        return out
+        if max_lines <= 40:
+            self._logs_cache = out
+            self._logs_cache_t = now
+        return dict(out)
 
     def _append_oms_log(self, line: str) -> None:
         path = FsPath(os.path.expanduser('~/skill23_ws/studio_maps/_logs/oms.log'))
@@ -2673,6 +2947,7 @@ class StudioBridge(Node):
                     self.send_header('Cache-Control', 'no-cache')
                     self.send_header('Connection', 'keep-alive')
                     self.end_headers()
+                    bridge._sse_clients += 1
                     try:
                         last_map_rev: Optional[int] = None
                         while True:
@@ -2681,9 +2956,12 @@ class StudioBridge(Node):
                             data = json.dumps(snap)
                             self.wfile.write(f'data: {data}\n\n'.encode())
                             self.wfile.flush()
-                            time.sleep(0.35)
+                            # ~0.67 Hz enough for pose/path UI under Nav2 load.
+                            time.sleep(_SSE_SLEEP_S)
                     except Exception:
                         return
+                    finally:
+                        bridge._sse_clients = max(0, bridge._sse_clients - 1)
                 elif path == '/api/maps':
                     self._json(200, {'maps': maps.list_projects()})
                 elif path == '/api/map':
@@ -2716,6 +2994,20 @@ class StudioBridge(Node):
                     self._json(200, bridge._process_logs(80))
                 elif path == '/api/gc_planner/params':
                     self._json(200, bridge._gc_planner_params({}))
+                elif path == '/api/gc_planner/walls':
+                    self._json(200, bridge._gc_walls_status())
+                elif path == '/api/hw_test/live':
+                    self._json(200, bridge._hw_store.snapshot(only_live=True))
+                elif path == '/api/hw_test/channels':
+                    qs = parse_qs(urlparse(self.path).query)
+                    robot = (qs.get('robot') or [bridge.session.get('robot') or 'allterrain'])[0]
+                    specs = build_channel_specs(str(robot), include_lidar=True)
+                    self._json(200, {
+                        'ok': True,
+                        'robot': robot,
+                        'expected': specs,
+                        'live': bridge._hw_store.snapshot(only_live=True),
+                    })
                 elif path == '/api/light_tower/patterns':
                     self._json(200, {'ok': True, 'patterns': list_patterns()})
                 elif path in ('/api/oms', '/api/oms/status'):
@@ -2743,6 +3035,9 @@ class StudioBridge(Node):
         'GridBased.smooth_iterations',
         'GridBased.max_deviation',
         'GridBased.straight_line_only',
+        'GridBased.round_l_corners',
+        'GridBased.l_corner_radius',
+        'GridBased.l_corner_arc_points',
         'GridBased.w_distance',
         'GridBased.w_cell_cost',
         'GridBased.w_inflation',
@@ -2751,6 +3046,9 @@ class StudioBridge(Node):
         'GridBased.edt_narrow_weight',
         'GridBased.allow_unknown',
         'GridBased.allow_narrow',
+        'GridBased.use_inscribed_width_gate',
+        'GridBased.robot_width',
+        'GridBased.inscribed_width_margin',
         'GridBased.shift_goal_off_inscribed',
         'GridBased.use_final_approach_orientation',
     )
@@ -2837,6 +3135,175 @@ class StudioBridge(Node):
             'params': out,
             'updated': bool(updates),
             'keys': list(self._GC_PLANNER_KEYS),
+        }
+
+    def _gc_walls_ensure_pub(self) -> None:
+        if self._gc_walls_pub is not None:
+            return
+        self._gc_walls_pub = self.create_publisher(
+            OccupancyGrid, '/gc_planner/walls', self._gc_walls_qos)
+        self.get_logger().info('Advertising /gc_planner/walls')
+
+    def _gc_walls_destroy_pub(self) -> None:
+        if self._gc_walls_pub is None:
+            return
+        try:
+            self.destroy_publisher(self._gc_walls_pub)
+        except Exception:
+            pass
+        self._gc_walls_pub = None
+        self.get_logger().info('Removed /gc_planner/walls publisher')
+
+    def _gc_walls_running(self) -> bool:
+        try:
+            return bool(self.pm.stacks_alive().get('gc_planner'))
+        except Exception:
+            return False
+
+    def _gc_walls_refresh_meta(self) -> Dict[str, Any]:
+        """Map grid size/origin for walls OccupancyGrid (from project or live /map)."""
+        name = str(self.session.get('map_name') or '')
+        grid = maps.load_map_grid(name) if name else None
+        if grid is None and self._map is not None:
+            # Full-resolution /map info only — never the SSE-downsampled grid.
+            m = self._map
+            grid = {
+                'width': int(m.info.width),
+                'height': int(m.info.height),
+                'resolution': float(m.info.resolution),
+                'origin': {
+                    'x': float(m.info.origin.position.x),
+                    'y': float(m.info.origin.position.y),
+                },
+            }
+        if grid is None:
+            raise RuntimeError('no map loaded — open a project before drawing GC walls')
+        meta = {
+            'width': int(grid['width']),
+            'height': int(grid['height']),
+            'resolution': float(grid['resolution']),
+            'origin': dict(grid['origin']),
+        }
+        self._gc_walls_meta = meta
+        return meta
+
+    def _gc_walls_load_from_disk(self) -> None:
+        name = str(self.session.get('map_name') or '')
+        self._gc_walls_cells = set()
+        if not name:
+            return
+        for cell in maps.load_gc_walls(name):
+            try:
+                self._gc_walls_cells.add((int(cell[0]), int(cell[1])))
+            except (TypeError, ValueError, IndexError):
+                continue
+
+    def _gc_walls_persist(self) -> None:
+        name = str(self.session.get('map_name') or '')
+        if not name:
+            return
+        cells = [[gx, gy] for gx, gy in sorted(self._gc_walls_cells)]
+        maps.save_gc_walls(name, cells)
+
+    def _gc_walls_build_msg(self) -> OccupancyGrid:
+        meta = self._gc_walls_meta or self._gc_walls_refresh_meta()
+        w = int(meta['width'])
+        h = int(meta['height'])
+        msg = OccupancyGrid()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = 'map'
+        msg.info.resolution = float(meta['resolution'])
+        msg.info.width = w
+        msg.info.height = h
+        ox = float(meta['origin'].get('x', 0.0))
+        oy = float(meta['origin'].get('y', 0.0))
+        msg.info.origin.position.x = ox
+        msg.info.origin.position.y = oy
+        msg.info.origin.orientation.w = 1.0
+        # Unknown (-1) ignored by StaticLayer use_maximum; walls = lethal 100.
+        data = [-1] * (w * h)
+        for gx, gy in self._gc_walls_cells:
+            if 0 <= gx < w and 0 <= gy < h:
+                data[gy * w + gx] = 100
+        msg.data = data
+        return msg
+
+    def _gc_walls_publish(self, clear_costmap: bool = True) -> Dict[str, Any]:
+        """Publish overlay and optionally clear global costmap so inflation refreshes."""
+        # Only advertise the topic while GC+Planner is (or was just) running.
+        if self._gc_walls_pub is None and not self._gc_walls_running():
+            return {
+                'ok': True,
+                'cells': len(self._gc_walls_cells),
+                'published': False,
+                'costmap_cleared': False,
+            }
+        self._gc_walls_ensure_pub()
+        msg = self._gc_walls_build_msg()
+        self._gc_walls_pub.publish(msg)
+        cleared = False
+        if clear_costmap:
+            # use_maximum layers need a clear so erased cells leave the master grid.
+            cleared = self._call_clear_costmap(self._clear_global_cli)
+        return {
+            'ok': True,
+            'cells': len(self._gc_walls_cells),
+            'width': int(msg.info.width),
+            'height': int(msg.info.height),
+            'published': True,
+            'costmap_cleared': cleared,
+        }
+
+    def _gc_walls_edit(self, ops: List[Any]) -> Dict[str, Any]:
+        self._gc_walls_refresh_meta()
+        meta = self._gc_walls_meta or {}
+        w = int(meta.get('width') or 0)
+        h = int(meta.get('height') or 0)
+        for op in ops or []:
+            if not isinstance(op, dict):
+                continue
+            action = str(op.get('action') or '')
+            for cell in op.get('cells') or []:
+                try:
+                    gx, gy = int(cell[0]), int(cell[1])
+                except (TypeError, ValueError, IndexError):
+                    continue
+                if not (0 <= gx < w and 0 <= gy < h):
+                    continue
+                if action == 'wall':
+                    self._gc_walls_cells.add((gx, gy))
+                elif action == 'erase':
+                    self._gc_walls_cells.discard((gx, gy))
+        self._gc_walls_persist()
+        out = self._gc_walls_publish(clear_costmap=True)
+        out['ops'] = len(ops or [])
+        return out
+
+    def _gc_walls_clear(self) -> Dict[str, Any]:
+        self._gc_walls_cells = set()
+        try:
+            self._gc_walls_refresh_meta()
+        except RuntimeError:
+            pass
+        self._gc_walls_persist()
+        return self._gc_walls_publish(clear_costmap=True)
+
+    def _gc_walls_status(self) -> Dict[str, Any]:
+        meta = self._gc_walls_meta
+        try:
+            if meta is None:
+                meta = self._gc_walls_refresh_meta()
+        except RuntimeError as exc:
+            return {'ok': False, 'error': str(exc), 'cells': 0, 'walls': []}
+        return {
+            'ok': True,
+            'cells': len(self._gc_walls_cells),
+            'walls': [[gx, gy] for gx, gy in sorted(self._gc_walls_cells)],
+            'width': int(meta['width']),
+            'height': int(meta['height']),
+            'resolution': float(meta['resolution']),
+            'origin': dict(meta['origin']),
+            'topic_active': self._gc_walls_pub is not None,
         }
 
     def _parse_slam_config(self, body: Dict[str, Any]) -> Dict[str, float]:
@@ -3370,17 +3837,35 @@ class StudioBridge(Node):
             self.session['phase'] = self.session.get('phase') or 'deploy'
             self._sim_path = None
             self._sim_result = {}
+            # Advertise walls topic only while GC is up; load saved overlay.
+            self._gc_walls_ensure_pub()
+            try:
+                self._gc_walls_load_from_disk()
+                self._gc_walls_refresh_meta()
+            except Exception as exc:
+                self.get_logger().warn(f'GC walls meta: {exc}')
+            # Defer publish slightly so StaticLayer can subscribe (latched QoS).
+            def _pub_walls_later():
+                time.sleep(1.5)
+                try:
+                    if self._gc_walls_pub is None:
+                        return
+                    self._gc_walls_publish(clear_costmap=True)
+                except Exception as exc:
+                    self.get_logger().warn(f'GC walls publish: {exc}')
+
+            threading.Thread(target=_pub_walls_later, daemon=True).start()
             return {
                 'ok': True,
                 'message': (
-                    'GC+Planner started (map + global costmap static/inflation + '
-                    'planner_server). Open RViz2: Fixed Frame map, add /map and '
-                    '/global_costmap/costmap. Then use Simulate → two points → '
-                    'Generate path.'
+                    'GC+Planner started (map + walls layer + inflation + planner). '
+                    'Draw Wall/Erase in the GC dashboard — /global_costmap updates live. '
+                    'RViz: /map, /gc_planner/walls, /global_costmap/costmap.'
                 ),
                 'map': name,
                 'robot': robot,
                 'pid': mp.popen.pid,
+                'walls': len(self._gc_walls_cells),
                 'stacks': self.pm.stacks_alive(),
             }
 
@@ -3388,6 +3873,7 @@ class StudioBridge(Node):
             self.pm.stop_gc_planner()
             if str(self.session.get('nav_stack') or '') == 'gc_planner':
                 self.session['nav_stack'] = ''
+            self._gc_walls_destroy_pub()
             return {
                 'ok': True,
                 'message': 'GC+Planner stopped',
@@ -3396,6 +3882,15 @@ class StudioBridge(Node):
 
         if path == '/api/gc_planner/params':
             return self._gc_planner_params(body or {})
+
+        if path == '/api/gc_planner/walls':
+            return self._gc_walls_status()
+
+        if path == '/api/gc_planner/walls/edit':
+            return self._gc_walls_edit(list(body.get('ops') or []))
+
+        if path == '/api/gc_planner/walls/clear':
+            return self._gc_walls_clear()
 
         if path == '/api/light_tower/patterns':
             return {'ok': True, 'patterns': list_patterns()}
@@ -3610,6 +4105,63 @@ class StudioBridge(Node):
 
         if path == '/api/oms/cmd':
             return self._oms_send_cmd(body)
+
+        if path == '/api/hw_test/start':
+            robot = str(body.get('robot') or self.session.get('robot') or 'allterrain')
+            if robot not in ('allterrain', 'grip', 'mecanum', 'xdrive'):
+                raise ValueError('invalid robot')
+            enable_lidar = bool(body.get('enable_lidar', True))
+            self.session['robot'] = robot
+            if self.pm.stacks_alive().get('hw_test'):
+                self._hw_test_start_subs(robot)
+                return {
+                    'ok': True,
+                    'already': True,
+                    'message': 'HW test already running — live channels attached.',
+                    'robot': robot,
+                    'stacks': self.pm.stacks_alive(),
+                    'channels': self._hw_store.snapshot(only_live=False),
+                }
+            mp = self.pm.start_hw_test(robot, enable_lidar=enable_lidar)
+            # Delay subs so Titan has time to advertise.
+            def _later():
+                time.sleep(2.0)
+                try:
+                    self._hw_test_start_subs(robot)
+                except Exception as exc:
+                    self.get_logger().warn(f'HW test subs: {exc}')
+
+            threading.Thread(target=_later, daemon=True).start()
+            return {
+                'ok': True,
+                'message': (
+                    'HW test starting (control_server + lidars). '
+                    f'Log → {mp.log_path}. Only publishing topics appear live.'
+                ),
+                'robot': robot,
+                'pid': mp.popen.pid,
+                'log': str(mp.log_path) if mp.log_path else '',
+                'stacks': self.pm.stacks_alive(),
+            }
+
+        if path == '/api/hw_test/stop':
+            self.pm.stop_hw_test()
+            self._hw_test_stop_subs()
+            return {
+                'ok': True,
+                'message': 'HW test stopped.',
+                'stacks': self.pm.stacks_alive(),
+            }
+
+        if path == '/api/hw_test/channels':
+            robot = str(body.get('robot') or self.session.get('robot') or 'allterrain')
+            specs = build_channel_specs(robot, include_lidar=True)
+            return {
+                'ok': True,
+                'robot': robot,
+                'channels': specs,
+                'live': self._hw_store.snapshot(only_live=True),
+            }
 
         if path == '/api/oms/home':
             return self._oms_send_cmd({'axis': 'home', 'mode': 'home'})

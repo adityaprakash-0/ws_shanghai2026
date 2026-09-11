@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """OMS bench CLI — rotation, lift, linear, vertical, rotation servo, gripper.
 
-Home sequence (allhome / dashboard Home): rotation → lift → linear → vertical
-→ rotation_servo (out 0°) → gripper.
+Home sequence (allhome / dashboard Home): lift → linear → vertical (down)
+→ gripper → rotation_servo (in −30°).
 
 Terminal 1:  ros2 launch oms test_oms.launch.py
 Terminal 2:  ros2 run oms oms_test
@@ -21,9 +21,9 @@ Type:
   linear 30       linear axis to 30 mm forward from home
   linear home     backward to M0 limit_fwd, reset M3 encoder once
   linear stop     stop linear servo
-  up / down       vertical servo (60° / −40°)
-  in / out        rotation servo in / out (110° / 0°)
-  open / close    gripper open / closed (−150° / 150°)
+  up / down       vertical servo (90° / −90°)
+  in / out        rotation servo in (−30°) / out (−150°)
+  open / close    gripper open (−80°) / closed (150°)
   allhome         full boot home sequence
   stop            zero rotate duty
   q               quit

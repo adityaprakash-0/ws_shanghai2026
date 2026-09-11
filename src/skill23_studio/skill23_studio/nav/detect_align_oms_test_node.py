@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
-"""Detect+Align OMS pick bench — home, detect yaw, rotate, depth, lift, linear, close.
+"""Detect+Align OMS pick bench.
 
 Sequence:
-  1. OMS full home
-  2. Color ON → YOLO (3 frames) → debug image → color OFF
-  3. OMS rotate to calculated yaw
-  4. Color+depth ON → detect + depth → streams OFF
-  5. Rotation servo in → vertical up + gripper open
-  6. Lift → linear → gripper close → linear home
-  7. Post-pick debug image
+  1. OMS home
+  2. YAML pre_look_sequence
+  3. Color detect → OMS yaw → depth → absolute linear_mm
+  4. YAML post_look_sequence
+  5. Post-pick debug image
 """
 
 from __future__ import annotations
@@ -106,10 +104,16 @@ class DetectAlignOmsTestNode(Node):
         self.declare_parameter('oms_home_result_topic', '/oms/home/result')
         self.declare_parameter('oms_home_timeout_sec', 180.0)
         self.declare_parameter('home_on_start', True)
+        self.declare_parameter(
+            'pre_look_sequence', ['rotation_servo_out', 'lift_goto'])
+        self.declare_parameter(
+            'post_look_sequence',
+            ['gripper_open', 'linear_depth', 'gripper_close', 'linear_home'])
         self.declare_parameter('pick_lift_mm', 100.0)
-        self.declare_parameter('camera_to_gripper_mm', 455.0)
+        self.declare_parameter('camera_to_gripper_mm', 350.0)
+        self.declare_parameter('linear_pre_extend_mm', 100.0)
         self.declare_parameter('linear_fwd_offset_mm', 0.0)
-        self.declare_parameter('linear_max_mm', 100.0)
+        self.declare_parameter('linear_max_mm', 150.0)
         self.declare_parameter('linear_cmd_enabled', True)
         self.declare_parameter('linear_cmd_topic', '/oms/linear/cmd')
         self.declare_parameter('linear_result_topic', '/oms/linear/result')
@@ -157,8 +161,15 @@ class DetectAlignOmsTestNode(Node):
         self._align_refine_max = max(0, int(self.get_parameter('align_refine_max').value))
         self._home_on_start = bool(self.get_parameter('home_on_start').value)
         self._home_timeout = max(10.0, float(self.get_parameter('oms_home_timeout_sec').value))
+        self._pre_look_seq = [
+            str(v).strip() for v in
+            list(self.get_parameter('pre_look_sequence').value) if str(v).strip()]
+        self._post_look_seq = [
+            str(v).strip() for v in
+            list(self.get_parameter('post_look_sequence').value) if str(v).strip()]
         self._pick_lift_mm = max(0.0, float(self.get_parameter('pick_lift_mm').value))
         self._cam_grip_mm = max(0.0, float(self.get_parameter('camera_to_gripper_mm').value))
+        self._pre_extend_mm = max(0.0, float(self.get_parameter('linear_pre_extend_mm').value))
         self._linear_off_mm = float(self.get_parameter('linear_fwd_offset_mm').value)
         self._linear_max_mm = max(1.0, float(self.get_parameter('linear_max_mm').value))
         self._linear_cmd_enabled = bool(self.get_parameter('linear_cmd_enabled').value)
@@ -197,6 +208,7 @@ class DetectAlignOmsTestNode(Node):
         self._home_status: Optional[dict] = None
         self._axis_results: Dict[str, dict] = {}
         self._linear_pos_mm: Optional[float] = None
+        self._linear_start_mm = 0.0
 
         self._debug_pub = self.create_publisher(Image, self._debug_topic, 10)
         self._toggle_color_clis = [
@@ -304,6 +316,8 @@ class DetectAlignOmsTestNode(Node):
             f'frames={self._need_frames}  '
             f'align_tol={self._align_yaw_tol:.1f}°  '
             f'oms_tol={self._oms_align_tol:.1f}°')
+        self._log('pre-look: ' + ' → '.join(self._pre_look_seq))
+        self._log('post-look: ' + ' → '.join(self._post_look_seq))
         self._log('Wait for launch stack (camera + oms_all), then type start + Enter')
         self._log(f'VIEW: rqt_image_view {self._debug_topic}')
         threading.Thread(target=self._stdin_loop, daemon=True).start()
@@ -540,12 +554,11 @@ class DetectAlignOmsTestNode(Node):
             {'pos_mm': pos_mm})
 
     def _depth_to_linear_mm(self, z_depth_m: float) -> float:
-        """linear mm = depth_z (cam→object) − cam→gripper + fwd_offset, clamped [0, linear_max]."""
-        need_mm = (
-            float(z_depth_m) * 1000.0
-            - self._cam_grip_mm
-            + self._linear_off_mm)
-        return max(0.0, min(self._linear_max_mm, need_mm))
+        """Absolute linear target: depth_mm − camera_to_gripper_mm + offset."""
+        from skill23_studio.nav.oms_pick_sequence import depth_to_linear_mm
+        return depth_to_linear_mm(
+            z_depth_m, self._cam_grip_mm, self._linear_off_mm,
+            self._linear_max_mm, self._pre_extend_mm)
 
     def _call_toggle(
             self, label: str, clients, wanted: bool, wait_s: float = 8.0) -> bool:
@@ -900,77 +913,52 @@ class DetectAlignOmsTestNode(Node):
             return False, 'no valid depth after rotate', best_extra, best_rgb, best_snap, best_obj, None, None
 
         linear_mm = self._depth_to_linear_mm(z_depth)
+        move_mm = float(linear_mm) - self._linear_start_mm
         oms_now = self._oms_now()
         target = float(best_extra.get('target_oms_deg') or oms_now)
         best_extra.update({
             'depth_z_m': round(z_depth, 4),
             'linear_fwd_offset_mm': round(self._linear_off_mm, 2),
             'linear_pos_mm': round(linear_mm, 2),
+            'linear_start_mm': round(self._linear_start_mm, 2),
+            'linear_remain_mm': round(move_mm, 2),
             'oms_angle_deg': round(oms_now, 2),
         })
         self._log(
             f'DEPTH Z={z_depth:.3f}m (cam→object)  '
-            f'cam→grip={self._cam_grip_mm:.0f}mm  '
-            f'fwd_offset=+{self._linear_off_mm:.0f}mm  '
-            f'linear cmd={linear_mm:.1f}mm (max {self._linear_max_mm:.0f}mm)')
+            f'abs=depth−{self._cam_grip_mm:.0f}+{self._linear_off_mm:.0f}'
+            f'={linear_mm:.1f}mm  move={move_mm:+.1f} from '
+            f'{self._linear_start_mm:.1f}mm (max {self._linear_max_mm:.0f})')
         self._publish_debug(
             best_rgb, best_snap.header.stamp, best_obj,
             float(best_extra['u_norm']), float(best_extra['bearing_deg']),
             oms_now, target, float(best_extra['lateral_px']),
             None, linear_mm,
-            f'DEPTH Z={z_depth:.3f}m  linear→{linear_mm:.0f}mm')
+            f'DEPTH Z={z_depth:.3f}m  move={move_mm:+.0f} → abs {linear_mm:.0f}mm')
         return True, 'depth measured', best_extra, best_rgb, best_snap, best_obj, None, linear_mm
 
-    def _pick_arm_servos(self) -> Tuple[bool, str]:
-        """Rotation servo in, then vertical up + gripper open."""
-        self._log('ARM PREP — rotation_servo in, vertical up, gripper open')
-        steps = (
-            (self._rot_servo_pub, 'rotation_servo', 'in'),
-            (self._vert_pub, 'vertical', 'up'),
-            (self._grip_pub, 'gripper', 'open'),
-        )
-        for pub, axis, mode in steps:
-            ok, msg = self._axis_cmd(pub, axis, mode, self._servo_timeout)
-            if not ok:
-                return False, f'{axis} {mode} failed: {msg}'
-            time.sleep(0.15)
-        return True, 'arm prep done'
-
     def _pick_execute(self, extra: dict) -> Tuple[bool, str, dict]:
+        from skill23_studio.nav.oms_pick_sequence import run_pick_post_depth
+
         linear_mm = extra.get('linear_pos_mm')
         if linear_mm is None:
             return False, 'linear_pos_mm missing — run depth measure first', extra
 
-        self._log(f'LIFT goto {self._pick_lift_mm:.0f} mm down from home')
-        ok, msg = self._lift_goto(self._pick_lift_mm)
-        if not ok:
-            return False, f'lift failed: {msg}', extra
-
-        if self._linear_cmd_enabled:
-            ok, msg = self._linear_goto_mm(float(linear_mm))
-            if not ok:
-                return False, f'linear failed: {msg}', extra
-        else:
-            self._log(f'linear_cmd_enabled=false — would goto {float(linear_mm):.1f} mm')
-
-        self._log('GRIPPER close')
-        ok, msg = self._axis_cmd(
-            self._grip_pub, 'gripper', 'close', self._servo_timeout)
-        if not ok:
-            ok2, msg2 = self._axis_cmd(
-                self._grip_pub, 'gripper', 'home', self._servo_timeout)
-            if not ok2:
-                return False, f'gripper close failed: {msg} / {msg2}', extra
-
-        if self._linear_cmd_enabled:
-            self._log('LINEAR home — retract after grip')
-            ok, msg = self._axis_cmd(
-                self._linear_cmd_pub, 'linear', 'home', self._linear_timeout)
-            if not ok:
-                return False, f'linear home failed: {msg}', extra
-
-        extra['pick_ok'] = True
-        return True, 'pick complete', extra
+        ok, msg, out = run_pick_post_depth(
+            linear_pub=self._linear_cmd_pub,
+            grip_pub=self._grip_pub,
+            result_store=self._axis_results,
+            linear_mm=float(linear_mm),
+            pre_extend_mm=self._linear_start_mm,
+            linear_max_mm=self._linear_max_mm,
+            linear_timeout=self._linear_timeout,
+            servo_timeout=self._servo_timeout,
+            linear_enabled=self._linear_cmd_enabled,
+            sequence=self._post_look_seq,
+            log=lambda m, level='info': self._log(m, level),
+        )
+        extra.update(out)
+        return ok, msg, extra
 
     def _post_pick_view(self, extra: dict) -> None:
         try:
@@ -1034,11 +1022,33 @@ class DetectAlignOmsTestNode(Node):
                     self._log(f'OMS home failed: {msg}', 'error')
                     return
 
+            from skill23_studio.nav.oms_pick_sequence import run_pick_pre_detect
+            ok, msg, pre_extra = run_pick_pre_detect(
+                lift_pub=self._lift_cmd_pub,
+                linear_pub=self._linear_cmd_pub,
+                rot_servo_pub=self._rot_servo_pub,
+                result_store=self._axis_results,
+                lift_mm=self._pick_lift_mm,
+                pre_extend_mm=self._pre_extend_mm,
+                linear_max_mm=self._linear_max_mm,
+                lift_timeout=self._lift_timeout,
+                linear_timeout=self._linear_timeout,
+                servo_timeout=self._servo_timeout,
+                linear_enabled=self._linear_cmd_enabled,
+                sequence=self._pre_look_seq,
+                log=lambda m, level='info': self._log(m, level),
+            )
+            if not ok:
+                self._log(msg, 'error')
+                return
+            self._linear_start_mm = float(pre_extra.get('linear_start_mm', 0.0))
+
             self._ensure_detector()
             ok, msg, extra, rgb, snap, obj = self._detect_from_frames()
             if not ok or snap is None or rgb is None or obj is None:
                 self._log(msg or 'detection failed', 'error')
                 return
+            extra.update(pre_extra)
 
             bearing = float(extra['bearing_deg'])
             oms_now = float(extra['oms_angle_deg'])
@@ -1089,11 +1099,6 @@ class DetectAlignOmsTestNode(Node):
                 if not ok:
                     self._log(f'align refine failed: {msg}', 'error')
                     return
-
-            ok, msg = self._pick_arm_servos()
-            if not ok:
-                self._log(msg, 'error')
-                return
 
             ok, msg, extra = self._pick_execute(extra)
             if not ok:

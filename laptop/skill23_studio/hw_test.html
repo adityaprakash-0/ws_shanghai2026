@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HW Test · Skill23 Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Sora:wght@400;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css?v=20260910hw1" />
+  <link rel="stylesheet" href="css/hw_test.css?v=20260910hw1" />
+</head>
+<body class="hw-page">
+  <div class="tricolor"></div>
+  <header class="topbar">
+    <div class="brand">
+      <div class="ashoka" title="WorldSkills India">WS</div>
+      <div>
+        <div class="brand-name">Hardware Testing</div>
+        <div class="brand-sub">WorldSkills India · Live topic scalars</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span class="phase-pill" id="readyPill">Stopped</span>
+      <span class="conn" id="connBadge"><i></i><span id="connText">Offline</span></span>
+    </div>
+  </header>
+
+  <main class="hw-shell">
+    <aside class="hw-side">
+      <div class="hw-card">
+        <div class="bar-row" id="linkRow">
+          <span class="live" id="linkBadge">Linking to Studio…</span>
+        </div>
+        <div class="bar-row bar-connect" id="connectRow" hidden>
+          <input type="text" id="piUrl" placeholder="http://10.42.0.1:8083" value="http://10.42.0.1:8083" />
+          <button class="btn btn-saffron" id="btnConnect" type="button">Connect</button>
+        </div>
+        <div class="chip-row" id="robotChips">
+          <button type="button" class="chip" data-robot="allterrain">allterrain</button>
+          <button type="button" class="chip" data-robot="grip">grip</button>
+          <button type="button" class="chip" data-robot="mecanum">mecanum</button>
+          <button type="button" class="chip" data-robot="xdrive">xdrive</button>
+        </div>
+        <label class="hw-check">
+          <input type="checkbox" id="chkLidar" checked /> Start dual lidars
+        </label>
+        <div class="bar-row">
+          <button class="btn btn-primary" id="btnHwStart" type="button">Start HW</button>
+          <button class="btn btn-danger" id="btnHwStop" type="button">Stop HW</button>
+        </div>
+        <p class="hint" id="runHint">Connect from Studio → select robot → Start HW. Only publishing topics show values.</p>
+      </div>
+
+      <div class="hw-card">
+        <h3>Debug tools</h3>
+        <div class="bar-row">
+          <button class="btn btn-ghost" id="btnFreeze" type="button">Freeze UI</button>
+          <button class="btn btn-ghost" id="btnShowStale" type="button">Show expected</button>
+        </div>
+        <div class="bar-row">
+          <button class="btn btn-ghost" id="btnCopy" type="button">Copy snapshot</button>
+          <button class="btn btn-ghost" id="btnClearLog" type="button">Clear log</button>
+        </div>
+        <p class="hint" id="statsLine">Live: 0 · Hz avg —</p>
+        <pre class="hw-log" id="hwLog">—</pre>
+      </div>
+    </aside>
+
+    <section class="hw-main">
+      <div id="hwGroups" class="hw-groups">
+        <p class="hint">Start HW to populate live channels.</p>
+      </div>
+    </section>
+  </main>
+
+  <script src="js/api.js?v=20260910hw1"></script>
+  <script src="js/hw_test.js?v=20260910hw1"></script>
+</body>
+</html>

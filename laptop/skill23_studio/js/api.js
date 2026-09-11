@@ -43,7 +43,7 @@ const StudioApi = (() => {
               const t = await get('/api/telemetry');
               onTelemetry && onTelemetry(t);
             } catch (_) {}
-          }, 400);
+          }, 750);
         }
       };
     } catch (_) {
@@ -52,7 +52,7 @@ const StudioApi = (() => {
           const t = await get('/api/telemetry');
           onTelemetry && onTelemetry(t);
         } catch (_) {}
-      }, 400);
+      }, 750);
     }
   }
 
@@ -74,6 +74,7 @@ const StudioApi = (() => {
     mapSave: (body) => post('/api/map/save', body || {}),
     mapImport: (body) => post('/api/map/import', body),
     mapEdit: (ops) => post('/api/map/edit', { ops }),
+    mapGet: () => get('/api/map'),
     mapRestrictions: (rectangles, burn = false) =>
       post('/api/map/restrictions', { rectangles, burn }),
     teleop: (vx, vy, wz) => post('/api/teleop', { vx, vy, wz }),
@@ -116,6 +117,9 @@ const StudioApi = (() => {
     gcPlannerStop: () => post('/api/gc_planner/stop', {}),
     gcPlannerGetParams: () => get('/api/gc_planner/params'),
     gcPlannerSetParams: (params) => post('/api/gc_planner/params', { params }),
+    gcWallsStatus: () => get('/api/gc_planner/walls'),
+    gcWallsEdit: (ops) => post('/api/gc_planner/walls/edit', { ops }),
+    gcWallsClear: () => post('/api/gc_planner/walls/clear', {}),
     lightTowerPatterns: () => get('/api/light_tower/patterns'),
     logs: () => get('/api/logs'),
     localizeStart: (body) => post('/api/localize/start', body || {}),
@@ -130,5 +134,9 @@ const StudioApi = (() => {
     omsCmd: (body) => post('/api/oms/cmd', body || {}),
     omsHome: () => post('/api/oms/home', {}),
     omsSaveConfig: (body) => post('/api/oms/config', body || {}),
+    hwTestStart: (body) => post('/api/hw_test/start', body || {}),
+    hwTestStop: () => post('/api/hw_test/stop', {}),
+    hwTestLive: () => get('/api/hw_test/live'),
+    hwTestChannels: (robot) => get('/api/hw_test/channels' + (robot ? `?robot=${encodeURIComponent(robot)}` : '')),
   };
 })();

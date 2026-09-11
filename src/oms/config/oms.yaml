@@ -10,7 +10,10 @@ oms_home:
     startup_delay_sec: 2.0
     step_timeout_sec: 60.0
     inter_step_sec: 0.5
-    sequence: [rotation, lift, linear, vertical, rotation_servo, gripper]
+    # Home pose: lift up → linear rear → vertical down → gripper close → rotation servo in.
+  #  sequence: [rotation,lift, linear, vertical, gripper, rotation_servo]
+    sequence: [gripper, lift, linear, vertical, rotation_servo, rotation]
+
 
 oms_rotation:
   ros__parameters:
@@ -117,13 +120,24 @@ oms_linear:
     encoder_topic: /titan1/m_3/encoder
     linear_cmd_topic: /linear_servo/cmd
     home_limit_topic: /titan1/m_0/limit_fwd
-    speed: 10.0
-    speed_min: 12.0
-    home_speed: 15.0
-    speed_sign: -1.0
-    ticks_sign: 1.0
+    speed: 16.0
+    speed_min: 11.0
+    home_speed: 12.0
+    # Creep under this encoder distance while homing (before switch).
+    # Must stay ≥ ~10 — continuous servo won't move at 3–5.
+    home_approach_mm: 28.0
+    approach_mm: 12.0
+    # Command polarity on /linear_servo/cmd (Studica continuous):
+    # With speed_sign=+1: +cmd = forward (+mm), −cmd = rear home.
+    # Leave-home / home / PID all use this sign (no hardcoded ±speed).
+    # NOTE: while home_sw pressed, only rearward cmds are blocked — forward must pass.
+    # Limit press → stop + software zero only (NO Cypher reset_encoder).
+    speed_sign: 1.0
+    # Forward leave-home decreases Cypher ticks (03:01:43: 305 → −927 at cmd=+).
+    # ticks_sign=-1 so pos_mm increases when leaving home.
+    ticks_sign: -1.0
     min_mm: 0.0
-    max_mm: 100.0
+    max_mm: 150.0
     pos_tol_mm: 3.0
     settle_sec: 0.40
     goto_timeout_sec: 40.0
@@ -145,33 +159,51 @@ oms_linear:
     enc_max_jump_ticks: 80.0
     pos_filter_alpha: 0.35
     approach_mm: 8.0
+    # Continuous servo precision: speed 11 spins but cannot reliably move the
+    # loaded rack. Use a short speed-16 pulse, then measure after coast.
+    precision_zone_mm: 30.0
+    precision_speed: 16.0
+    # Full 0.20 s pulse at >=18 mm error; scales down to 0.10 s near target.
+    precision_pulse_sec: 0.20
+    precision_pulse_min_sec: 0.10
+    precision_full_pulse_error_mm: 18.0
+    precision_coast_sec: 0.35
+    # Cypher Max on pinion shaft: 512×4 = 2048 ticks/rev (Studica docs — OK).
+    # Rack & pinion: mm_per_rev = π × pitch_dia (NOT the old 50 mm assumption).
+    # Calibrated from goto 70 → ~120 mm physical, Δticks=2936 → 83.7 mm/rev.
     encoder_cpr: 512.0
     quadrature: 4.0
-    mm_per_rev: 50.0
+    mm_per_rev: 83.7
     ticks_per_mm: 0.0
 
 oms_vertical:
   ros__parameters:
     service: /vertical_servo/set_servo
-    up_deg: 60.0
-    down_deg: -40.0
+    up_deg: 100.0
+    down_deg: -90.0
     settle_sec: 0.8
     auto_home: false
 
 oms_rotation_servo:
   ros__parameters:
     service: /rotation_servo/set_servo
-    home_deg: 0.0
-    alt_deg: 110.0
-    alt_mode: in
-    settle_sec: 0.8
+    hw_cmd_topic: /rotation_servo/cmd   # Float64 degrees → PWM duty
+    # Home = in (−30°). Alt = out.
+    home_deg: -100.0
+    alt_deg: 75.0
+    alt_mode: out
+    settle_sec: 0.35
+    # Standard servo: no HW velocity. Slow motion = stepped PWM angles on hw_cmd.
+    # 0 = jump straight to target angle.
+    slew_deg_per_sec: 40.0
+    slew_hz: 25.0
     auto_home: false
 
 oms_gripper:
   ros__parameters:
     service: /gripper_servo/set_servo
-    home_deg: 150.0      # close
-    alt_deg: -80.0       # open
+    home_deg: -50.0      # close
+    alt_deg: -150.0       # open
     alt_mode: open
     settle_sec: 0.8
     auto_home: false

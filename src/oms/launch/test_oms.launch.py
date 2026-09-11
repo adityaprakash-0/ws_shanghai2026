@@ -1,8 +1,7 @@
 """Bench OMS — Titan control_server + OMS nodes. No Nav2, no camera.
 
 Starts manual_composition (sudo -E inside) then all OMS nodes.
-Boot homing runs via oms_home (rotation → lift → linear → vertical →
-rotation_servo → gripper).
+Boot homing runs via oms_home (lift → linear → vertical → gripper → rotation_servo).
 
   ros2 run oms oms_test
   oms> 30

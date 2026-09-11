@@ -13,7 +13,7 @@ ydlidar_front:
     intensity: true
     intensity_bit: 8
     isSingleChannel: false
-    frequency: 6.0         # datasheet typical; best angle resolution (~0.54°)
+    frequency: 7.0         # datasheet typical; best angle resolution (~0.54°)
     sample_rate: 4         # 4 kHz ranging frequency
     abnormal_check_count: 4
     fixed_resolution: true # uniform beams — better for slam_toolbox matching

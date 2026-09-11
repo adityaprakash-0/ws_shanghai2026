@@ -21,12 +21,21 @@ namespace skill23_path_collision
 {
 
 /**
- * @brief Thin nav2_core::Controller wrapper.
+ * @brief Thin nav2_core::Controller wrapper around an inner controller (RPP).
  *
- * Loads an inner controller (stock RPP by default) and, each cycle, checks the
- * footprint along the current path for ~lookahead_time of travel on the local
- * costmap. Lethal (254) → throw → FollowPath abort → BT recovery/replan.
- * Does not treat 253 as collision.
+ * Modes (path_collision_mode):
+ *  - "path_ahead": sample path within lookahead; abort if footprint ≥ threshold
+ *  - "realtime_footprint": each cycle, check CURRENT robot footprint on the
+ *    live local costmap only (no path simulation). Abort if cost ≥ threshold
+ *    (typically 253 inscribed). Same PlannerException → BT recovery as before.
+ *
+ * path_collision_disable_at_goal_yaw:
+ *  Skips this wrapper's path-ahead / realtime checks near goal XY (yaw align).
+ *  Does NOT change inner RPP collision detection by itself.
+ *
+ * path_collision_pause_rpp_cd_at_goal_yaw:
+ *  Only needed when inner RPP use_collision_detection=true. Near goal XY, bypass
+ *  RPP and rotate in place to goal yaw (Humble RPP ignores live CD param changes).
  */
 class PathAheadCollisionController : public nav2_core::Controller
 {
@@ -54,22 +63,39 @@ public:
   void setSpeedLimit(const double & speed_limit, const bool & percentage) override;
 
 protected:
-  bool footprintLethalAt(
-    double x, double y, double yaw) const;
+  struct HitInfo
+  {
+    bool hit{false};
+    double x{0.0};
+    double y{0.0};
+    double yaw{0.0};
+    double footprint_cost{0.0};
+    double center_cost{0.0};
+    double hit_wx{0.0};
+    double hit_wy{0.0};
+    unsigned char hit_cell_cost{0};
+    double along_path_m{0.0};
+    std::string where{"?"};  // robot_pose | path_ahead | realtime_footprint
+    std::string detail;
+  };
 
-  /** @return true if lethal on path within horizon (should abort). */
-  bool lethalOnPathAhead(
+  HitInfo footprintCostHitAt(
+    double x, double y, double yaw, const char * where) const;
+
+  HitInfo lethalOnPathAhead(
     const geometry_msgs::msg::PoseStamped & robot_pose,
     double speed) const;
 
-  /**
-   * True when robot is within goal XY of the path end (RPP final yaw-align
-   * / rotate-to-goal-heading zone). Path-ahead collision is skipped here so
-   * in-place yaw settle is not aborted; re-enabled automatically on the next
-   * plan / when leaving the goal XY window.
-   */
   bool isInGoalYawAlignPhase(
     const geometry_msgs::msg::PoseStamped & robot_pose) const;
+
+  /** Rotate-in-place toward plan goal yaw (used when RPP CD must be muted). */
+  geometry_msgs::msg::TwistStamped rotateToGoalYawCmd(
+    const geometry_msgs::msg::PoseStamped & pose) const;
+
+  void logHit(const HitInfo & hit, double horizon, double speed) const;
+
+  bool isRealtimeMode() const;
 
   rclcpp_lifecycle::LifecycleNode::WeakPtr node_;
   std::shared_ptr<tf2_ros::Buffer> tf_;
@@ -90,6 +116,14 @@ protected:
 
   bool enabled_{true};
   bool disable_at_goal_yaw_{true};
+  // When near goal XY: bypass RPP (Humble cannot live-toggle use_collision_detection).
+  bool pause_rpp_cd_at_goal_yaw_{false};
+  bool rpp_cd_desired_{false};
+  bool debug_log_{true};
+  bool use_travel_yaw_{true};
+  std::string mode_{"path_ahead"};  // path_ahead | realtime_footprint
+  // Abort when footprint max cost ≥ this (253=inscribed, 254=lethal).
+  double cost_threshold_{254.0};
   std::string primary_controller_;
   double lookahead_time_{1.0};
   double min_lookahead_dist_{0.15};
@@ -97,6 +131,7 @@ protected:
   double sample_step_{0.05};
   double transform_tolerance_{0.5};
   double goal_xy_dist_{0.18};
+  double rotate_to_heading_angular_vel_{0.2};
 };
 
 }  // namespace skill23_path_collision
