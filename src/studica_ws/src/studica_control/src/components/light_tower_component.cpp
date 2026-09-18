@@ -11,11 +11,23 @@
  *
  * Mutual exclusion is enforced in software: activating any output first clears
  * the currently active one.
+ *
+ * Drive indicator (optional — see follow_cmd_vel):
+ *   |cmd_vel| above eps → solid green (moving_color)
+ *   otherwise           → solid red   (stopped_color)
+ * Explicit SetData (wait_light patterns, dashboard) pauses auto mode for
+ * override_hold_sec so flashes are not overwritten mid-pattern.
+ *
+ * REMOVE / CHANGE LATER:
+ *   - hw_params: light_tower.follow_cmd_vel: false   → turn off entirely
+ *   - light_tower.moving_color / stopped_color        → pick other colours
+ *   - Or delete the cmd_vel subscription block below
  */
 
 #include "studica_control/light_tower_component.hpp"
 
 #include <chrono>
+#include <cmath>
 #include <stdexcept>
 
 namespace studica_control {
@@ -29,6 +41,13 @@ std::shared_ptr<rclcpp::Node> LightTower::initialize(rclcpp::Node *control, std:
     control->declare_parameter<int>        ("light_tower.pin_yellow",     -1);
     control->declare_parameter<int>        ("light_tower.pin_buzzer",     -1);
     control->declare_parameter<double>     ("light_tower.default_blink_hz", 1.0);
+    // Drive indicator — set follow_cmd_vel: false in hw_params to disable.
+    control->declare_parameter<bool>       ("light_tower.follow_cmd_vel", true);
+    control->declare_parameter<std::string>("light_tower.cmd_vel_topic", "/cmd_vel");
+    control->declare_parameter<double>     ("light_tower.cmd_vel_eps", 0.02);
+    control->declare_parameter<double>     ("light_tower.override_hold_sec", 2.0);
+    control->declare_parameter<std::string>("light_tower.moving_color", "green");
+    control->declare_parameter<std::string>("light_tower.stopped_color", "red");
 
     std::string name         = control->get_parameter("light_tower.name").as_string();
     int pin_continuous       = control->get_parameter("light_tower.pin_continuous").as_int();
@@ -37,10 +56,18 @@ std::shared_ptr<rclcpp::Node> LightTower::initialize(rclcpp::Node *control, std:
     int pin_yellow           = control->get_parameter("light_tower.pin_yellow").as_int();
     int pin_buzzer           = control->get_parameter("light_tower.pin_buzzer").as_int();
     double default_blink_hz  = control->get_parameter("light_tower.default_blink_hz").as_double();
+    bool follow_cmd_vel      = control->get_parameter("light_tower.follow_cmd_vel").as_bool();
+    std::string cmd_vel_topic = control->get_parameter("light_tower.cmd_vel_topic").as_string();
+    double cmd_vel_eps       = control->get_parameter("light_tower.cmd_vel_eps").as_double();
+    double override_hold_sec = control->get_parameter("light_tower.override_hold_sec").as_double();
+    std::string moving_color = control->get_parameter("light_tower.moving_color").as_string();
+    std::string stopped_color = control->get_parameter("light_tower.stopped_color").as_string();
 
     return std::make_shared<LightTower>(vmx, name,
                                         pin_continuous, pin_red, pin_green,
-                                        pin_yellow, pin_buzzer, default_blink_hz);
+                                        pin_yellow, pin_buzzer, default_blink_hz,
+                                        follow_cmd_vel, cmd_vel_topic, cmd_vel_eps,
+                                        override_hold_sec, moving_color, stopped_color);
 }
 
 
@@ -55,9 +82,20 @@ LightTower::LightTower(std::shared_ptr<VMXPi> vmx,
                        int pin_green,
                        int pin_yellow,
                        int pin_buzzer,
-                       double default_blink_hz)
+                       double default_blink_hz,
+                       bool follow_cmd_vel,
+                       const std::string &cmd_vel_topic,
+                       double cmd_vel_eps,
+                       double override_hold_sec,
+                       const std::string &moving_color,
+                       const std::string &stopped_color)
     : rclcpp::Node(name)
     , default_blink_hz_(default_blink_hz)
+    , follow_cmd_vel_(follow_cmd_vel)
+    , cmd_vel_eps_(std::max(0.0, cmd_vel_eps))
+    , override_hold_sec_(std::max(0.0, override_hold_sec))
+    , moving_color_(moving_color.empty() ? "green" : moving_color)
+    , stopped_color_(stopped_color.empty() ? "red" : stopped_color)
 {
     tower_ = std::make_shared<studica_driver::LightTower>(
         static_cast<VMXChannelIndex>(pin_continuous),
@@ -78,6 +116,19 @@ LightTower::LightTower(std::shared_ptr<VMXPi> vmx,
     heartbeat_timer_ = this->create_wall_timer(
         std::chrono::seconds(1),
         std::bind(&LightTower::publish_state, this));
+
+    if (follow_cmd_vel_) {
+        cmd_vel_sub_ = this->create_subscription<geometry_msgs::msg::Twist>(
+            cmd_vel_topic, 10,
+            std::bind(&LightTower::on_cmd_vel, this, std::placeholders::_1));
+        // Start in "stopped" (red) so operators see the tower is live.
+        set_output(stopped_color_, 0.0);
+        RCLCPP_INFO(this->get_logger(),
+                    "cmd_vel drive indicator ON topic=%s eps=%.3f "
+                    "moving=%s stopped=%s (set follow_cmd_vel:=false to disable)",
+                    cmd_vel_topic.c_str(), cmd_vel_eps_,
+                    moving_color_.c_str(), stopped_color_.c_str());
+    }
 
     RCLCPP_INFO(this->get_logger(),
                 "light_tower ready. pins: continuous=%d  red=%d  green=%d  yellow=%d  buzzer=%d  "
@@ -137,11 +188,43 @@ void LightTower::cmd_callback(
         }
     }
 
+    // Pause cmd_vel auto colours so wait_light / dashboard flashes win.
+    if (follow_cmd_vel_) {
+        override_until_ = this->now() + rclcpp::Duration::from_seconds(override_hold_sec_);
+        have_motion_state_ = false;  // force re-apply after hold expires
+    }
+
     set_output(color, blink_hz);
 
     response->success = true;
     response->message = state_string();
     RCLCPP_INFO(this->get_logger(), "%s", state_string().c_str());
+}
+
+
+bool LightTower::override_active() const
+{
+    return this->now() < override_until_;
+}
+
+
+void LightTower::on_cmd_vel(const geometry_msgs::msg::Twist::SharedPtr msg)
+{
+    if (!follow_cmd_vel_ || override_active()) {
+        return;
+    }
+    const double mag =
+        std::fabs(msg->linear.x) + std::fabs(msg->linear.y) +
+        std::fabs(msg->linear.z) + std::fabs(msg->angular.x) +
+        std::fabs(msg->angular.y) + std::fabs(msg->angular.z);
+    const bool moving = mag > cmd_vel_eps_;
+    if (have_motion_state_ && moving == last_moving_) {
+        return;
+    }
+    last_moving_ = moving;
+    have_motion_state_ = true;
+    // blink_hz = 0 → solid
+    set_output(moving ? moving_color_ : stopped_color_, 0.0);
 }
 
 

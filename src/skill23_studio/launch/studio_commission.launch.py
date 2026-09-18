@@ -40,8 +40,8 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'with_detect_align', default_value='true',
             description='Start Detect+Align with the commissioning stack'),
-        LogInfo(msg='[studio_commission] Nav2 + camera + yaw-align + OMS '
-                    '(Detect+Align optional via with_detect_align)'),
+        LogInfo(msg='[studio_commission] Nav2 + camera + Align + Detect+Align '
+                    '(OMS lazy via Home OMS; pick_mode in dashboard)'),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(nav2),
             launch_arguments={
@@ -50,6 +50,7 @@ def generate_launch_description():
                 'enable_lidar': LaunchConfiguration('enable_lidar'),
                 'with_camera': 'true',
                 'with_align': 'true',
+                'with_oms': 'false',
                 'with_detect_align': LaunchConfiguration('with_detect_align'),
                 'camera_stabilize_sec': LaunchConfiguration('camera_stabilize_sec'),
                 'color_width': LaunchConfiguration('color_width'),

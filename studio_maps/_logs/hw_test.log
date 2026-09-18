@@ -3116,3 +3116,239 @@ KeyboardInterrupt
 [sudo-2]   /lib/aarch64-linux-gnu/libc.so.6 (                                           + 0xe9edc)  [0xffff97139edc]
 [sudo-2] Exiting VMX-pi HAL application due to receipt of signal 2 [normal exit].
 [ERROR] [sudo-2]: process has died [pid 3154, exit code -11, cmd 'sudo -E taskset -c 2,3 /home/vmx/skill23_ws/install/studica_control/lib/studica_control/manual_composition --ros-args -r __node:=control_server --params-file /home/vmx/skill23_ws/install/skill23_studio/share/skill23_studio/config/hw_params/hw_params_xdrive.yaml'].
+
+# cmd [2026-09-12 14:46:12]: ros2 launch skill23_studio test_hw.launch.py robot:=xdrive enable_lidar:=true
+[INFO] [launch]: All log files can be found below /home/vmx/.ros/log/2026-09-12-14-46-13-632471-vmx-adev-3559
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [launch.user]: Studio DDS: Fast DDS UDPv4, ROS_LOCALHOST_ONLY=0 (Wi‑Fi discovery ON)
+[INFO] [launch.user]: [test_hw] robot=xdrive params=/home/vmx/skill23_ws/install/skill23_studio/share/skill23_studio/config/hw_params/hw_params_xdrive.yaml lidar=True
+[INFO] [bash-1]: process started with pid [3617]
+[INFO] [bash-1]: process has finished cleanly [pid 3617]
+[INFO] [sudo-2]: process started with pid [3619]
+[sudo-2] VMX HAL:  pigpio library version 69 opened.
+[sudo-2] VMX HAL:  SPI Aux Channel 2 opened with baudrate of 4000000.
+[sudo-2] Adjusted scheduler priority of VMX IO Thread 281472977506336 to 49.
+[sudo-2] PIGPIOClient::int_spi_transmit - Timeout waiting for falling edge after initial rising edge during read after write request.
+[sudo-2] PIGPIOClient::int_spi_transmit - Timeout waiting for falling edge after initial rising edge during read after write request.
+[sudo-2] VMX HAL:  Established communication with VMX board model 0x32, hardware rev 62, firmware version 4.0.450
+[sudo-2] Adjusted scheduler priority of VMX IO Thread 281472869120224 to 49.
+[sudo-2] VMX HAL:  Acquired navX-Sensor configuration.
+[sudo-2] VMX HAL:  VMXRemoteServer thread started.
+[sudo-2] [WARN] [1789204575.132092200] [rcl.logging_rosout]: Publisher already registered for provided node name. If this is due to multiple nodes with the same name then all logs for that logger name will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+[sudo-2] [INFO] [1789204575.182805371] [control_server]: power component ready — 1 × 3.0 Ah NiMH (3.0 Ah total), publishing on /battery_state at 2 Hz
+[sudo-2] [INFO] [1789204575.183616449] [control_server]: line_follower -> vref: 5.0 V
+[sudo-2] [WARN] [1789204575.184290437] [rcl.logging_rosout]: Publisher already registered for provided node name. If this is due to multiple nodes with the same name then all logs for that logger name will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+[sudo-2] Successfully Activated I2C Resource.
+[sudo-2] Cobra is connected at 0x48!
+[sudo-2] [INFO] [1789204575.223406893] [control_server]: cobra ready. topics: /line_follower/ch_0 ... /line_follower/ch_3
+[sudo-2] [WARN] [1789204575.225363987] [rcl.logging_rosout]: Publisher already registered for provided node name. If this is due to multiple nodes with the same name then all logs for that logger name will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+[sudo-2] [INFO] [1789204575.252290998] [control_server]: gamepad controller ready. publishing to: cmd_vel at 50 hz
+[sudo-2] [INFO] [1789204575.252428866] [control_server]: gamepad controls: axis[1/-1] = movement, axis[2] = rotation, button[5] = turbo
+[sudo-2] [WARN] [1789204575.253384275] [rcl.logging_rosout]: Publisher already registered for provided node name. If this is due to multiple nodes with the same name then all logs for that logger name will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+[sudo-2] [INFO] [1789204575.289274697] [control_server]: IMU component ready.
+[sudo-2] [WARN] [1789204575.290719690] [rcl.logging_rosout]: Publisher already registered for provided node name. If this is due to multiple nodes with the same name then all logs for that logger name will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+[sudo-2] DIO Channel 0 activated on Resource type 1, index 0
+[sudo-2] DIO Channel 1 activated on Resource type 1, index 1
+[sudo-2] DIO Channel 2 activated on Resource type 1, index 2
+[sudo-2] DIO Channel 3 activated on Resource type 1, index 3
+[sudo-2] DIO Channel 4 activated on Resource type 1, index 4
+[sudo-2] [INFO] [1789204575.324775738] [control_server]: light_tower ready. pins: continuous=0  red=1  green=2  yellow=3  buzzer=4  default_blink_hz=1.0
+[sudo-2] [INFO] [1789204575.326010234] [control_server]: linear_servo -> port: 12, type: continuous
+[sudo-2] [WARN] [1789204575.326877829] [rcl.logging_rosout]: Publisher already registered for provided node name. If this is due to multiple nodes with the same name then all logs for that logger name will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+[sudo-2] Successfully initialized port 12 as a servo output
+[sudo-2] Studica Driver: Successfully initialized port 12 as a servo output
+[sudo-2] [INFO] [1789204575.360811546] [control_server]: servo ready on port 12. cmd: /linear_servo/cmd  state: /linear_servo/state
+[sudo-2] [INFO] [1789204575.361491997] [control_server]: vertical_servo -> port: 13, type: standard
+[sudo-2] [WARN] [1789204575.362103671] [rcl.logging_rosout]: Publisher already registered for provided node name. If this is due to multiple nodes with the same name then all logs for that logger name will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+[sudo-2] Successfully initialized port 13 as a servo output
+[sudo-2] Studica Driver: Successfully initialized port 13 as a servo output
+[sudo-2] [INFO] [1789204575.396063610] [control_server]: servo ready on port 13. cmd: /vertical_servo/cmd  state: /vertical_servo/state
+[sudo-2] [INFO] [1789204575.396617544] [control_server]: rotation_servo -> port: 14, type: standard
+[sudo-2] [WARN] [1789204575.397261255] [rcl.logging_rosout]: Publisher already registered for provided node name. If this is due to multiple nodes with the same name then all logs for that logger name will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+[sudo-2] Successfully initialized port 14 as a servo output
+[sudo-2] Studica Driver: Successfully initialized port 14 as a servo output
+[sudo-2] [INFO] [1789204575.423333837] [control_server]: servo ready on port 14. cmd: /rotation_servo/cmd  state: /rotation_servo/state
+[sudo-2] [INFO] [1789204575.423890290] [control_server]: gripper_servo -> port: 15, type: standard
+[sudo-2] [WARN] [1789204575.424482075] [rcl.logging_rosout]: Publisher already registered for provided node name. If this is due to multiple nodes with the same name then all logs for that logger name will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+[sudo-2] Successfully initialized port 15 as a servo output
+[sudo-2] Studica Driver: Successfully initialized port 15 as a servo output
+[sudo-2] [INFO] [1789204575.451908522] [control_server]: servo ready on port 15. cmd: /gripper_servo/cmd  state: /gripper_servo/state
+[sudo-2] [INFO] [1789204575.455441235] [control_server]: titan0 -> can_id: 42, motor_freq: 15600 hz, encoder: 20Hz, resend: 50Hz
+[sudo-2] [WARN] [1789204575.455916282] [rcl.logging_rosout]: Publisher already registered for provided node name. If this is due to multiple nodes with the same name then all logs for that logger name will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+[sudo-2] Opened CAN Receive Stream 0, handle:  0
+[sudo-2] Enabled Blackboard on Stream 0.
+[sudo-2] Flushed CAN RX FIFO
+[sudo-2] Flushed CAN TX FIFO
+[sudo-2] Set CAN Mode to Normal.
+[sudo-2] Adjusted scheduler priority of VMX IO Thread 281472843757792 to 49.
+[sudo-2] Titan Driver Started!
+[sudo-2] [INFO] [1789204575.517693623] [control_server]:   m_0: quadrature -> /titan0/m_0/encoder, /titan0/m_0/rpm
+[sudo-2] [INFO] [1789204575.523681959] [control_server]:   m_1: quadrature -> /titan0/m_1/encoder, /titan0/m_1/rpm
+[sudo-2] [INFO] [1789204575.529152563] [control_server]:   m_2: quadrature -> /titan0/m_2/encoder, /titan0/m_2/rpm
+[sudo-2] [INFO] [1789204575.534632575] [control_server]:   m_3: quadrature -> /titan0/m_3/encoder, /titan0/m_3/rpm
+[INFO] [ydlidar_ros2_driver_node-3]: process started with pid [3666]
+[ydlidar_ros2_driver_node-3] [INFO] [1789204576.306371782] [ydlidar_front]: [YDLIDAR INFO] Current ROS Driver Version: 1.0.1
+[ydlidar_ros2_driver_node-3] 
+[ydlidar_ros2_driver_node-3] [2026-09-12 14:46:16][info] SDK initializing
+[ydlidar_ros2_driver_node-3] [2026-09-12 14:46:16][info] SDK has been initialized
+[ydlidar_ros2_driver_node-3] [2026-09-12 14:46:16][info] SDK Version: 1.2.19
+[ydlidar_ros2_driver_node-3] [2026-09-12 14:46:16][info] Connect elapsed time 9 ms
+[ydlidar_ros2_driver_node-3] [2026-09-12 14:46:16][info] Lidar successfully connected [/dev/ydlidar_front:230400]
+[sudo-2] [INFO] [1789204576.536696600] [control_server]: titan ready. can_id: 42, freq: 15600 hz
+[sudo-2] [INFO] [1789204576.548937322] [control_server]: titan1 -> can_id: 43, motor_freq: 15600 hz, encoder: 10Hz, resend: 20Hz
+[sudo-2] [WARN] [1789204576.549609680] [rcl.logging_rosout]: Publisher already registered for provided node name. If this is due to multiple nodes with the same name then all logs for that logger name will go out over the existing publisher. As soon as any node with that name is destructed it will unregister the publisher, preventing any further logs for that name from being published on the rosout topic.
+[sudo-2] Opened CAN Receive Stream 0, handle:  0
+[sudo-2] Enabled Blackboard on Stream 0.
+[sudo-2] Flushed CAN RX FIFO
+[sudo-2] Flushed CAN TX FIFO
+[sudo-2] Set CAN Mode to Normal.
+[sudo-2] Titan Driver Started!
+[sudo-2] [INFO] [1789204576.610810513] [control_server]:   m_0: quadrature -> /titan1/m_0/encoder, /titan1/m_0/rpm
+[sudo-2] [INFO] [1789204576.615727331] [control_server]:   m_0: limit switches -> /titan1/m_0/limit_fwd, /titan1/m_0/limit_rev
+[sudo-2] [INFO] [1789204576.621832739] [control_server]:   m_1: quadrature -> /titan1/m_1/encoder, /titan1/m_1/rpm
+[sudo-2] [INFO] [1789204576.626414989] [control_server]:   m_1: limit switches -> /titan1/m_1/limit_fwd, /titan1/m_1/limit_rev
+[sudo-2] [INFO] [1789204576.632247624] [control_server]:   m_2: quadrature -> /titan1/m_2/encoder, /titan1/m_2/rpm
+[sudo-2] [INFO] [1789204576.636539935] [control_server]:   m_2: limit switches -> /titan1/m_2/limit_fwd, /titan1/m_2/limit_rev
+[sudo-2] Adjusted scheduler priority of VMX IO Thread 281472493676768 to 49.
+[sudo-2] [INFO] [1789204576.643125334] [control_server]:   m_3: quadrature -> /titan1/m_3/encoder, /titan1/m_3/rpm
+[sudo-2] [INFO] [1789204576.647440070] [control_server]:   m_3: limit switches -> /titan1/m_3/limit_fwd, /titan1/m_3/limit_rev
+[ydlidar_ros2_driver_node-3] [2026-09-12 14:46:16][info] Lidar running correctly! The health status good
+[ydlidar_ros2_driver_node-3] [2026-09-12 14:46:16][info] Current Lidar Model Code 151
+[ydlidar_ros2_driver_node-3] [2026-09-12 14:46:16][info] Baseplate device info
+[ydlidar_ros2_driver_node-3] Firmware version: 1.2
+[ydlidar_ros2_driver_node-3] Hardware version: 1
+[ydlidar_ros2_driver_node-3] Model: Tmini Plus
+[ydlidar_ros2_driver_node-3] Serial: 2026010600090098
+[ydlidar_ros2_driver_node-3] [2026-09-12 14:46:17][info] Current scan frequency: 6.00Hz
+[ydlidar_ros2_driver_node-3] [2026-09-12 14:46:17][info] Current scan frequency: 7.00Hz
+[ydlidar_ros2_driver_node-3] [2026-09-12 14:46:17][info] Check status, Elapsed time 964 ms
+[ydlidar_ros2_driver_node-3] [2026-09-12 14:46:17][info] Lidar init success, Elapsed time [973]ms
+[sudo-2] [INFO] [1789204577.649201249] [control_server]: titan ready. can_id: 43, freq: 15600 hz
+[INFO] [ydlidar_ros2_driver_node-4]: process started with pid [3682]
+[ydlidar_ros2_driver_node-4] [INFO] [1789204578.773322372] [ydlidar_back]: [YDLIDAR INFO] Current ROS Driver Version: 1.0.1
+[ydlidar_ros2_driver_node-4] 
+[ydlidar_ros2_driver_node-4] [2026-09-12 14:46:18][info] SDK initializing
+[ydlidar_ros2_driver_node-4] [2026-09-12 14:46:18][info] SDK has been initialized
+[ydlidar_ros2_driver_node-4] [2026-09-12 14:46:18][info] SDK Version: 1.2.19
+[ydlidar_ros2_driver_node-4] [2026-09-12 14:46:18][info] Connect elapsed time 30 ms
+[ydlidar_ros2_driver_node-4] [2026-09-12 14:46:18][info] Lidar successfully connected [/dev/ydlidar_back:230400]
+[ydlidar_ros2_driver_node-3] [2026-09-12 14:46:18][info] [YDLIDAR] Create thread 0xB702E8E0
+[ydlidar_ros2_driver_node-4] [2026-09-12 14:46:19][info] Lidar running correctly! The health status good
+[ydlidar_ros2_driver_node-3] [2026-09-12 14:46:19][info] Successed to start scan mode, Elapsed time 2100 ms
+[ydlidar_ros2_driver_node-3] [2026-09-12 14:46:19][info] Scan Frequency: 7.00Hz
+[ydlidar_ros2_driver_node-3] [2026-09-12 14:46:19][info] Fixed Size: 614
+[ydlidar_ros2_driver_node-3] [2026-09-12 14:46:19][info] Sample Rate: 4.00K
+[ydlidar_ros2_driver_node-3] [2026-09-12 14:46:19][info] Successed to check the lidar, Elapsed time 0 ms
+[ydlidar_ros2_driver_node-3] [2026-09-12 14:46:19][info] Now lidar is scanning...
+[ydlidar_ros2_driver_node-4] [2026-09-12 14:46:19][info] Current Lidar Model Code 151
+[ydlidar_ros2_driver_node-4] [2026-09-12 14:46:19][info] Baseplate device info
+[ydlidar_ros2_driver_node-4] Firmware version: 1.2
+[ydlidar_ros2_driver_node-4] Hardware version: 1
+[ydlidar_ros2_driver_node-4] Model: Tmini Plus
+[ydlidar_ros2_driver_node-4] Serial: 2026010700090033
+[ydlidar_ros2_driver_node-4] [2026-09-12 14:46:19][info] Current scan frequency: 6.00Hz
+[INFO] [lidar_merger_node-5]: process started with pid [3717]
+[ydlidar_ros2_driver_node-4] [2026-09-12 14:46:19][info] Current scan frequency: 7.00Hz
+[ydlidar_ros2_driver_node-4] [2026-09-12 14:46:19][info] Check status, Elapsed time 914 ms
+[ydlidar_ros2_driver_node-4] [2026-09-12 14:46:19][info] Lidar init success, Elapsed time [945]ms
+[lidar_merger_node-5] [INFO] [1789204580.496259621] [lidar_merger_node]: Dual LiDAR merger: front/back +/-128.0/128.0 deg, skew <= 80 ms, 720 bins, static mount transforms -> base_footprint
+[ydlidar_ros2_driver_node-4] [2026-09-12 14:46:21][info] [YDLIDAR] Create thread 0x9A12E8E0
+[ydlidar_ros2_driver_node-4] [2026-09-12 14:46:21][info] Successed to start scan mode, Elapsed time 2100 ms
+[ydlidar_ros2_driver_node-4] [2026-09-12 14:46:21][info] Scan Frequency: 7.00Hz
+[ydlidar_ros2_driver_node-4] [2026-09-12 14:46:21][info] Fixed Size: 614
+[ydlidar_ros2_driver_node-4] [2026-09-12 14:46:21][info] Sample Rate: 4.00K
+[ydlidar_ros2_driver_node-4] [2026-09-12 14:46:21][info] Successed to check the lidar, Elapsed time 0 ms
+[ydlidar_ros2_driver_node-4] [2026-09-12 14:46:21][info] Now lidar is scanning...
+[lidar_merger_node-5] [WARN] [1789204581.938993217] [lidar_merger_node]: Waiting for laser_front -> base_footprint mount transform: "base_footprint" passed to lookupTransform argument target_frame does not exist. 
+[lidar_merger_node-5] [WARN] [1789204584.003069327] [lidar_merger_node]: Waiting for laser_front -> base_footprint mount transform: "base_footprint" passed to lookupTransform argument target_frame does not exist. 
+[lidar_merger_node-5] [WARN] [1789204586.123957534] [lidar_merger_node]: Waiting for laser_front -> base_footprint mount transform: "base_footprint" passed to lookupTransform argument target_frame does not exist. 
+[lidar_merger_node-5] [WARN] [1789204588.242039366] [lidar_merger_node]: Waiting for laser_front -> base_footprint mount transform: "base_footprint" passed to lookupTransform argument target_frame does not exist. 
+[lidar_merger_node-5] [WARN] [1789204590.360938943] [lidar_merger_node]: Waiting for laser_front -> base_footprint mount transform: "base_footprint" passed to lookupTransform argument target_frame does not exist. 
+[lidar_merger_node-5] [WARN] [1789204592.481192828] [lidar_merger_node]: Waiting for laser_front -> base_footprint mount transform: "base_footprint" passed to lookupTransform argument target_frame does not exist. 
+[lidar_merger_node-5] [WARN] [1789204594.600720375] [lidar_merger_node]: Waiting for laser_front -> base_footprint mount transform: "base_footprint" passed to lookupTransform argument target_frame does not exist. 
+[lidar_merger_node-5] [WARN] [1789204596.718621359] [lidar_merger_node]: Waiting for laser_front -> base_footprint mount transform: "base_footprint" passed to lookupTransform argument target_frame does not exist. 
+[lidar_merger_node-5] [WARN] [1789204598.835444426] [lidar_merger_node]: Waiting for laser_front -> base_footprint mount transform: "base_footprint" passed to lookupTransform argument target_frame does not exist. 
+[lidar_merger_node-5] [WARN] [1789204600.954160023] [lidar_merger_node]: Waiting for laser_front -> base_footprint mount transform: "base_footprint" passed to lookupTransform argument target_frame does not exist. 
+[lidar_merger_node-5] [WARN] [1789204603.071246237] [lidar_merger_node]: Waiting for laser_front -> base_footprint mount transform: "base_footprint" passed to lookupTransform argument target_frame does not exist. 
+[lidar_merger_node-5] [WARN] [1789204605.191381645] [lidar_merger_node]: Waiting for laser_front -> base_footprint mount transform: "base_footprint" passed to lookupTransform argument target_frame does not exist. 
+[lidar_merger_node-5] [WARN] [1789204607.306875124] [lidar_merger_node]: Waiting for laser_front -> base_footprint mount transform: "base_footprint" passed to lookupTransform argument target_frame does not exist. 
+[lidar_merger_node-5] [WARN] [1789204609.425718478] [lidar_merger_node]: Waiting for laser_front -> base_footprint mount transform: "base_footprint" passed to lookupTransform argument target_frame does not exist. 
+[lidar_merger_node-5] [WARN] [1789204611.543822084] [lidar_merger_node]: Waiting for laser_front -> base_footprint mount transform: "base_footprint" passed to lookupTransform argument target_frame does not exist. 
+[lidar_merger_node-5] [WARN] [1789204613.662209963] [lidar_merger_node]: Waiting for laser_front -> base_footprint mount transform: "base_footprint" passed to lookupTransform argument target_frame does not exist. 
+[lidar_merger_node-5] [WARN] [1789204615.777325078] [lidar_merger_node]: Waiting for laser_front -> base_footprint mount transform: "base_footprint" passed to lookupTransform argument target_frame does not exist. 
+[lidar_merger_node-5] [WARN] [1789204617.895335389] [lidar_merger_node]: Waiting for laser_front -> base_footprint mount transform: "base_footprint" passed to lookupTransform argument target_frame does not exist. 
+[lidar_merger_node-5] [WARN] [1789204620.013712972] [lidar_merger_node]: Waiting for laser_front -> base_footprint mount transform: "base_footprint" passed to lookupTransform argument target_frame does not exist. 
+[lidar_merger_node-5] [WARN] [1789204622.129004666] [lidar_merger_node]: Waiting for laser_front -> base_footprint mount transform: "base_footprint" passed to lookupTransform argument target_frame does not exist. 
+[lidar_merger_node-5] [WARN] [1789204624.245589357] [lidar_merger_node]: Waiting for laser_front -> base_footprint mount transform: "base_footprint" passed to lookupTransform argument target_frame does not exist. 
+[lidar_merger_node-5] [WARN] [1789204626.362905296] [lidar_merger_node]: Waiting for laser_front -> base_footprint mount transform: "base_footprint" passed to lookupTransform argument target_frame does not exist. 
+[lidar_merger_node-5] [WARN] [1789204628.478171529] [lidar_merger_node]: Waiting for laser_front -> base_footprint mount transform: "base_footprint" passed to lookupTransform argument target_frame does not exist. 
+[lidar_merger_node-5] [WARN] [1789204630.593540237] [lidar_merger_node]: Waiting for laser_front -> base_footprint mount transform: "base_footprint" passed to lookupTransform argument target_frame does not exist. 
+[WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
+[INFO] [lidar_merger_node-5]: sending signal 'SIGINT' to process[lidar_merger_node-5]
+[INFO] [ydlidar_ros2_driver_node-4]: sending signal 'SIGINT' to process[ydlidar_ros2_driver_node-4]
+[INFO] [ydlidar_ros2_driver_node-3]: sending signal 'SIGINT' to process[ydlidar_ros2_driver_node-3]
+[INFO] [sudo-2]: sending signal 'SIGINT' to process[sudo-2]
+[sudo-2] Signal 2 received by PIGPIOClient::signal_func().
+[ydlidar_ros2_driver_node-4] [INFO] [1789204630.943737758] [rclcpp]: signal_handler(signum=2)
+[lidar_merger_node-5] [INFO] [1789204630.950184179] [rclcpp]: signal_handler(signum=2)
+[lidar_merger_node-5] [INFO] [1789204630.950498562] [rclcpp]: signal_handler(signum=2)
+[ydlidar_ros2_driver_node-4] [INFO] [1789204630.953458565] [rclcpp]: signal_handler(signum=2)
+[ydlidar_ros2_driver_node-3] [INFO] [1789204630.958840227] [rclcpp]: signal_handler(signum=2)
+[ydlidar_ros2_driver_node-3] [INFO] [1789204630.958969873] [rclcpp]: signal_handler(signum=2)
+[sudo-2] /usr/local/lib/vmxpi/libvmxpi_hal_cpp.so(_ZN12PIGPIOClient11signal_funcEiPv+0x254) [0xffff884c1734]
+[sudo-2] /usr/local/lib/vmxpi/libvmxpi_hal_cpp.so(+0xcb0dc) [0xffff8850b0dc]
+[sudo-2] linux-vdso.so.1(__kernel_rt_sigreturn+0) [0xffff88dc67dc]
+[sudo-2] /lib/aarch64-linux-gnu/libc.so.6(+0x7cbac) [0xffff87ddcbac]
+[sudo-2] /lib/aarch64-linux-gnu/libc.so.6(+0x888f4) [0xffff87de88f4]
+[sudo-2] /opt/ros/humble/lib/librclcpp.so(_ZN6rclcpp13SignalHandler15wait_for_signalEv+0x3c) [0xffff882e3ddc]
+[sudo-2] /opt/ros/humble/lib/librclcpp.so(_ZN6rclcpp13SignalHandler23deferred_signal_handlerEv+0xa8) [0xffff882e50c8]
+[sudo-2] /lib/aarch64-linux-gnu/libstdc++.so.6(+0xd29cc) [0xffff880129cc]
+[sudo-2] /lib/aarch64-linux-gnu/libc.so.6(+0x803c8) [0xffff87de03c8]
+[sudo-2] /lib/aarch64-linux-gnu/libc.so.6(+0xe9edc) [0xffff87e49edc]
+[sudo-2]   /lib/aarch64-linux-gnu/libc.so.6 (                                           + 0x888f4)  [0xffff87de88f4]
+[sudo-2]   /opt/ros/humble/lib/librclcpp.so ( rclcpp::SignalHandler::wait_for_signal()  + 0x3c  )  [0xffff882e3ddc]
+[sudo-2]   /opt/ros/humble/lib/librclcpp.so ( rclcpp::SignalHandler::deferred_signal_handler()  + 0xa8  )  [0xffff882e50c8]
+[sudo-2]   /lib/aarch64-linux-gnu/libstdc++.so.6 (                                           + 0xd29cc)  [0xffff880129cc]
+[sudo-2]   /lib/aarch64-linux-gnu/libc.so.6 (                                           + 0x803c8)  [0xffff87de03c8]
+[sudo-2]   /lib/aarch64-linux-gnu/libc.so.6 (                                           + 0xe9edc)  [0xffff87e49edc]
+[sudo-2] Exiting VMX-pi HAL application due to receipt of signal 2 [normal exit].
+[sudo-2] VMX HAL:  pigpio library closed during exception handling.
+[sudo-2] Signal 2 received by PIGPIOClient::signal_func().
+[sudo-2] VMX HAL:  pigpio library closed during exception handling.
+[sudo-2] /usr/local/lib/vmxpi/libvmxpi_hal_cpp.so(_ZN12PIGPIOClient11signal_funcEiPv+0x254) [0xffff884c1734]
+[sudo-2] /usr/local/lib/vmxpi/libvmxpi_hal_cpp.so(+0xcb0dc) [0xffff8850b0dc]
+[sudo-2] linux-vdso.so.1(__kernel_rt_sigreturn+0) [0xffff88dc67dc]
+[sudo-2] /lib/aarch64-linux-gnu/libc.so.6(+0x7cbac) [0xffff87ddcbac]
+[sudo-2] /lib/aarch64-linux-gnu/libc.so.6(pthread_cond_clockwait+0x1ec) [0xffff87ddfccc]
+[sudo-2] /opt/ros/humble/lib/libfastrtps.so.2.6(_ZN8eprosima7fastdds3dds6detail11WaitSetImpl4waitERSt6vectorIPNS1_9ConditionESaIS6_EERKNS_8fastrtps6Time_tE+0x1a0) [0xffff873c1804]
+[sudo-2] /opt/ros/humble/lib/libfastrtps.so.2.6(_ZNK8eprosima7fastdds3dds7WaitSet4waitERSt6vectorIPNS1_9ConditionESaIS5_EENS_8fastrtps6Time_tE+0x18) [0xffff873c1a18]
+[sudo-2] /opt/ros/humble/lib/librmw_fastrtps_shared_cpp.so(_ZN23rmw_fastrtps_shared_cpp10__rmw_waitEPKcP19rmw_subscriptions_sP22rmw_guard_conditions_sP14rmw_services_sP13rmw_clients_sP12rmw_events_sP14rmw_wait_set_sPK10rmw_time_s+0x414) [0xffff877e57d4]
+[sudo-2] /opt/ros/humble/lib/librcl.so(rcl_wait+0x198) [0xffff87d15d28]
+[sudo-2] /opt/ros/humble/lib/librclcpp.so(_ZN6rclcpp8Executor13wait_for_workENSt6chrono8durationIlSt5ratioILl1ELl1000000000EEEE+0x98c) [0xffff88266990]
+[sudo-2] /opt/ros/humble/lib/librclcpp.so(_ZN6rclcpp8Executor19get_next_executableERNS_13AnyExecutableENSt6chrono8durationIlSt5ratioILl1ELl1000000000EEEE+0x4c) [0xffff882699dc]
+[sudo-2] /opt/ros/humble/lib/librclcpp.so(_ZN6rclcpp9executors22SingleThreadedExecutor4spinEv+0xd8) [0xffff88271588]
+[sudo-2] /home/vmx/skill23_ws/install/studica_control/lib/studica_control/manual_composition(+0x4248) [0xaaaadd984248]
+[sudo-2] /lib/aarch64-linux-gnu/libc.so.6(+0x27400) [0xffff87d87400]
+[sudo-2] /lib/aarch64-linux-gnu/libc.so.6(__libc_start_main+0x98) [0xffff87d874d8]
+[sudo-2] /home/vmx/skill23_ws/install/studica_control/lib/studica_control/manual_composition(+0x4430) [0xaaaadd984430]
+[sudo-2]   /lib/aarch64-linux-gnu/libc.so.6 ( pthread_cond_clockwait                    + 0x1ec )  [0xffff87ddfccc]
+[sudo-2]   /opt/ros/humble/lib/libfastrtps.so.2.6 ( eprosima::fastdds::dds::detail::WaitSetImpl::wait(std::vector<eprosima::fastdds::dds::Condition*, std::allocator<eprosima::fastdds::dds::Condition*> >&, eprosima::fastrtps::Time_t const&)  + 0x1a0 )  [0xffff873c1804]
+[sudo-2]   /opt/ros/humble/lib/libfastrtps.so.2.6 ( eprosima::fastdds::dds::WaitSet::wait(std::vector<eprosima::fastdds::dds::Condition*, std::allocator<eprosima::fastdds::dds::Condition*> >&, eprosima::fastrtps::Time_t) const  + 0x18  )  [0xffff873c1a18]
+[sudo-2]   /opt/ros/humble/lib/librmw_fastrtps_shared_cpp.so ( rmw_fastrtps_shared_cpp::__rmw_wait(char const*, rmw_subscriptions_s*, rmw_guard_conditions_s*, rmw_services_s*, rmw_clients_s*, rmw_events_s*, rmw_wait_set_s*, rmw_time_s const*)  + 0x414 )  [0xffff877e57d4]
+[sudo-2]   /opt/ros/humble/lib/librcl.so  ( rcl_wait                                  + 0x198 )  [0xffff87d15d28]
+[sudo-2]   /opt/ros/humble/lib/librclcpp.so ( rclcpp::Executor::wait_for_work(std::chrono::duration<long, std::ratio<1l, 1000000000l> >)  + 0x98c )  [0xffff88266990]
+[sudo-2]   /opt/ros/humble/lib/librclcpp.so ( rclcpp::Executor::get_next_executable(rclcpp::AnyExecutable&, std::chrono::duration<long, std::ratio<1l, 1000000000l> >)  + 0x4c  )  [0xffff882699dc]
+[sudo-2]   /opt/ros/humble/lib/librclcpp.so ( rclcpp::executors::SingleThreadedExecutor::spin()  + 0xd8  )  [0xffff88271588]
+[sudo-2]   /home/vmx/skill23_ws/install/studica_control/lib/studica_control/manual_composition (                                           + 0x4248)  [0xaaaadd984248]
+[sudo-2]   /lib/aarch64-linux-gnu/libc.so.6 (                                           + 0x27400)  [0xffff87d87400]
+[sudo-2]   /lib/aarch64-linux-gnu/libc.so.6 ( __libc_start_main                         + 0x98  )  [0xffff87d874d8]
+[sudo-2]   /home/vmx/skill23_ws/install/studica_control/lib/studica_control/manual_composition (                                           + 0x4430)  [0xaaaadd984430]
+[sudo-2] Exiting VMX-pi HAL application due to receipt of signal 2 [normal exit].
+[ydlidar_ros2_driver_node-3] [INFO] [1789204631.014558463] [ydlidar_front]: [YDLIDAR INFO] Now YDLIDAR is stopping .......
+[ydlidar_ros2_driver_node-3] [2026-09-12 14:47:11][info] Now lidar scanning has stopped!
+[ydlidar_ros2_driver_node-4] [INFO] [1789204631.024415434] [ydlidar_back]: [YDLIDAR INFO] Now YDLIDAR is stopping .......
+[ydlidar_ros2_driver_node-4] [2026-09-12 14:47:11][info] Now lidar scanning has stopped!
+[INFO] [lidar_merger_node-5]: process has finished cleanly [pid 3717]
+[INFO] [sudo-2]: process has finished cleanly [pid 3619]
+[INFO] [ydlidar_ros2_driver_node-3]: process has finished cleanly [pid 3666]
+[INFO] [ydlidar_ros2_driver_node-4]: process has finished cleanly [pid 3682]

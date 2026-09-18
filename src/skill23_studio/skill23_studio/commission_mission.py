@@ -16,6 +16,11 @@ def default_config() -> Dict[str, Any]:
         'drop_assignments': {obj: '' for obj in COMMISSION_OBJECTS},
         'detect_retries': 3,
         'yaw_tolerance_deg': 1.0,
+        # pick_mode:
+        #   detect_oms            — Mode 1: Detect+Align OMS pick after reach
+        #   align_move_detect_oms — Mode 2: Align+distance then Detect+Align OMS
+        'pick_mode': 'detect_oms',
+        'pick_distance_m': 0.15,
         # Optional overrides keyed by sticker (pick1…). Waypoint fields win if set.
         'pick_counts': {},
         'pick_lifts_mm': {},
@@ -39,6 +44,18 @@ def normalize_config(raw: Any) -> Dict[str, Any]:
     try:
         base['yaw_tolerance_deg'] = max(
             0.1, min(15.0, float(raw.get('yaw_tolerance_deg', 1.0))))
+    except (TypeError, ValueError):
+        pass
+    mode = str(raw.get('pick_mode') or base['pick_mode']).strip().lower()
+    if mode in ('detect_oms', 'mode1', 'detect', 'oms_pick'):
+        base['pick_mode'] = 'detect_oms'
+    elif mode in ('align_move_detect_oms', 'mode2', 'align_move', 'align_dist_oms'):
+        base['pick_mode'] = 'align_move_detect_oms'
+    else:
+        base['pick_mode'] = 'detect_oms'
+    try:
+        base['pick_distance_m'] = max(
+            0.03, min(5.0, float(raw.get('pick_distance_m', 0.15))))
     except (TypeError, ValueError):
         pass
     for key in ('pick_counts', 'pick_lifts_mm'):

@@ -876,7 +876,9 @@ class ProcessManager:
             with_camera: bool = False,
             with_align: Optional[bool] = None,
             with_cobra: Optional[bool] = None,
+            with_oms: Optional[bool] = None,
             with_detect_align: Optional[bool] = None,
+            with_lookup: Optional[bool] = None,
             stack: str = 'nav2') -> ManagedProcess:
         if not map_yaml or not os.path.isfile(map_yaml):
             raise FileNotFoundError(f'map not found: {map_yaml}')
@@ -886,17 +888,23 @@ class ProcessManager:
             with_align = False
         if with_cobra is None:
             with_cobra = False
+        if with_oms is None:
+            with_oms = False
         if with_detect_align is None:
             with_detect_align = bool(with_camera)
         with_detect_align = bool(with_detect_align) and bool(with_camera)
+        if with_lookup is None:
+            with_lookup = bool(with_camera) and not with_detect_align
+        with_lookup = bool(with_lookup) and bool(with_camera)
         if with_camera:
-            with_align = False
             with_cobra = False
+            # Keep with_align (commission yaw) and with_oms if requested.
         with self._stack_lock:
             self.require_stacks_idle(wanting='nav')
             self.stop('nav')
             self._wait_stack_idle('nav')
-            if with_camera:
+            if with_camera and with_detect_align:
+                # Commissioning path: camera + Detect+Align (+ Align).
                 launch_file = 'studio_commission.launch.py'
                 args = [
                     'launch', 'skill23_studio', launch_file,
@@ -905,15 +913,18 @@ class ProcessManager:
                     f'with_detect_align:={"true" if with_detect_align else "false"}',
                 ]
             else:
+                # Navigation (optional camera + lookup OCR/ArUco, no Detect+Align).
                 launch_file = 'studio_nav2.launch.py'
                 args = [
                     'launch', 'skill23_studio', launch_file,
                     f'robot:={robot}',
                     f'map:={map_yaml}',
-                    'with_camera:=false',
-                    'with_detect_align:=false',
+                    f'with_camera:={"true" if with_camera else "false"}',
+                    f'with_detect_align:={"true" if with_detect_align else "false"}',
                     f'with_align:={"true" if with_align else "false"}',
                     f'with_cobra:={"true" if with_cobra else "false"}',
+                    f'with_oms:={"true" if with_oms else "false"}',
+                    f'with_lookup:={"true" if with_lookup else "false"}',
                 ]
             return self._launch('nav', args)
 
@@ -987,8 +998,8 @@ class ProcessManager:
             if blockers:
                 raise RuntimeError(
                     f'Cannot start OMS: Titan already in use ({", ".join(blockers)}). '
-                    'If commissioning/Nav2 is starting, wait until this page shows Ready — '
-                    'do not launch OMS a second time. Stop the other stack first to run OMS alone.')
+                    'If commissioning/Nav2 is up, use ensure_oms_with_nav() / Home OMS '
+                    '(OMS node only — no second Titan).')
             self.stop('oms')
             # Quiet like slam/nav: only the cmd line in the studio terminal;
             # full output goes to studio_maps/_logs/oms.log (dashboard).
@@ -998,6 +1009,33 @@ class ProcessManager:
                     'launch', 'oms', 'test_oms.launch.py',
                     f'robot:={robot}',
                     'auto_home:=false',
+                ],
+                echo_terminal=False,
+            )
+
+    def ensure_oms_with_nav(self, robot: str) -> Optional[ManagedProcess]:
+        """Start OMS node alongside an already-running Nav2 Titan (no 2nd Titan).
+
+        Used by Home OMS and WP OMS sequences. Starts asleep for low CPU until
+        /oms/power wake.
+        """
+        if robot not in ('allterrain', 'grip', 'mecanum', 'xdrive'):
+            raise ValueError(f'unknown robot {robot}')
+        with self._stack_lock:
+            if self.oms_nodes_alive():
+                return None
+            if not self.stacks_alive().get('nav'):
+                return self.start_oms(robot)
+            # Managed oms process may be stale — clear before re-launch.
+            existing = self._procs.get('oms')
+            if existing is not None and existing.popen.poll() is None:
+                return existing
+            return self._launch(
+                'oms',
+                [
+                    'launch', 'oms', 'oms.launch.py',
+                    'auto_home:=false',
+                    'start_asleep:=true',
                 ],
                 echo_terminal=False,
             )

@@ -156,6 +156,11 @@ class _Axis:
 
     # --- job bookkeeping --------------------------------------------
     def _begin_job(self) -> int:
+        # Axis command while Nav-asleep → wake (bridge also publishes /oms/power).
+        try:
+            self.node.ensure_awake(f'{self.label} cmd')
+        except Exception:
+            pass
         self._cancel.set()
         with self._gen_lock:
             self._job_gen += 1
@@ -243,7 +248,11 @@ class _EncoderAxis(_Axis):
 
     def _should_publish_status(self) -> bool:
         moving = self._state in ('goto', 'homing', 'stall_recover')
-        hz = self._status_hz_active if moving else self._status_hz_idle
+        # Nav sleep: keep OMS process alive but almost silent (~0.2 Hz status).
+        if (not moving) and getattr(self.node, 'is_asleep', lambda: False)():
+            hz = 0.2
+        else:
+            hz = self._status_hz_active if moving else self._status_hz_idle
         now = time.time()
         if now - self._status_last < (1.0 / hz):
             return False
@@ -1970,7 +1979,10 @@ class ServoAxis(_Axis):
 
     def publish_status(self) -> None:
         moving = self._state not in ('idle', 'boot', 'unknown')
-        hz = self._status_hz_active if moving else self._status_hz_idle
+        if (not moving) and getattr(self.node, 'is_asleep', lambda: False)():
+            hz = 0.2
+        else:
+            hz = self._status_hz_active if moving else self._status_hz_idle
         now = time.time()
         if now - self._status_last < (1.0 / hz):
             return
@@ -2270,7 +2282,8 @@ class HomeSequencer:
     def publish_status(self, *, force: bool = False) -> None:
         if not force and self._state == 'idle':
             now = time.time()
-            if now - self._status_last < 0.5:
+            period = 5.0 if getattr(self.node, 'is_asleep', lambda: False)() else 0.5
+            if now - self._status_last < period:
                 return
             self._status_last = now
         try:
@@ -2381,6 +2394,10 @@ class HomeSequencer:
         if str(cmd.get('mode') or '').strip().lower() not in (
                 'home', 'allhome', 'boot'):
             return
+        try:
+            self.node.ensure_awake('home cmd')
+        except Exception:
+            pass
         threading.Thread(
             target=self.run, args=(cmd.get('sequence'),), daemon=True).start()
 
@@ -2398,6 +2415,11 @@ class OmsNode(Node):
         # Launch / Studio param wins; yaml oms_home.auto_home is the fallback.
         # Default false — mechanisms stay idle until the dashboard Home button.
         auto_home_override = declare_bool(self, 'auto_home', False)
+        # Nav2 with OMS: start asleep so CPU stays ~0–1% until a WP wakes it.
+        self._asleep = bool(declare_bool(self, 'start_asleep', False))
+        self._power_pub = self.create_publisher(String, '/oms/power/state', 10)
+        self.create_subscription(
+            String, '/oms/power', self._on_power_cmd, 10)
 
         data = self._load_config(config_file)
         self.rotation = RotationAxis(self, _Cfg(data, 'oms_rotation'), rot_log)
@@ -2423,7 +2445,15 @@ class OmsNode(Node):
         self.get_logger().info(
             'OMS single node ready — rotation, lift, linear, vertical, '
             'rotation_servo, gripper, home (idle until Home)')
-        do_auto = bool(auto_home_override) and home_cfg.b('auto_home', False)
+        if self._asleep:
+            self.write_log(
+                'info',
+                'start_asleep — publish /oms/power {"mode":"wake"} before WP work')
+            self._publish_power_state()
+        do_auto = (
+            (not self._asleep)
+            and bool(auto_home_override)
+            and home_cfg.b('auto_home', False))
         if do_auto:
             delay = max(0.0, home_cfg.f('startup_delay_sec', 2.0))
             threading.Thread(target=self._boot, args=(delay,), daemon=True).start()
@@ -2431,6 +2461,57 @@ class OmsNode(Node):
             self.write_log(
                 'info',
                 'auto_home off — waiting for /oms/home/cmd (Studio Home)')
+
+    def is_asleep(self) -> bool:
+        return bool(self._asleep)
+
+    def set_asleep(self, asleep: bool, *, reason: str = '') -> None:
+        asleep = bool(asleep)
+        if asleep == self._asleep:
+            self._publish_power_state()
+            return
+        self._asleep = asleep
+        if asleep:
+            # Stop any leftover motion; keep subscriptions (cheap).
+            try:
+                self.stop_all()
+            except Exception:
+                pass
+            self.write_log(
+                'info', f'OMS sleep ({reason or "nav idle"}) — low CPU')
+        else:
+            self.write_log(
+                'info', f'OMS wake ({reason or "wp sequence"})')
+        self._publish_power_state()
+
+    def _publish_power_state(self) -> None:
+        payload = {
+            'mode': 'sleep' if self._asleep else 'wake',
+            'asleep': bool(self._asleep),
+        }
+        try:
+            self._power_pub.publish(String(data=json.dumps(payload)))
+        except Exception:
+            pass
+
+    def _on_power_cmd(self, msg: String) -> None:
+        raw = (msg.data or '').strip()
+        mode = raw.lower()
+        try:
+            data = json.loads(raw) if raw.startswith('{') else {}
+            if isinstance(data, dict):
+                mode = str(data.get('mode') or mode).strip().lower()
+        except Exception:
+            pass
+        if mode in ('sleep', 'off', 'idle', 'asleep'):
+            self.set_asleep(True, reason='power cmd')
+        elif mode in ('wake', 'on', 'active', 'awake'):
+            self.set_asleep(False, reason='power cmd')
+        # Any real axis cmd also auto-wakes (see note in axis handlers via ensure_awake).
+
+    def ensure_awake(self, reason: str = 'axis cmd') -> None:
+        if self._asleep:
+            self.set_asleep(False, reason=reason)
 
     def _load_config(self, config_file: str) -> dict:
         path = Path(config_file).expanduser() if config_file else None

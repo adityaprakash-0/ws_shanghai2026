@@ -252,6 +252,10 @@ class StudioBridge(Node):
         self._nav2_action_cmd_id = ''
         self._nav2_action_deadline = 0.0
         self._nav2_action_kind = ''
+        self._nav2_oms_wp: Optional[dict] = None
+        self._nav2_oms_cancel = threading.Event()
+        self._nav2_oms_thread: Optional[threading.Thread] = None
+        self._nav2_cpu_paused = False
         self._detect_align: Dict[str, Any] = {
             'state': 'idle',
             'message': '',
@@ -374,6 +378,13 @@ class StudioBridge(Node):
         self._align_cancel_pub = self.create_publisher(Empty, '/studio/align/cancel', 10)
         self.create_subscription(
             String, '/studio/align/result', self._on_studio_align_result, 10)
+        self._lookup_cmd_pub = self.create_publisher(String, '/studio/lookup/cmd', 10)
+        self._lookup_cancel_pub = self.create_publisher(Empty, '/studio/lookup/cancel', 10)
+        self.create_subscription(
+            String, '/studio/lookup/result', self._on_studio_lookup_result, 10)
+        self._lookup: Dict[str, Any] = {
+            'state': 'idle', 'message': '', 'last_ok': None, 'last_next_wp': None,
+        }
         self._cobra_cmd_pub = self.create_publisher(String, '/studio/cobra/cmd', 10)
         self._cobra_cancel_pub = self.create_publisher(Empty, '/studio/cobra/cancel', 10)
         self.create_subscription(
@@ -433,6 +444,7 @@ class StudioBridge(Node):
             'gripper': self.create_publisher(String, '/oms/gripper/cmd', 10),
             'home': self.create_publisher(String, '/oms/home/cmd', 10),
         }
+        self._oms_power_pub = self.create_publisher(String, '/oms/power', 10)
         for axis in (
                 'rotation', 'lift', 'linear', 'vertical',
                 'rotation_servo', 'gripper', 'home'):
@@ -926,11 +938,102 @@ class StudioBridge(Node):
         self._nav2_set_mission('wait_action', detail)
         self.get_logger().info(f'Waypoint {reached_idx + 1}/{n} reached — {detail}')
 
+    def _oms_set_power(self, mode: str) -> None:
+        """Wake/sleep OMS process started with Nav2 (start_asleep)."""
+        payload = {'mode': 'wake' if mode == 'wake' else 'sleep'}
+        try:
+            self._oms_power_pub.publish(String(data=json.dumps(payload)))
+        except Exception as exc:
+            self.get_logger().warn(f'/oms/power {mode} failed: {exc}')
+
+    def _nav2_start_oms_action(self, wp: dict, reached_idx: int) -> None:
+        """Run dashboard OMS sequence at this waypoint (wake → work → sleep)."""
+        n = len(self._nav2_seq_wps)
+        action = self._wp_action(wp)
+        seq = action.get('sequence') or []
+        try:
+            timeout = float(action.get('timeout_sec', 120.0) or 120.0)
+        except (TypeError, ValueError):
+            timeout = 120.0
+        timeout = min(600.0, max(10.0, timeout))
+        cmd_id = f'nav2_oms_{self._nav2_seq_gen}_{reached_idx}_{int(time.time() * 1000)}'
+        self._nav2_oms_wp = wp
+        self._nav2_action_cmd_id = cmd_id
+        self._nav2_action_kind = 'oms'
+        self._nav2_action_deadline = time.time() + timeout + 15.0
+        detail = f'wp {reached_idx + 1}/{n} OMS ({len(seq) if isinstance(seq, list) else "?"} steps)'
+        self._nav2_set_mission('wait_action', detail)
+        self.get_logger().info(f'Waypoint {reached_idx + 1}/{n} reached — {detail}')
+        self._nav2_oms_cancel.clear()
+        self._nav2_oms_thread = threading.Thread(
+            target=self._nav2_run_oms_sequence_job,
+            args=(cmd_id, wp),
+            daemon=True,
+            name='nav2_oms_seq',
+        )
+        self._nav2_oms_thread.start()
+
+    def _nav2_run_oms_sequence_job(self, cmd_id: str, wp: dict) -> None:
+        from skill23_studio.nav.wp_oms_sequence import run_wp_oms_sequence
+        action = self._wp_action(wp)
+        result_store = self._oms.setdefault('last_result', {})
+        self._oms_set_power('wake')
+        time.sleep(0.15)
+
+        def _log(msg: str, level: str = 'info') -> None:
+            if level == 'warn':
+                self.get_logger().warn(f'[wp_oms] {msg}')
+            else:
+                self.get_logger().info(f'[wp_oms] {msg}')
+
+        try:
+            ok, message = run_wp_oms_sequence(
+                pubs=self._oms_cmd_pubs,
+                result_store=result_store,
+                sequence=action.get('sequence'),
+                lift_mm=float(action.get('lift_mm', 0.0) or 0.0),
+                linear_mm=float(action.get('linear_mm', 0.0) or 0.0),
+                rotation_deg=float(action.get('rotation_deg', 0.0) or 0.0),
+                wait_sec=float(action.get('wait_sec', 1.0) or 1.0),
+                axis_timeout_sec=float(action.get('axis_timeout_sec', 60.0) or 60.0),
+                home_timeout_sec=float(action.get('home_timeout_sec', 180.0) or 180.0),
+                log=_log,
+                cancel_check=self._nav2_oms_cancel.is_set,
+            )
+        except Exception as exc:
+            ok, message = False, f'OMS sequence error: {exc}'
+            self.get_logger().error(f'[wp_oms] {message}')
+        finally:
+            self._oms_set_power('sleep')
+
+        if self._nav2_action_cmd_id != cmd_id:
+            return
+        self.get_logger().info(
+            f'OMS sequence result ok={ok} {message}')
+        self._nav2_finish_action_then_next(
+            f'oms {"ok" if ok else "failed"}')
+
+    def _nav2_cancel_oms_job(self) -> None:
+        self._nav2_oms_cancel.set()
+        try:
+            self._oms_set_power('sleep')
+        except Exception:
+            pass
+
     def _nav2_start_align_action(
             self, wp: dict, reached_idx: int, atype: str) -> None:
         n = len(self._nav2_seq_wps)
         action = self._wp_action(wp)
-        timeout = self._nav2_action_timeout(atype, action)
+        # align_move_oms → run align_move first, then OMS on success.
+        run_oms_after = atype == 'align_move_oms'
+        align_type = 'align_move' if run_oms_after else atype
+        timeout = self._nav2_action_timeout(align_type, action)
+        if run_oms_after:
+            try:
+                oms_t = float(action.get('timeout_sec', 120.0) or 120.0)
+            except (TypeError, ValueError):
+                oms_t = 120.0
+            timeout = timeout + min(600.0, max(10.0, oms_t))
         cmd_id = f'nav2_{self._nav2_seq_gen}_{reached_idx}_{int(time.time() * 1000)}'
         try:
             yaw = float(wp.get('yaw', 0.0) or 0.0)
@@ -938,10 +1041,10 @@ class StudioBridge(Node):
             yaw = 0.0
         payload: Dict[str, Any] = {
             'cmd_id': cmd_id,
-            'mode': atype,
+            'mode': align_type,
             'yaw': yaw,
         }
-        if atype == 'align_move':
+        if align_type == 'align_move':
             try:
                 dist = float(action.get('distance_m', 0.0) or 0.0)
             except (TypeError, ValueError):
@@ -952,16 +1055,19 @@ class StudioBridge(Node):
                 self.get_logger().warn(
                     f'Waypoint {reached_idx + 1}/{n} align+move missing distance — '
                     'running yaw align only')
-                atype = 'align'
+                align_type = 'align'
                 payload['mode'] = 'align'
         detail = (
-            f'wp {reached_idx + 1}/{n} {atype} '
+            f'wp {reached_idx + 1}/{n} '
+            f'{"align_move→oms" if run_oms_after else align_type} '
             f'yaw={math.degrees(yaw):.1f}deg')
         if 'distance_m' in payload:
             detail += f' dist={payload["distance_m"]:.3f}m'
         self._align_cmd_pub.publish(String(data=json.dumps(payload)))
         self._nav2_action_cmd_id = cmd_id
-        self._nav2_action_kind = atype
+        self._nav2_action_kind = (
+            'align_move_oms' if run_oms_after else align_type)
+        self._nav2_oms_wp = wp if run_oms_after else None
         self._nav2_action_deadline = time.time() + timeout + 15.0
         self._nav2_set_mission('wait_action', detail)
         self.get_logger().info(
@@ -975,8 +1081,113 @@ class StudioBridge(Node):
         self._nav2_action_cmd_id = ''
         self._nav2_action_deadline = 0.0
         self._nav2_action_kind = ''
+        self._nav2_oms_wp = None
+        self._lookup_camera_off()
         self.get_logger().info(f'{reason} — generating path to next waypoint')
+        self._nav2_resume_heavy()
         self._send_nav2_seq_pose()
+
+    def _lookup_camera_off(self) -> None:
+        """Force color stream off after lookup (success, fail, or timeout)."""
+        self._cam_action_need = False
+        self._cam_need_last = None
+        try:
+            self._toggle_orbbec(color=False, depth=False)
+        except Exception as exc:
+            self.get_logger().warn(f'lookup camera off failed: {exc}')
+
+    def _nav2_start_lookup_action(
+            self, wp: dict, reached_idx: int, atype: str) -> None:
+        """OCR / ArUco lookup → optional jump to 1-based waypoint index."""
+        n = len(self._nav2_seq_wps)
+        action = self._wp_action(wp)
+        mode = 'ocr' if atype == 'lookup_ocr' else 'aruco'
+        try:
+            confirm = int(action.get('confirm_frames', 3) or 3)
+        except (TypeError, ValueError):
+            confirm = 3
+        try:
+            retries = int(action.get('retries', 3) or 3)
+        except (TypeError, ValueError):
+            retries = 3
+        timeout = self._nav2_action_timeout(atype, action)
+        if timeout >= 149.0:
+            # Default watchdog when WP action omits timeout_sec.
+            timeout = 40.0
+        cmd_id = f'nav2_lookup_{self._nav2_seq_gen}_{reached_idx}_{int(time.time() * 1000)}'
+        payload: Dict[str, Any] = {
+            'cmd_id': cmd_id,
+            'mode': mode,
+            'confirm_frames': max(1, min(20, confirm)),
+            'retries': max(1, min(10, retries)),
+            'timeout_sec': max(5.0, min(90.0, timeout - 5.0)),
+        }
+        self._cam_action_need = True
+        self._cam_need_last = None
+        try:
+            self._ensure_orbbec()
+            if self._cam_stream_allowed():
+                self._toggle_orbbec(color=True, depth=False)
+        except Exception as exc:
+            self.get_logger().warn(f'lookup camera on failed: {exc}')
+        self._lookup_cmd_pub.publish(String(data=json.dumps(payload)))
+        self._nav2_action_cmd_id = cmd_id
+        self._nav2_action_kind = atype
+        self._nav2_action_deadline = time.time() + timeout + 10.0
+        detail = f'wp {reached_idx + 1}/{n} {atype}'
+        self._nav2_set_mission('wait_action', detail)
+        self._lookup.update({
+            'state': 'running', 'message': detail, 'last_ok': None,
+            'last_next_wp': None,
+        })
+        self.get_logger().info(f'Waypoint {reached_idx + 1}/{n} reached — {detail}')
+
+    def _on_studio_lookup_result(self, msg: String) -> None:
+        try:
+            data = _json_from_ros_string(msg.data)
+        except Exception:
+            return
+        if not self._nav2_seq_active or not self._nav2_action_cmd_id:
+            return
+        if str(data.get('cmd_id', '')) != self._nav2_action_cmd_id:
+            return
+        if self._nav2_action_kind not in ('lookup_ocr', 'lookup_aruco'):
+            return
+        ok = bool(data.get('success'))
+        kind = self._nav2_action_kind
+        text = str(data.get('message') or '')
+        next_wp = data.get('next_wp')
+        try:
+            next_wp_i = int(next_wp) if next_wp is not None else None
+        except (TypeError, ValueError):
+            next_wp_i = None
+        self._lookup.update({
+            'state': 'idle',
+            'message': text,
+            'last_ok': ok,
+            'last_next_wp': next_wp_i,
+        })
+        self._lookup_camera_off()
+
+        n = len(self._nav2_seq_wps)
+        # _nav2_seq_index was already advanced to reached+1 before the action.
+        if ok and next_wp_i is not None and 1 <= next_wp_i <= n:
+            jump_idx = next_wp_i - 1  # 1-based → 0-based
+            self._nav2_seq_index = jump_idx
+            self._nav2_seq_attempt = 1
+            self.get_logger().info(
+                f'{kind} ok — jump to waypoint {next_wp_i}/{n} ({text})')
+            self._nav2_finish_action_then_next(
+                f'{kind} ok → wp {next_wp_i}')
+            return
+
+        reason = f'{kind} failed'
+        if ok and next_wp_i is not None:
+            reason = f'{kind} failed — wp {next_wp_i} not in sequence'
+        elif text:
+            reason = f'{kind} failed — {text}'
+        self.get_logger().warn(f'{reason} — continuing normal sequence')
+        self._nav2_finish_action_then_next(reason)
 
     def _on_studio_detect_align_status(self, msg: String) -> None:
         try:
@@ -1139,6 +1350,34 @@ class StudioBridge(Node):
                 'front': '+X',
             }
 
+    def _detect_align_telemetry(self) -> Dict[str, Any]:
+        """Lean Detect+Align fields for SSE (no live bbox spam)."""
+        d = self._detect_align or {}
+        return {
+            'state': d.get('state') or 'idle',
+            'message': d.get('message') or '',
+            'aligned': bool(d.get('aligned')),
+            'class_name': d.get('class_name') or '',
+            'depth_m': d.get('depth_m'),
+            'last_ok': d.get('last_ok'),
+            'last_result': d.get('last_result') or '',
+            'oms_angle_deg': d.get('oms_angle_deg'),
+        }
+
+    def _oms_snapshot_lean(self) -> Dict[str, Any]:
+        snap = self._oms_snapshot()
+        # Drop bulky per-axis dicts from SSE when navigating.
+        if self.session.get('phase') == 'deploy':
+            lean = {
+                'ready': snap.get('ready'),
+                'source': snap.get('source'),
+                'homed': snap.get('homed'),
+                'state': snap.get('state'),
+                'angle_deg': snap.get('angle_deg'),
+            }
+            return lean
+        return snap
+
     def _oms_snapshot(self) -> Dict[str, Any]:
         standalone = bool(self.pm.oms_standalone_alive())
         nodes = bool(self.pm.oms_nodes_alive())
@@ -1183,6 +1422,77 @@ class StudioBridge(Node):
         except Exception as exc:
             return {'ok': False, 'error': str(exc), 'config': {}}
 
+    def _oms_home_and_sleep(self) -> Dict[str, Any]:
+        """Lazy-start OMS (with Nav Titan if needed), full home, then sleep.
+
+        Dashboard Home OMS button — keeps CPU low until mission WP wakes OMS.
+        """
+        if (
+            self.session.get('deploy_module') == 'nav'
+            and not self.session.get('oms_enabled', False)
+        ):
+            msg = (
+                'Tick "Enable OMS" before Start Nav2, then press Home OMS. '
+                'The tick does not start OMS — only Home OMS / a WP does.')
+            return {'ok': False, 'error': msg, 'message': msg}
+        # Commission always allowed; Home OMS also marks enabled for this session.
+        self.session['oms_enabled'] = True
+        robot = str(self.session.get('robot') or 'allterrain')
+        try:
+            self.pm.ensure_oms_with_nav(robot)
+        except Exception as exc:
+            return {'ok': False, 'error': str(exc), 'message': str(exc)}
+        # Wait until home axis status appears (node up).
+        t0 = time.time()
+        while time.time() - t0 < 12.0:
+            if self.pm.oms_nodes_alive():
+                break
+            time.sleep(0.25)
+        if not self.pm.oms_nodes_alive():
+            msg = 'OMS node did not start — check logs'
+            self._append_oms_log(msg)
+            return {'ok': False, 'error': msg, 'message': msg}
+
+        self._oms_set_power('wake')
+        time.sleep(0.3)
+        result_store = self._oms.setdefault('last_result', {})
+        result_store.pop('home', None)
+        cmd_id = f'studio_home_{int(time.time() * 1000)}'
+        payload = {'cmd_id': cmd_id, 'mode': 'home'}
+        self._oms_cmd_pubs['home'].publish(String(data=json.dumps(payload)))
+        self.get_logger().info(f'OMS Home OMS — cmd {cmd_id}')
+        self._append_oms_log(f'Home OMS started id={cmd_id}')
+
+        deadline = time.time() + 180.0
+        ok = False
+        message = 'timeout'
+        while time.time() < deadline:
+            res = result_store.get('home')
+            if isinstance(res, dict) and str(res.get('cmd_id') or '') == cmd_id:
+                ok = bool(res.get('success'))
+                message = str(res.get('message') or '')
+                break
+            # Also accept a home result without matching id (older OMS).
+            if isinstance(res, dict) and res.get('success') is not None and (
+                    time.time() - t0) > 2.0:
+                ok = bool(res.get('success'))
+                message = str(res.get('message') or 'home')
+                if 'cmd_id' not in res or not res.get('cmd_id'):
+                    break
+            time.sleep(0.1)
+
+        self._oms_set_power('sleep')
+        summary = (
+            f'Home OMS {"OK" if ok else "FAILED"} — {message}; OMS sleeping')
+        self._append_oms_log(summary)
+        self.get_logger().info(summary)
+        return {
+            'ok': bool(ok),
+            'homed': bool(ok),
+            'message': summary,
+            'oms': self._oms_snapshot(),
+        }
+
     def _oms_send_cmd(self, body: Dict[str, Any]) -> Dict[str, Any]:
         axis = str(body.get('axis') or body.get('mode') or '').strip().lower()
         aliases = {
@@ -1199,6 +1509,11 @@ class StudioBridge(Node):
             raise ValueError(
                 f'unknown axis {axis!r}. Use rotation, lift, linear, '
                 'vertical, rotation_servo, gripper, home')
+        # Full Home OMS flow (lazy start + sleep) for dashboard button.
+        if axis == 'home' and str(body.get('mode') or 'home').lower() in (
+                'home', 'allhome', 'boot'):
+            if body.get('sleep_after', True):
+                return self._oms_home_and_sleep()
         payload = dict(body)
         payload.pop('axis', None)
         mode = str(payload.get('mode') or 'goto').strip().lower()
@@ -1211,6 +1526,7 @@ class StudioBridge(Node):
         if axis in ('vertical', 'rotation_servo', 'gripper') and mode == 'goto':
             if 'angle_deg' not in payload:
                 raise ValueError(f'{axis} goto needs angle_deg')
+        self._ensure_oms_ready_for_work()
         self._oms_cmd_pubs[axis].publish(String(data=json.dumps(payload)))
         self.get_logger().info(f'OMS cmd {axis} {payload}')
         return {'ok': True, 'axis': axis, 'sent': payload}
@@ -1275,6 +1591,13 @@ class StudioBridge(Node):
         text = str(data.get('message') or '')
         self.get_logger().info(
             f'{mode} result ok={ok} {text}')
+        # Align+distance+OMS: after successful align_move, run OMS sequence.
+        if self._nav2_action_kind == 'align_move_oms' and ok and self._nav2_oms_wp:
+            reached_idx = max(0, self._nav2_seq_index - 1)
+            self._nav2_start_oms_action(self._nav2_oms_wp, reached_idx)
+            return
+        if self._nav2_action_kind == 'align_move_oms' and not ok:
+            self._nav2_oms_wp = None
         self._nav2_finish_action_then_next(
             f'{mode} {"ok" if ok else "failed"}')
 
@@ -1288,17 +1611,29 @@ class StudioBridge(Node):
         self._nav2_seq_index = reached_idx + 1
         self._nav2_seq_attempt = 1
         atype = str(self._wp_action(wp).get('type') or '')
+        heavy = atype in (
+            'detect_align', 'align', 'align_move', 'align_move_oms',
+            'oms', 'cobra_align', 'wait_light', 'lookup_ocr', 'lookup_aruco')
+        if heavy and not self._commission.get('active'):
+            self._nav2_pause_heavy(f'wp action {atype}')
         if atype == 'detect_align':
             self._nav2_start_detect_align(wp, reached_idx)
             return
-        if atype in ('align', 'align_move'):
+        if atype in ('align', 'align_move', 'align_move_oms'):
             self._nav2_start_align_action(wp, reached_idx, atype)
+            return
+        if atype == 'oms':
+            self._ensure_oms_ready_for_work()
+            self._nav2_start_oms_action(wp, reached_idx)
             return
         if atype == 'cobra_align':
             self._nav2_start_cobra_action(wp, reached_idx)
             return
         if atype == 'wait_light':
             self._nav2_start_wait_light(wp, reached_idx)
+            return
+        if atype in ('lookup_ocr', 'lookup_aruco'):
+            self._nav2_start_lookup_action(wp, reached_idx, atype)
             return
         wait_s = self._nav2_wait_seconds(wp)
         if wait_s <= 0.0:
@@ -1342,6 +1677,14 @@ class StudioBridge(Node):
                 self._detect_cancel_pub.publish(Empty())
             except Exception:
                 pass
+            if kind in ('lookup_ocr', 'lookup_aruco'):
+                try:
+                    self._lookup_cancel_pub.publish(Empty())
+                except Exception:
+                    pass
+                self._lookup_camera_off()
+            if kind in ('oms', 'align_move_oms'):
+                self._nav2_cancel_oms_job()
             self._nav2_finish_action_then_next(f'{kind} timeout')
             return
         if self._nav2_wait_until <= 0.0:
@@ -1673,20 +2016,36 @@ class StudioBridge(Node):
             except Exception as exc:
                 self._commission_log(f'Nav2 {label} {name} error: {exc}')
         self._commission['nav_paused'] = not activate
+        self._nav2_cpu_paused = not activate
+
+    def _nav2_pause_heavy(self, reason: str = '') -> None:
+        """Deactivate planner/controller/bt while a WP action runs (CPU save)."""
+        if self._nav2_cpu_paused:
+            return
+        self._cancel_nav2_goal_only()
+        self.get_logger().info(
+            f'Pause Nav2 heavy nodes{(": " + reason) if reason else ""}')
+        self._nav2_lifecycle_set(False)
+
+    def _nav2_resume_heavy(self) -> None:
+        if not self._nav2_cpu_paused and not self._commission.get('nav_paused'):
+            return
+        self.get_logger().info('Resume Nav2 heavy nodes')
+        self._nav2_lifecycle_set(True)
+        time.sleep(0.35)
 
     def _commission_pause_nav(self) -> None:
         if self._commission.get('nav_paused'):
             return
-        self._cancel_nav2_goal_only()
         self._commission_log('Pause Nav2 planner/controller (CPU save)')
-        self._nav2_lifecycle_set(False)
+        self._nav2_pause_heavy('commission WP')
 
     def _commission_resume_nav(self) -> None:
-        if not self._commission.get('nav_paused'):
+        if not self._commission.get('nav_paused') and not self._nav2_cpu_paused:
             return
         self._commission_log('Resume Nav2 planner/controller')
-        self._nav2_lifecycle_set(True)
-        time.sleep(0.4)
+        self._nav2_resume_heavy()
+        time.sleep(0.1)
 
     def _commission_current_pick_wp(self) -> Optional[dict]:
         indexed = self._commission.get('indexed') or {}
@@ -1761,7 +2120,14 @@ class StudioBridge(Node):
         phase = str(self._commission.get('phase') or '')
         if phase == 'nav_pick':
             self._commission_pause_nav()
-            self._commission_start_yaw_align(kind='pick')
+            mode = str(
+                (self._commission.get('config') or {}).get('pick_mode')
+                or 'detect_oms')
+            if mode == 'align_move_detect_oms':
+                self._commission_start_align_move_pick()
+            else:
+                # Mode 1: Detect+Align OMS pick (optional brief yaw first).
+                self._commission_start_yaw_align(kind='pick')
         elif phase == 'nav_drop':
             self._commission_pause_nav()
             self._commission_start_yaw_align(kind='drop')
@@ -1770,6 +2136,40 @@ class StudioBridge(Node):
         else:
             self._commission_log(f'unexpected nav reach in phase {phase}')
             self._commission_finish()
+
+    def _commission_start_align_move_pick(self) -> None:
+        """Mode 2: Align + distance, then oms_pick."""
+        wp = self._commission_current_pick_wp()
+        if wp is None:
+            self._commission_skip_pick('no pick waypoint')
+            return
+        pick = str(self._commission.get('current_pick') or 'pick')
+        self._commission_set_phase('align_move_pick', pick)
+        cfg = self._commission.get('config') or {}
+        try:
+            dist = float(wp.get('pick_distance_m', cfg.get('pick_distance_m', 0.15)))
+        except (TypeError, ValueError):
+            dist = 0.15
+        dist = min(5.0, max(0.03, dist))
+        try:
+            yaw = float(wp.get('yaw', 0.0) or 0.0)
+        except (TypeError, ValueError):
+            yaw = 0.0
+        cmd_id = f'cm_am_{self._nav2_seq_gen}_{int(time.time() * 1000)}'
+        payload = {
+            'cmd_id': cmd_id,
+            'mode': 'align_move',
+            'yaw': yaw,
+            'distance_m': dist,
+            'yaw_tolerance_deg': self._commission_yaw_tol(),
+        }
+        timeout = self._nav2_action_timeout('align_move', {'distance_m': dist})
+        self._align_cmd_pub.publish(String(data=json.dumps(payload)))
+        self._nav2_action_cmd_id = cmd_id
+        self._nav2_action_kind = 'align_move'
+        self._nav2_action_deadline = time.time() + timeout + 15.0
+        self._commission_log(
+            f'{pick} align+move dist={dist:.3f}m yaw={math.degrees(yaw):.1f}°')
 
     def _commission_start_yaw_align(self, kind: str = 'pick') -> None:
         if kind == 'drop':
@@ -1816,6 +2216,7 @@ class StudioBridge(Node):
         attempt = int(self._commission.get('pick_retries') or 0) + 1
         self._commission_set_phase('oms_pick', f'{pick} try {attempt}')
         self._commission['last_detect_ok'] = False
+        self._ensure_oms_ready_for_work()
         cmd_id = f'cm_pick_{self._nav2_seq_gen}_{int(time.time() * 1000)}'
         payload = {
             'cmd_id': cmd_id,
@@ -1831,21 +2232,102 @@ class StudioBridge(Node):
             f'OMS pick at {pick} lift={lift_mm:.0f}mm (try {attempt})')
 
     def _commission_start_oms_drop(self) -> None:
+        """Run per-drop OMS sequence from the drop waypoint (dashboard)."""
         drop = str(self._commission.get('target_drop') or 'drop')
+        indexed = self._commission.get('indexed') or {}
+        drop_wp = resolve_drop_wp(indexed.get('drops') or {}, drop) or {}
+        action = drop_wp.get('action') if isinstance(drop_wp, dict) else {}
+        if not isinstance(action, dict):
+            action = {}
+        sequence = action.get('sequence')
+        if not sequence:
+            # Fallback: home only (legacy stub behaviour).
+            sequence = ['home']
         self._commission_set_phase('oms_drop', drop)
         cmd_id = f'cm_drop_{self._nav2_seq_gen}_{int(time.time() * 1000)}'
-        payload = {
-            'cmd_id': cmd_id,
-            'mode': 'oms_drop',
-            'timeout_sec': 180.0,
-        }
-        self._detect_cmd_pub.publish(String(data=json.dumps(payload)))
         self._nav2_action_cmd_id = cmd_id
         self._nav2_action_kind = 'oms_drop'
-        self._nav2_action_deadline = time.time() + 200.0
+        try:
+            timeout = float(action.get('timeout_sec', 120.0) or 120.0)
+        except (TypeError, ValueError):
+            timeout = 120.0
+        timeout = min(600.0, max(10.0, timeout))
+        self._nav2_action_deadline = time.time() + timeout + 15.0
         self._commission_log(
-            f'Drop at {drop} — yaw done, OMS home stub '
-            f'(see oms_drop_sequence.py)')
+            f'Drop {drop} — OMS sequence ({len(sequence) if isinstance(sequence, list) else "?"} steps)')
+        self._nav2_oms_cancel.clear()
+        self._ensure_oms_ready_for_work()
+        self._nav2_oms_thread = threading.Thread(
+            target=self._commission_run_drop_oms_job,
+            args=(cmd_id, drop_wp if isinstance(drop_wp, dict) else {}),
+            daemon=True,
+            name='cm_drop_oms',
+        )
+        self._nav2_oms_thread.start()
+
+    def _commission_run_drop_oms_job(self, cmd_id: str, drop_wp: dict) -> None:
+        from skill23_studio.nav.wp_oms_sequence import run_wp_oms_sequence
+        action = drop_wp.get('action') if isinstance(drop_wp.get('action'), dict) else {}
+        result_store = self._oms.setdefault('last_result', {})
+        self._oms_set_power('wake')
+        time.sleep(0.2)
+
+        def _log(msg: str, level: str = 'info') -> None:
+            if level == 'warn':
+                self.get_logger().warn(f'[cm_drop_oms] {msg}')
+            else:
+                self.get_logger().info(f'[cm_drop_oms] {msg}')
+
+        try:
+            ok, message = run_wp_oms_sequence(
+                pubs=self._oms_cmd_pubs,
+                result_store=result_store,
+                sequence=action.get('sequence') or ['home'],
+                lift_mm=float(action.get('lift_mm', 0.0) or 0.0),
+                linear_mm=float(action.get('linear_mm', 0.0) or 0.0),
+                rotation_deg=float(action.get('rotation_deg', 0.0) or 0.0),
+                wait_sec=float(action.get('wait_sec', 1.0) or 1.0),
+                axis_timeout_sec=float(action.get('axis_timeout_sec', 60.0) or 60.0),
+                home_timeout_sec=float(action.get('home_timeout_sec', 180.0) or 180.0),
+                log=_log,
+                cancel_check=self._nav2_oms_cancel.is_set,
+            )
+        except Exception as exc:
+            ok, message = False, f'drop OMS error: {exc}'
+            self.get_logger().error(f'[cm_drop_oms] {message}')
+        finally:
+            self._oms_set_power('sleep')
+
+        if self._nav2_action_cmd_id != cmd_id:
+            return
+        self._commission['last_detect_ok'] = bool(ok)
+        self.get_logger().info(f'drop OMS ok={ok} {message}')
+        self._commission_on_action_done(
+            f'oms_drop {"ok" if ok else "failed"}')
+
+    def _ensure_oms_ready_for_work(self) -> None:
+        """Lazy-start OMS alongside Nav Titan if needed, then wake."""
+        if (
+            self.session.get('deploy_module') == 'nav'
+            and not self.session.get('oms_enabled', False)
+        ):
+            raise RuntimeError(
+                'OMS not enabled — tick "Enable OMS" before Start Nav2 '
+                '(tick does not start OMS; Home OMS / WP starts it)')
+        robot = str(self.session.get('robot') or 'allterrain')
+        try:
+            if not self.pm.oms_nodes_alive():
+                self.pm.ensure_oms_with_nav(robot)
+                # Give node a moment to advertise.
+                t0 = time.time()
+                while time.time() - t0 < 8.0:
+                    if self.pm.oms_nodes_alive():
+                        break
+                    time.sleep(0.2)
+            self._oms_set_power('wake')
+        except Exception as exc:
+            self.get_logger().warn(f'ensure OMS failed: {exc}')
+            raise
 
     def _commission_go_to_drop(self) -> None:
         indexed = self._commission.get('indexed') or {}
@@ -1927,6 +2409,13 @@ class StudioBridge(Node):
                     self._commission_start_yaw_align(kind='pick')
                     return
             self._commission['yaw_retries'] = 0
+            self._ensure_oms_ready_for_work()
+            self._commission_start_oms_pick()
+            return
+        if phase == 'align_move_pick':
+            if 'failed' in reason.lower() or 'timeout' in reason.lower():
+                self._commission_log(f'Align+move failed: {reason} — trying oms_pick anyway')
+            self._ensure_oms_ready_for_work()
             self._commission_start_oms_pick()
             return
         if phase == 'yaw_drop':
@@ -1942,6 +2431,11 @@ class StudioBridge(Node):
         if phase == 'oms_pick':
             detect_ok = bool(self._commission.get('last_detect_ok'))
             obj = str(self._commission.get('detected_object') or '')
+            # Sleep OMS after pick until drop sequence.
+            try:
+                self._oms_set_power('sleep')
+            except Exception:
+                pass
             if detect_ok and obj:
                 drop_sticker = drop_sticker_for_object(
                     self._commission.get('config') or {}, obj)
@@ -1963,6 +2457,7 @@ class StudioBridge(Node):
             max_r = self._commission_max_retries()
             self._commission_log(f'Pick failed ({retries}/{max_r}): {reason}')
             if retries < max_r:
+                self._ensure_oms_ready_for_work()
                 self._commission_start_oms_pick()
             else:
                 self._commission_skip_pick('pick failed after retries')
@@ -2818,9 +3313,9 @@ class StudioBridge(Node):
             'warnings': warnings,
             'robot_dims': self._robot_dims(),
             'logs': self._process_logs(),
-            'detect_align': dict(self._detect_align),
+            'detect_align': self._detect_align_telemetry(),
             'commission': self._commission_snapshot(),
-            'oms': self._oms_snapshot(),
+            'oms': self._oms_snapshot_lean(),
             'hw_test': self._hw_store.snapshot(only_live=True) if self._hw_store.active else {
                 'ok': True, 'active': False, 'groups': {}, 'live_channels': 0,
             },
@@ -3560,14 +4055,18 @@ class StudioBridge(Node):
             module = str(body.get('module') or '').strip().lower()
             if module in ('commission', 'commissioning', 'detect'):
                 start_camera = True
-                with_align = False
+                with_align = True  # yaw / align_move for pick modes
                 with_cobra = False
+                # Tick meaning for OMS: enabled for Home OMS / WP — never launch with stack.
+                oms_enabled = True
                 module = 'commission'
             elif module in ('nav', 'navigation', 'localisation', 'localization'):
-                start_camera = False
+                # Honor dashboard camera tick (streams off until lookup WP).
+                start_camera = bool(body.get('start_camera', False))
                 # Dashboard checkboxes (default off).
                 with_align = bool(body.get('with_align')) if 'with_align' in body else False
                 with_cobra = bool(body.get('with_cobra')) if 'with_cobra' in body else False
+                oms_enabled = bool(body.get('with_oms')) if 'with_oms' in body else False
                 module = 'nav'
             else:
                 module = 'commission' if start_camera else 'nav'
@@ -3577,17 +4076,29 @@ class StudioBridge(Node):
                 with_cobra = (
                     bool(body.get('with_cobra'))
                     if 'with_cobra' in body else False)
+                oms_enabled = (
+                    bool(body.get('with_oms'))
+                    if 'with_oms' in body else bool(start_camera))
             if module == 'commission' or start_camera:
                 with_cobra = False
+                if module == 'commission':
+                    oms_enabled = True
+                    with_align = True
             if 'start_detect_align' in body:
                 with_detect_align = bool(body.get('start_detect_align'))
             else:
-                with_detect_align = bool(start_camera)
+                # Commission defaults Detect+Align on; nav camera tick does not.
+                with_detect_align = bool(start_camera) and module == 'commission'
             with_detect_align = with_detect_align and start_camera
-            # Align / Cobra nodes are only for nav (no camera).
-            if start_camera:
-                with_align = False
+            with_lookup = bool(start_camera) and module == 'nav'
+            if start_camera and module != 'commission':
                 with_cobra = False
+            if start_camera and module == 'commission':
+                with_cobra = False
+                oms_enabled = True
+                with_align = True
+            # Never launch OMS inside Nav2/commission — Home OMS / WP lazy-starts it.
+            with_oms_launch = False
             stack = 'nav2'
             yaml_path = maps.map_yaml_path(name)
             if not yaml_path.is_file():
@@ -3605,12 +4116,14 @@ class StudioBridge(Node):
             mp = self.pm.start_nav(
                 robot, str(yaml_path),
                 with_camera=start_camera, with_align=with_align,
-                with_cobra=with_cobra,
-                with_detect_align=with_detect_align, stack=stack)
+                with_cobra=with_cobra, with_oms=with_oms_launch,
+                with_detect_align=with_detect_align,
+                with_lookup=with_lookup, stack=stack)
             self.session['phase'] = 'deploy'
             self.session['mode'] = 'arena'
             self.session['nav_stack'] = stack
             self.session['deploy_module'] = module
+            self.session['oms_enabled'] = bool(oms_enabled)
             self._clear_nav_paths()
             self._sim_path = None
             self._sim_result = {}
@@ -3626,6 +4139,7 @@ class StudioBridge(Node):
             self.get_logger().info(
                 f'Deploy START module={module} stack={stack} robot={robot} '
                 f'camera={start_camera} align={with_align} cobra={with_cobra} '
+                f'oms_enabled={oms_enabled} oms_launch={with_oms_launch} '
                 f'detect_align={with_detect_align} map={yaml_path} '
                 f'pid={mp.popen.pid} log={mp.log_path} cmd={" ".join(mp.cmd)}')
             return {
@@ -3636,6 +4150,9 @@ class StudioBridge(Node):
                 'camera': start_camera,
                 'with_align': with_align,
                 'with_cobra': with_cobra,
+                'with_oms': bool(oms_enabled),
+                'oms_lazy': True,
+                'oms_launched': False,
                 'with_detect_align': with_detect_align,
                 'camera_after_nav_startup': False,
                 'pid': mp.popen.pid,

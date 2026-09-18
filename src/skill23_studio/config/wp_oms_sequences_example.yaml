@@ -1,0 +1,27 @@
+# Example per-WP OMS sequences for Navigation (stored on each waypoint in the dashboard).
+# Dashboard action types:
+#   oms            — wake OMS → run sequence → sleep
+#   align_move_oms — Align+distance then same OMS sequence
+#
+# Tick "Start Nav2 with OMS" (and Align for align_move_oms) when deploying.
+# Sequences are edited per waypoint in the WP tasks panel — this file is a reference only.
+
+# Example waypoint.action payloads (JSON / waypoints.json):
+#
+# oms_only:
+#   type: oms
+#   sequence: [home, lift_goto, gripper_open, wait, gripper_close, lift_home]
+#   lift_mm: 40
+#   linear_mm: 80
+#   rotation_deg: 0
+#   wait_sec: 1.0
+#   timeout_sec: 120
+#
+# align_then_oms:
+#   type: align_move_oms
+#   distance_m: 0.15
+#   sequence: [home, linear_goto, gripper_open, wait, gripper_close, linear_home]
+#   lift_mm: 40
+#   linear_mm: 90
+#   wait_sec: 0.5
+#   timeout_sec: 180

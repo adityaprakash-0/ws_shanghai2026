@@ -104,14 +104,21 @@ def _setup(context, *args, **kwargs):
         '1', 'true', 'yes', 'on')
     with_cobra = LaunchConfiguration('with_cobra').perform(context).lower() in (
         '1', 'true', 'yes', 'on')
+    with_oms = LaunchConfiguration('with_oms').perform(context).lower() in (
+        '1', 'true', 'yes', 'on')
     with_detect_align = LaunchConfiguration('with_detect_align').perform(
         context).lower() in ('1', 'true', 'yes', 'on')
+    with_lookup = LaunchConfiguration('with_lookup').perform(context).lower() in (
+        '1', 'true', 'yes', 'on')
     # Detect+Align only makes sense with the camera stack.
     with_detect_align = with_detect_align and with_camera
-    # Align / Cobra are nav-only helpers (no camera stack).
+    with_lookup = with_lookup and with_camera
+    # Align / Cobra are nav-only helpers by default.
+    # Commissioning (camera) may still request Align + optional OMS.
     if with_camera:
-        with_align = False
         with_cobra = False
+        # Do not force-clear with_align / with_oms — commission needs yaw Align;
+        # OMS stays off unless with_oms:=true (or Home OMS lazy-starts it).
     try:
         camera_stabilize = float(
             LaunchConfiguration('camera_stabilize_sec').perform(context))
@@ -233,6 +240,24 @@ def _setup(context, *args, **kwargs):
                     parameters=[cobra_yaml]),
             ],
         ))
+    if with_oms:
+        # Same Titan control_server as Nav2 — only the OMS node (no second Titan).
+        # start_asleep:=true → ~0–1% CPU until /oms/power wake at a waypoint.
+        actions.append(TimerAction(
+            period=detect_delay + 0.6,
+            actions=[
+                LogInfo(msg='[studio_nav2] OMS (asleep until WP sequence)'),
+                IncludeLaunchDescription(
+                    PythonLaunchDescriptionSource(os.path.join(
+                        get_package_share_directory('oms'),
+                        'launch', 'oms.launch.py')),
+                    launch_arguments={
+                        'auto_home': 'false',
+                        'start_asleep': 'true',
+                    }.items(),
+                ),
+            ],
+        ))
     if with_camera:
         # Camera + OMS (+ optional Detect+Align via with_detect_align)
         da_actions = [
@@ -253,14 +278,43 @@ def _setup(context, *args, **kwargs):
         else:
             da_actions.append(LogInfo(
                 msg='[studio_nav2] Detect+Align node skipped (with_detect_align:=false)'))
-        da_actions.extend([
-            LogInfo(msg='[studio_nav2] OMS rotation (Titan1 M2)'),
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(os.path.join(
-                    get_package_share_directory('oms'),
-                    'launch', 'oms.launch.py')),
-            ),
-        ])
+        # OMS is NOT auto-started with camera (CPU). Use with_oms:=true or
+        # Studio "Home OMS" which lazy-starts the node asleep after homing.
+        if with_oms:
+            da_actions.extend([
+                LogInfo(msg='[studio_nav2] OMS (asleep until Home OMS / WP)'),
+                IncludeLaunchDescription(
+                    PythonLaunchDescriptionSource(os.path.join(
+                        get_package_share_directory('oms'),
+                        'launch', 'oms.launch.py')),
+                    launch_arguments={
+                        'auto_home': 'false',
+                        'start_asleep': 'true',
+                    }.items(),
+                ),
+            ])
+        else:
+            da_actions.append(LogInfo(
+                msg='[studio_nav2] OMS skipped — press Home OMS when needed'))
+        if with_lookup:
+            da_actions.extend([
+                LogInfo(msg='[studio_nav2] Lookup OCR/ArUco (idle until WP cmd)'),
+                _node(
+                    'skill23_lookup', 'lookup_node', 'studio_lookup',
+                    parameters=[{
+                        'warmup_ocr': True,
+                        'confirm_frames': 3,
+                        'retries': 3,
+                        'timeout_sec': 25.0,
+                    }],
+                    output='both',
+                    emulate_tty=True,
+                    additional_env={'PYTHONUNBUFFERED': '1'},
+                ),
+            ])
+        else:
+            da_actions.append(LogInfo(
+                msg='[studio_nav2] Lookup OCR/ArUco skipped (with_lookup:=false)'))
         actions.append(TimerAction(
             period=detect_delay,
             actions=da_actions,
@@ -358,8 +412,14 @@ def generate_launch_description():
             'with_cobra', default_value='false',
             description='Navigation: Cobra reflectance align node (no camera)'),
         DeclareLaunchArgument(
+            'with_oms', default_value='false',
+            description='Navigation: start OMS asleep (wake only at WP OMS tasks)'),
+        DeclareLaunchArgument(
             'with_detect_align', default_value='true',
             description='With camera: also start Detect+Align node (idle until WP cmd)'),
+        DeclareLaunchArgument(
+            'with_lookup', default_value='false',
+            description='With camera: start Lookup OCR/ArUco node (idle until WP cmd)'),
         DeclareLaunchArgument(
             'camera_stabilize_sec', default_value='12.0',
             description='Seconds after camera node before Nav2 starts'),

@@ -16,6 +16,13 @@
  * topic (publishes): <name>/state (std_msgs/String)
  *   current state string, e.g. "off", "red:solid", "green:blink:1.0", "yellow:blink_hw"
  *   published on every state change and at 1 hz as a heartbeat.
+ *
+ * Optional cmd_vel drive indicator (params under light_tower.*):
+ *   follow_cmd_vel (bool, default true)
+ *     true  → solid green while |cmd_vel| > threshold, solid red when stopped
+ *     false → disable this behaviour (SetData / wait_light patterns still work)
+ *   To remove later: set follow_cmd_vel: false in hw_params, or change
+ *   moving_color / stopped_color (e.g. yellow / off).
  */
 
 #ifndef LIGHT_TOWER_COMPONENT_HPP
@@ -24,6 +31,7 @@
 #include <memory>
 #include <string>
 
+#include <geometry_msgs/msg/twist.hpp>
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/string.hpp>
 
@@ -46,7 +54,13 @@ public:
                int pin_green,
                int pin_yellow,
                int pin_buzzer,
-               double default_blink_hz);
+               double default_blink_hz,
+               bool follow_cmd_vel = true,
+               const std::string &cmd_vel_topic = "/cmd_vel",
+               double cmd_vel_eps = 0.02,
+               double override_hold_sec = 2.0,
+               const std::string &moving_color = "green",
+               const std::string &stopped_color = "red");
 
     ~LightTower();
 
@@ -58,10 +72,21 @@ private:
     bool        blink_state_{false};
     double      default_blink_hz_{1.0};
 
+    // --- cmd_vel → green/red (disable via follow_cmd_vel:=false) ---
+    bool        follow_cmd_vel_{true};
+    double      cmd_vel_eps_{0.02};
+    double      override_hold_sec_{2.0};
+    std::string moving_color_{"green"};
+    std::string stopped_color_{"red"};
+    bool        last_moving_{false};
+    bool        have_motion_state_{false};
+    rclcpp::Time override_until_{0, 0, RCL_ROS_TIME};
+
     rclcpp::Service<studica_control::srv::SetData>::SharedPtr service_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr       state_pub_;
     rclcpp::TimerBase::SharedPtr                              heartbeat_timer_;
     rclcpp::TimerBase::SharedPtr                              blink_timer_;
+    rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_sub_;
 
     void cmd_callback(const std::shared_ptr<studica_control::srv::SetData::Request>  request,
                             std::shared_ptr<studica_control::srv::SetData::Response> response);
@@ -72,6 +97,8 @@ private:
     void        cancel_blink();
     std::string state_string() const;
     void        publish_state();
+    void        on_cmd_vel(const geometry_msgs::msg::Twist::SharedPtr msg);
+    bool        override_active() const;
 };
 
 } // namespace studica_control

@@ -163,6 +163,13 @@ control_server:
       pin_yellow: 3
       pin_buzzer: 4
       default_blink_hz: 1.0
+      # Drive indicator (active when enabled: true): green while moving, red stopped.
+      follow_cmd_vel: true
+      cmd_vel_topic: "/cmd_vel"
+      cmd_vel_eps: 0.02
+      override_hold_sec: 2.0
+      moving_color: "green"
+      stopped_color: "red"
 
     colore:
       enabled: false

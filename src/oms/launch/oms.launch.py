@@ -34,6 +34,10 @@ def generate_launch_description():
             'linear_motion_log': LaunchConfiguration('linear_motion_log'),
             'auto_home': ParameterValue(
                 LaunchConfiguration('auto_home'), value_type=bool),
+            # Nav missions: start_asleep:=true so OMS idles at ~0–1% CPU until
+            # Studio publishes /oms/power {"mode":"wake"} at a waypoint.
+            'start_asleep': ParameterValue(
+                LaunchConfiguration('start_asleep'), value_type=bool),
         }],
         output='screen',
         emulate_tty=True,
@@ -46,6 +50,9 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'auto_home', default_value='false',
             description='if true, run boot home; default false — Home only from Studio'),
+        DeclareLaunchArgument(
+            'start_asleep', default_value='false',
+            description='Nav: true = low-CPU sleep until /oms/power wake'),
         LogInfo(msg=[f'[oms] config → {yaml_path}']),
         LogInfo(msg=['[oms] rotation log → ', LaunchConfiguration('motion_log')]),
         LogInfo(msg=['[oms] lift log → ', LaunchConfiguration('lift_motion_log')]),

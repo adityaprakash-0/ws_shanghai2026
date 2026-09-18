@@ -45,6 +45,7 @@ setup(
             'studio_detect_align = skill23_studio.nav.detect_align_node:main',
             'studio_detect_align_test = skill23_studio.nav.detect_align_test_node:main',
             'studio_detect_align_oms_test = skill23_studio.nav.detect_align_oms_test_node:main',
+            'studio_encoder_distance_template = skill23_studio.nav.encoder_distance_template_node:main',
             'studio_stop_stack = skill23_studio.process_manager:main_stop',
         ],
     },

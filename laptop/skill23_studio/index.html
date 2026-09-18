@@ -314,11 +314,25 @@
               <h4>Commissioning</h4>
               <p class="hint commission-hint">
                 Mark each WP as <strong>Pick</strong>, <strong>Drop</strong>, or <strong>Home</strong>.
-                Set visit count + lift (mm) on picks. Assign objects → drops. Start Nav2+camera, then Start mission.
+                Set visit count + lift on picks; OMS drop sequence on drops.
+                Start Nav2+camera (OMS stays off until <em>Home OMS</em>), then Start mission.
               </p>
-              <label class="hint" style="display:flex;align-items:center;gap:0.4rem;margin:0.35rem 0 0.5rem">
+              <label class="hint" style="display:flex;align-items:center;gap:0.4rem;margin:0.35rem 0 0.35rem">
                 <input type="checkbox" id="chkAutoDetectAlign" checked>
-                Auto-start Detect+Align with stack
+                Auto-start Detect+Align with stack (camera streams stay off until WP)
+              </label>
+              <div class="deploy-dock-label commission-subhead">Pick mode</div>
+              <label class="hint" style="display:flex;align-items:center;gap:0.4rem;margin:0.2rem 0">
+                <input type="radio" name="cmPickMode" id="cmPickMode1" value="detect_oms" checked>
+                Mode 1 — Detect+Align OMS pick → object drop
+              </label>
+              <label class="hint" style="display:flex;align-items:center;gap:0.4rem;margin:0.2rem 0 0.45rem">
+                <input type="radio" name="cmPickMode" id="cmPickMode2" value="align_move_detect_oms">
+                Mode 2 — Align+distance → Detect+Align OMS → drop
+              </label>
+              <label class="hint" id="cmPickDistRow" style="display:none;margin:0 0 0.45rem">
+                Default pick distance (m)
+                <input type="number" min="0.03" max="5" step="0.01" id="cmPickDistance" value="0.15" style="width:5rem;margin-left:0.35rem">
               </label>
               <div id="commissionStickerSummary" class="commission-summary"></div>
               <div class="deploy-dock-label commission-subhead">Object → drop</div>
@@ -326,7 +340,7 @@
               <div class="deploy-grid deploy-grid-2 deploy-grid-compact" style="margin-top:0.35rem">
                 <button type="button" class="btn btn-ghost btn-compact" id="btnCommissionSave">Save</button>
                 <button type="button" class="btn btn-saffron btn-compact" id="btnCommissionHomeOms"
-                  title="Full OMS home sequence">Home OMS</button>
+                  title="Lazy-start OMS, full home, then sleep">Home OMS</button>
               </div>
               <dl class="commission-stats">
                 <div><dt>Phase</dt><dd id="cmPhase">idle</dd></div>
@@ -360,10 +374,25 @@
               Start Nav2 with Align node
             </label>
             <label class="hint deploy-mission-seq" id="navCobraRow"
-              style="display:flex;align-items:center;gap:0.4rem;margin:0.15rem 0 0.35rem">
+              style="display:flex;align-items:center;gap:0.4rem;margin:0.15rem 0 0.2rem">
               <input type="checkbox" id="chkStartCobraNav">
               Start Nav2 with Cobra align node
             </label>
+            <label class="hint deploy-mission-seq" id="navOmsRow"
+              style="display:flex;align-items:center;gap:0.4rem;margin:0.15rem 0 0.2rem">
+              <input type="checkbox" id="chkStartOmsNav">
+              Enable OMS (tick only — does <strong>not</strong> start OMS with Nav2)
+            </label>
+            <label class="hint deploy-mission-seq" id="navCameraRow"
+              style="display:flex;align-items:center;gap:0.4rem;margin:0.15rem 0 0.2rem">
+              <input type="checkbox" id="chkStartCameraNav">
+              Start Nav2 with camera (streams off — for Lookup OCR / ArUco)
+            </label>
+            <button type="button" class="btn btn-saffron btn-compact deploy-mission-seq" id="btnNavHomeOms"
+              title="Lazy-start OMS, full home, then sleep. Requires OMS tick above."
+              style="width:100%;margin:0.15rem 0 0.35rem">
+              Home OMS
+            </button>
             <div id="wpTaskList" class="wp-task-list"></div>
           </div>
 
@@ -545,6 +574,6 @@
   <!-- Bump ?v= whenever these change so browsers cannot serve a stale build. -->
   <script src="js/api.js?v=20260905navdash1"></script>
   <script src="js/map.js?v=20260905navdash1"></script>
-  <script src="js/app.js?v=20260905navdash1"></script>
+  <script src="js/app.js?v=20260918lookup1"></script>
 </body>
 </html>

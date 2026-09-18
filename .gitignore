@@ -1,3 +1,9 @@
 build/
 install/
 log/
+
+# leftover nested-git cleanup (sandbox RO hooks)
+src/m_explore_ros2.broken_nest/
+src/m_explore_ros2.bak_git/
+
+.ros/

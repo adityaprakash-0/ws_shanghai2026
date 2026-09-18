@@ -1289,6 +1289,18 @@
           task = ' · align yaw';
         } else if (w.action && w.action.type === 'align_move') {
           task = ` · align+${Number(w.action.distance_m) || 0}m`;
+        } else if (w.action && w.action.type === 'oms') {
+          task = ' · OMS';
+        } else if (w.action && w.action.type === 'align_move_oms') {
+          task = ` · align+${Number(w.action.distance_m) || 0}m+OMS`;
+        } else if (w.action && w.action.type === 'cobra_align') {
+          task = ' · cobra';
+        } else if (w.action && w.action.type === 'wait_light') {
+          task = ' · wait+light';
+        } else if (w.action && w.action.type === 'lookup_ocr') {
+          task = ' · lookup OCR';
+        } else if (w.action && w.action.type === 'lookup_aruco') {
+          task = ' · lookup ArUco';
         }
         return `<li>${i + 1}.${tag} (${w.x}, ${w.y}, ${w.z ?? 0}) ${Math.round(((w.yaw || 0) * 180) / Math.PI)}°`
           + ` (${(w.yaw || 0).toFixed(2)} rad)${task}</li>`;
@@ -1457,6 +1469,12 @@
     if (navAlignRow) navAlignRow.style.display = showNavNodes ? '' : 'none';
     const navCobraRow = $('navCobraRow');
     if (navCobraRow) navCobraRow.style.display = showNavNodes ? '' : 'none';
+    const navOmsRow = $('navOmsRow');
+    if (navOmsRow) navOmsRow.style.display = showNavNodes ? '' : 'none';
+    const navCameraRow = $('navCameraRow');
+    if (navCameraRow) navCameraRow.style.display = showNavNodes ? '' : 'none';
+    const btnNavHomeOms = $('btnNavHomeOms');
+    if (btnNavHomeOms) btnNavHomeOms.style.display = showNavNodes ? '' : 'none';
     // Always refresh WP task cards in both Navigation and Commissioning.
     renderWpTaskEditors();
     if (isCommission()) {
@@ -1557,7 +1575,33 @@
     if (!box || !isCommission()) return;
     const cfg = state.commissionConfig || {
       drop_assignments: Object.fromEntries(COMMISSION_OBJECTS.map((o) => [o, ''])),
+      pick_mode: 'detect_oms',
+      pick_distance_m: 0.15,
     };
+    const mode = cfg.pick_mode || 'detect_oms';
+    const m1 = $('cmPickMode1');
+    const m2 = $('cmPickMode2');
+    if (m1) m1.checked = mode !== 'align_move_detect_oms';
+    if (m2) m2.checked = mode === 'align_move_detect_oms';
+    const distRow = $('cmPickDistRow');
+    const distInp = $('cmPickDistance');
+    if (distRow) distRow.style.display = mode === 'align_move_detect_oms' ? '' : 'none';
+    if (distInp) distInp.value = String(Math.max(0.03, Number(cfg.pick_distance_m) || 0.15));
+    const syncMode = () => {
+      if (!state.commissionConfig) state.commissionConfig = { drop_assignments: {} };
+      const v = (m2 && m2.checked) ? 'align_move_detect_oms' : 'detect_oms';
+      state.commissionConfig.pick_mode = v;
+      if (distRow) distRow.style.display = v === 'align_move_detect_oms' ? '' : 'none';
+    };
+    if (m1) m1.onchange = syncMode;
+    if (m2) m2.onchange = syncMode;
+    if (distInp) {
+      distInp.onchange = () => {
+        if (!state.commissionConfig) state.commissionConfig = {};
+        state.commissionConfig.pick_distance_m = Math.max(
+          0.03, Math.min(5, Number(distInp.value) || 0.15));
+      };
+    }
     const drops = listDropStickers();
     const assigns = cfg.drop_assignments || {};
     box.innerHTML = COMMISSION_OBJECTS.map((obj) => {
@@ -1634,7 +1678,83 @@
       return `align + ${Math.max(0.03, Number(act.distance_m) || 0.15)} m`;
     }
     if (act.type === 'cobra_align') return 'cobra align';
+    if (act.type === 'oms') {
+      const n = Array.isArray(act.sequence) ? act.sequence.length : 0;
+      return `OMS (${n} steps)`;
+    }
+    if (act.type === 'align_move_oms') {
+      const n = Array.isArray(act.sequence) ? act.sequence.length : 0;
+      return `align+${Math.max(0.03, Number(act.distance_m) || 0.15)}m + OMS (${n})`;
+    }
+    if (act.type === 'lookup_ocr') return 'lookup OCR → jump WP';
+    if (act.type === 'lookup_aruco') return 'lookup ArUco → jump WP';
     return String(act.type);
+  }
+
+  const OMS_STEP_HELP =
+    'home, rotation_goto, rotation_home, lift_goto, lift_home, linear_goto, linear_home, '
+    + 'vertical_up, vertical_down, vertical_home, rotation_servo_out, rotation_servo_in, '
+    + 'rotation_servo_home, gripper_open, gripper_close, gripper_home, wait';
+
+  function omsSequenceDefault(act) {
+    if (act && Array.isArray(act.sequence) && act.sequence.length) {
+      return act.sequence.join(', ');
+    }
+    return 'home, lift_goto, gripper_open, wait, gripper_close';
+  }
+
+  function omsParamsHtml(act, withDistance) {
+    const a = act || {};
+    const dist = Math.max(0.03, Number(a.distance_m) || 0.15);
+    const lift = Math.max(0, Math.min(300, Number(a.lift_mm) || 40));
+    const lin = Math.max(0, Math.min(300, Number(a.linear_mm) || 80));
+    const rot = Number.isFinite(Number(a.rotation_deg)) ? Number(a.rotation_deg) : 0;
+    const wait = Math.max(0, Number(a.wait_sec) || 1);
+    let html = '';
+    if (withDistance) {
+      html += '<label>Distance (m)'
+        + `<input type="number" min="0.03" max="5" step="0.01" id="wpTaskParam" value="${dist}">`
+        + '</label>';
+    }
+    html += '<label>OMS sequence (comma-separated)'
+      + `<input type="text" id="wpTaskOmsSeq" value="${omsSequenceDefault(a).replace(/"/g, '&quot;')}" `
+      + 'placeholder="home, lift_goto, gripper_open">'
+      + '</label>'
+      + '<div class="wp-task-row" style="flex-wrap:wrap;gap:0.35rem">'
+      + `<label>Lift mm<input type="number" min="0" max="300" step="1" id="wpTaskLift" value="${lift}"></label>`
+      + `<label>Linear mm<input type="number" min="0" max="300" step="1" id="wpTaskLinear" value="${lin}"></label>`
+      + `<label>Rotation °<input type="number" min="-120" max="120" step="1" id="wpTaskRot" value="${rot}"></label>`
+      + `<label>Wait s<input type="number" min="0" max="60" step="0.5" id="wpTaskWait" value="${wait}"></label>`
+      + '</div>'
+      + '<p class="hint" style="margin:0.25rem 0 0">'
+      + (withDistance
+        ? '<strong>Align + distance + OMS:</strong> yaw align, drive to Distance, then run the OMS sequence. '
+          + 'Tick <em>Align</em> and <em>OMS</em> at Start Nav2. '
+        : '<strong>OMS movement:</strong> after Nav2 reaches this WP, wake OMS, run the sequence, then sleep again. '
+          + 'Tick <em>OMS</em> at Start Nav2. ')
+      + `Steps: <code>${OMS_STEP_HELP}</code></p>`;
+    return html;
+  }
+
+  function readOmsActionFields(type, param) {
+    const seqEl = $('wpTaskOmsSeq');
+    const seq = String((seqEl && seqEl.value) || '')
+      .split(/[,;→]+/)
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+    const action = {
+      type,
+      sequence: seq.length ? seq : ['home', 'lift_goto', 'gripper_open', 'wait', 'gripper_close'],
+      lift_mm: Math.max(0, Math.min(300, Number(($('wpTaskLift') || {}).value) || 40)),
+      linear_mm: Math.max(0, Math.min(300, Number(($('wpTaskLinear') || {}).value) || 80)),
+      rotation_deg: Math.max(-120, Math.min(120, Number(($('wpTaskRot') || {}).value) || 0)),
+      wait_sec: Math.max(0, Math.min(60, Number(($('wpTaskWait') || {}).value) || 1)),
+      timeout_sec: 120,
+    };
+    if (type === 'align_move_oms') {
+      action.distance_m = Math.max(0.03, Math.min(5, Number(param && param.value) || 0.15));
+    }
+    return action;
   }
 
   function lightPatternOptions(selected) {
@@ -1668,7 +1788,7 @@
       const idx = Math.max(0, Math.min(state.waypoints.length - 1, state.wpTaskIndex | 0));
       state.wpTaskIndex = idx;
       const wp = state.waypoints[idx];
-      const navTypes = ['wait', 'wait_light', 'align', 'align_move', 'cobra_align'];
+      const navTypes = ['wait', 'wait_light', 'align', 'align_move', 'cobra_align', 'oms', 'align_move_oms', 'lookup_ocr', 'lookup_aruco'];
       const known = (wp.action && navTypes.includes(wp.action.type))
         ? wp.action
         : { type: 'wait', seconds: 0 };
@@ -1696,6 +1816,20 @@
             + 'Tick Cobra at Start Nav2; enable cobra in <code>hw_params</code>. '
             + 'Tuned in <code>config/cobra/wp_cobra_*.yaml</code>. '
             + 'Bench: <code>ros2 launch skill23_studio test_wp_cobra.launch.py</code>.</p>';
+        }
+        if (type === 'lookup_ocr') {
+          return '<p class="hint" style="margin:0.25rem 0 0">'
+            + '<strong>Lookup OCR:</strong> turn camera on, read a digit, verify across frames, then jump to that '
+            + '<em>1-based</em> waypoint in the armed sequence. Ambiguous/missing → mark failed and continue normal order. '
+            + 'Tick <em>Start Nav2 with camera</em>.</p>';
+        }
+        if (type === 'lookup_aruco') {
+          return '<p class="hint" style="margin:0.25rem 0 0">'
+            + '<strong>Lookup ArUco:</strong> turn camera on, read ArUco id, verify across frames, then jump to that '
+            + '<em>1-based</em> waypoint id. Fail → continue normal sequence. Tick <em>Start Nav2 with camera</em>.</p>';
+        }
+        if (type === 'oms' || type === 'align_move_oms') {
+          return '';
         }
         return '<p class="hint" style="margin:0.25rem 0 0">'
           + '<strong>Align (saved yaw):</strong> rotate the robot base to this WP’s map yaw. '
@@ -1727,6 +1861,14 @@
           + navActionHelp('align_move');
       } else if (known.type === 'cobra_align') {
         paramHtml = navActionHelp('cobra_align');
+      } else if (known.type === 'oms') {
+        paramHtml = omsParamsHtml(known, false);
+      } else if (known.type === 'align_move_oms') {
+        paramHtml = omsParamsHtml(known, true);
+      } else if (known.type === 'lookup_ocr') {
+        paramHtml = navActionHelp('lookup_ocr');
+      } else if (known.type === 'lookup_aruco') {
+        paramHtml = navActionHelp('lookup_aruco');
       } else {
         paramHtml = navActionHelp('align');
       }
@@ -1747,6 +1889,10 @@
         + `<option value="align" ${known.type === 'align' ? 'selected' : ''}>Align (saved yaw)</option>`
         + `<option value="align_move" ${known.type === 'align_move' ? 'selected' : ''}>Align + distance</option>`
         + `<option value="cobra_align" ${known.type === 'cobra_align' ? 'selected' : ''}>Cobra align</option>`
+        + `<option value="oms" ${known.type === 'oms' ? 'selected' : ''}>OMS movement</option>`
+        + `<option value="align_move_oms" ${known.type === 'align_move_oms' ? 'selected' : ''}>Align + distance + OMS</option>`
+        + `<option value="lookup_ocr" ${known.type === 'lookup_ocr' ? 'selected' : ''}>Lookup OCR</option>`
+        + `<option value="lookup_aruco" ${known.type === 'lookup_aruco' ? 'selected' : ''}>Lookup ArUco</option>`
         + '</select></label>'
         + '<button type="button" class="btn btn-saffron btn-tick" id="btnWpTaskSave" title="Save task for this waypoint">✓</button>'
         + '</div>'
@@ -1782,6 +1928,15 @@
             + navActionHelp('align_move');
         } else if (type === 'cobra_align') {
           params.innerHTML = navActionHelp('cobra_align');
+        } else if (type === 'oms') {
+          params.innerHTML = omsParamsHtml(cur && cur.type === 'oms' ? cur : {}, false);
+        } else if (type === 'align_move_oms') {
+          params.innerHTML = omsParamsHtml(
+            cur && cur.type === 'align_move_oms' ? cur : {}, true);
+        } else if (type === 'lookup_ocr') {
+          params.innerHTML = navActionHelp('lookup_ocr');
+        } else if (type === 'lookup_aruco') {
+          params.innerHTML = navActionHelp('lookup_aruco');
         } else {
           params.innerHTML = navActionHelp('align');
         }
@@ -1822,6 +1977,12 @@
             };
           } else if (type === 'cobra_align') {
             target.action = { type: 'cobra_align' };
+          } else if (type === 'oms' || type === 'align_move_oms') {
+            target.action = readOmsActionFields(type, param);
+          } else if (type === 'lookup_ocr') {
+            target.action = { type: 'lookup_ocr', confirm_frames: 3, retries: 3, timeout_sec: 30 };
+          } else if (type === 'lookup_aruco') {
+            target.action = { type: 'lookup_aruco', confirm_frames: 3, retries: 3, timeout_sec: 30 };
           }
           renderWpList();
           StudioMap.setWaypoints(state.waypoints);
@@ -1848,15 +2009,35 @@
       if (sk === 'pick') {
         const count = Math.max(1, Math.min(20, Number(wp.pick_count) || 1));
         const lift = Math.max(0, Math.min(300, Number(wp.pick_lift_mm) || 0));
+        const dist = Math.max(0.03, Math.min(5, Number(wp.pick_distance_m) || 0.15));
         pickParams = '<div class="wp-pick-params">'
           + `<label>Visits<input type="number" min="1" max="20" step="1" data-pick-count value="${count}"></label>`
           + `<label>Lift mm<input type="number" min="0" max="300" step="1" data-pick-lift value="${lift}"></label>`
+          + `<label>Dist m<input type="number" min="0.03" max="5" step="0.01" data-pick-dist value="${dist}" title="Mode 2 align+distance"></label>`
           + '</div>';
+      }
+      let dropParams = '';
+      if (sk === 'drop') {
+        const act = (wp.action && wp.action.type === 'oms') ? wp.action : null;
+        const seq = act && Array.isArray(act.sequence)
+          ? act.sequence.join(', ')
+          : 'home, gripper_open, wait, gripper_close';
+        const lift = Math.max(0, Math.min(300, Number((act && act.lift_mm) || 40)));
+        const lin = Math.max(0, Math.min(300, Number((act && act.linear_mm) || 80)));
+        dropParams = '<div class="wp-pick-params">'
+          + `<label style="flex:1 1 100%">Drop OMS sequence`
+          + `<input type="text" data-drop-seq value="${String(seq).replace(/"/g, '&quot;')}" `
+          + 'placeholder="home, gripper_open, wait, gripper_close"></label>'
+          + `<label>Lift mm<input type="number" min="0" max="300" step="1" data-drop-lift value="${lift}"></label>`
+          + `<label>Linear mm<input type="number" min="0" max="300" step="1" data-drop-lin value="${lin}"></label>`
+          + '</div>'
+          + '<p class="hint" style="margin:0.2rem 0 0">Runs after yaw at this drop (same step names as Nav OMS).</p>';
       }
       card.innerHTML =
         `<header>WP ${i + 1}${stickerLabel ? ` · ${stickerLabel}` : ''}</header>`
         + stickerRow
-        + pickParams;
+        + pickParams
+        + dropParams;
 
       const countInp = card.querySelector('[data-pick-count]');
       if (countInp) {
@@ -1875,6 +2056,34 @@
           StudioApi.waypointsSave(cleanWaypoints(state.waypoints)).catch((e) => console.warn(e));
         };
       }
+      const distInp = card.querySelector('[data-pick-dist]');
+      if (distInp) {
+        distInp.onchange = () => {
+          wp.pick_distance_m = Math.max(0.03, Math.min(5, Number(distInp.value) || 0.15));
+          StudioApi.waypointsSave(cleanWaypoints(state.waypoints)).catch((e) => console.warn(e));
+        };
+      }
+      const saveDropOms = () => {
+        const seqEl = card.querySelector('[data-drop-seq]');
+        const liftEl = card.querySelector('[data-drop-lift]');
+        const linEl = card.querySelector('[data-drop-lin]');
+        const seq = String((seqEl && seqEl.value) || '')
+          .split(/[,;→]+/)
+          .map((s) => s.trim().toLowerCase())
+          .filter(Boolean);
+        wp.action = {
+          type: 'oms',
+          sequence: seq.length ? seq : ['home', 'gripper_open', 'wait', 'gripper_close'],
+          lift_mm: Math.max(0, Math.min(300, Number(liftEl && liftEl.value) || 40)),
+          linear_mm: Math.max(0, Math.min(300, Number(linEl && linEl.value) || 80)),
+          wait_sec: 1.0,
+          timeout_sec: 120,
+        };
+        StudioApi.waypointsSave(cleanWaypoints(state.waypoints)).catch((e) => console.warn(e));
+      };
+      card.querySelectorAll('[data-drop-seq],[data-drop-lift],[data-drop-lin]').forEach((el) => {
+        el.onchange = saveDropOms;
+      });
       card.querySelectorAll('[data-sticker]').forEach((btn) => {
         btn.onclick = () => {
           const kind = btn.getAttribute('data-sticker');
@@ -1916,6 +2125,9 @@
         if (Number.isFinite(+w.pick_lift_mm)) {
           o.pick_lift_mm = Math.max(0, Math.min(300, +w.pick_lift_mm));
         }
+        if (Number.isFinite(+w.pick_distance_m)) {
+          o.pick_distance_m = Math.max(0.03, Math.min(5, +w.pick_distance_m));
+        }
         const act = w.action;
         if (act && act.type === 'wait') {
           o.action = {
@@ -1940,6 +2152,41 @@
           };
         } else if (act && act.type === 'cobra_align' && !isCommission()) {
           o.action = { type: 'cobra_align' };
+        } else if (act && act.type === 'oms') {
+          // Nav OMS tasks + commission drop sequences.
+          const seq = Array.isArray(act.sequence)
+            ? act.sequence.map((s) => String(s).trim().toLowerCase()).filter(Boolean)
+            : [];
+          o.action = {
+            type: 'oms',
+            sequence: seq.length ? seq : ['home', 'lift_goto', 'gripper_open', 'wait', 'gripper_close'],
+            lift_mm: Math.max(0, Math.min(300, Number(act.lift_mm) || 40)),
+            linear_mm: Math.max(0, Math.min(300, Number(act.linear_mm) || 80)),
+            rotation_deg: Math.max(-120, Math.min(120, Number(act.rotation_deg) || 0)),
+            wait_sec: Math.max(0, Math.min(60, Number(act.wait_sec) || 1)),
+            timeout_sec: Math.max(10, Math.min(600, Number(act.timeout_sec) || 120)),
+          };
+        } else if (act && act.type === 'align_move_oms' && !isCommission()) {
+          const seq = Array.isArray(act.sequence)
+            ? act.sequence.map((s) => String(s).trim().toLowerCase()).filter(Boolean)
+            : [];
+          o.action = {
+            type: 'align_move_oms',
+            distance_m: Math.max(0.03, Math.min(5, Number(act.distance_m) || 0.15)),
+            sequence: seq.length ? seq : ['home', 'lift_goto', 'gripper_open', 'wait', 'gripper_close'],
+            lift_mm: Math.max(0, Math.min(300, Number(act.lift_mm) || 40)),
+            linear_mm: Math.max(0, Math.min(300, Number(act.linear_mm) || 80)),
+            rotation_deg: Math.max(-120, Math.min(120, Number(act.rotation_deg) || 0)),
+            wait_sec: Math.max(0, Math.min(60, Number(act.wait_sec) || 1)),
+            timeout_sec: Math.max(10, Math.min(600, Number(act.timeout_sec) || 120)),
+          };
+        } else if (act && (act.type === 'lookup_ocr' || act.type === 'lookup_aruco') && !isCommission()) {
+          o.action = {
+            type: act.type,
+            confirm_frames: Math.max(1, Math.min(20, Number(act.confirm_frames) || 3)),
+            retries: Math.max(1, Math.min(10, Number(act.retries) || 3)),
+            timeout_sec: Math.max(5, Math.min(120, Number(act.timeout_sec) || 30)),
+          };
         }
         return o;
       })
@@ -2183,18 +2430,26 @@
         + 'If OMS Software is in standalone Run, press Stop OMS there before Nav2.');
       return;
     }
-    const camera = isCommission() || !!startCamera;
+    const camera = isCommission() || !!startCamera
+      || (!isCommission() && !!($('chkStartCameraNav') && $('chkStartCameraNav').checked));
     const daChk = $('chkAutoDetectAlign');
     if (daChk) state.autoDetectAlign = !!daChk.checked;
-    const startDetectAlign = camera ? !!state.autoDetectAlign : false;
+    const startDetectAlign = isCommission()
+      ? (camera ? !!state.autoDetectAlign : false)
+      : false;
     const alignChk = $('chkStartAlignNav');
     const cobraChk = $('chkStartCobraNav');
+    const omsChk = $('chkStartOmsNav');
     const withAlign = isCommission()
-      ? false
+      ? true
       : (alignChk ? !!alignChk.checked : false);
     const withCobra = isCommission()
       ? false
       : (cobraChk ? !!cobraChk.checked : false);
+    // Tick = enable OMS WP / Home OMS. Never launches OMS with Nav2 (lazy).
+    const withOms = isCommission()
+      ? true
+      : (omsChk ? !!omsChk.checked : false);
     const res = await StudioApi.deployStart({
       burn_restrictions: true,
       stack: 'nav2',
@@ -2203,20 +2458,24 @@
       start_detect_align: startDetectAlign,
       with_align: withAlign,
       with_cobra: withCobra,
+      with_oms: withOms,
+      oms_lazy: true,
     });
-    if (camera) {
+    if (isCommission()) {
       alert(
-        `Commissioning: Nav2 + camera + OMS`
+        `Commissioning: Nav2 + camera + Align`
         + `${startDetectAlign ? ' + Detect+Align' : ' (Detect+Align skipped)'}.\n`
-        + 'Open OMS Software — it shows Ready when OMS nodes are up. Do not press Run OMS.\n'
+        + 'OMS tick is on for mission, but OMS is NOT started yet — press Home OMS when ready.\n'
         + `${res.map || ''}`);
     } else {
       const bits = [];
+      if (camera) bits.push('camera (streams off + Lookup)');
       if (withAlign) bits.push('Align');
       if (withCobra) bits.push('Cobra');
+      if (withOms) bits.push('OMS enabled (lazy — not started yet)');
       alert(
         `Navigation: Nav2 started`
-        + `${bits.length ? ` with ${bits.join(' + ')}` : ' (Align/Cobra off)'}.\n`
+        + `${bits.length ? ` with ${bits.join(' + ')}` : ' (Align/Cobra/OMS/camera off)'}.\n`
         + `${res.map || ''}`);
     }
   }
@@ -2676,7 +2935,18 @@
         alert(res.error || res.message || 'OMS home failed');
         return;
       }
-      alert('OMS home command sent.');
+      alert(res.message || 'OMS homed and sleeping.');
+    }, 'Homing OMS…');
+  }
+  const btnNavHomeOms = $('btnNavHomeOms');
+  if (btnNavHomeOms) {
+    bindLoading('btnNavHomeOms', async () => {
+      const res = await StudioApi.omsHome();
+      if (res && res.ok === false) {
+        alert(res.error || res.message || 'OMS home failed');
+        return;
+      }
+      alert(res.message || 'OMS homed and sleeping.');
     }, 'Homing OMS…');
   }
 

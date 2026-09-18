@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>skill23_lookup</name>
+  <version>1.0.0</version>
+  <description>
+    Waypoint lookup via OCR digits or ArUco IDs for Skill23 Studio Nav2 missions.
+    Idle until /studio/lookup/cmd; color stream expected on briefly during a lookup.
+  </description>
+  <maintainer email="adityaprakash.main@gmail.com">ADEV</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+  <depend>rclpy</depend>
+  <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>cv_bridge</depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
