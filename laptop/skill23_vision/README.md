@@ -1,73 +1,82 @@
 # skill23_vision — laptop teleop capture (YOLO + AprilTag)
 
 Standalone scripts for the **laptop**. Does **not** modify the Pi Docker
-`skill23_vision` vision_gate package.
+`skill23_vision` vision_gate package. **Nothing is downloaded at runtime.**
 
-## What it does
+## Camera live view
 
-1. Subscribes to Pi camera (`/camera/color/image_raw[/compressed]`)
-2. Subscribes to `/robot_pose` (x, y, yaw from Pi simple_pose)
-3. Subscribes to `/joy` (gamepad on this laptop)
-4. **Button A (0)** → take picture → YOLO → show boxes + class + robot pose + timestamp → save image + line in `captures/detections.txt`
-5. **Button B (1)** → take picture → AprilTag → show id + robot pose + timestamp → save image + line in txt
+Pi launch uses `start_streams_on_init:=true` → Orbbec calls `startStreams()`.
+Color frames publish continuously on `/camera/color/image_raw` (not idle /
+toggle-off). Laptop shows a **LIVE** window while you drive; YOLO/AprilTag
+run **only** when you press the capture button/key.
 
-Detection runs **only** on button press.
-
-## Setup (once)
+## Gamepad mode
 
 ```bash
-export ROS_DOMAIN_ID=0          # same as Pi
-export ROS_LOCALHOST_ONLY=0     # must see Pi over Wi‑Fi
-source /opt/ros/humble/setup.bash
-
-cd /home/tad/competition/workspaces/skill23_vision   # or this folder
-pip3 install -r requirements.txt
-pip3 install ultralytics          # YOLO
-# optional better AprilTag:
-# pip3 install pupil_apriltags
-
-# put weights here:
-mkdir -p models
-# copy best.pt → models/best.pt
-```
-
-AprilTag: uses `pupil_apriltags` if installed, otherwise OpenCV
-`DICT_APRILTAG_36h11` (no extra package). Existing AprilTag installs in your
-competition Docker/workspace are left untouched.
-
-## Run
-
-**Terminal 1 — Pi** (already running teleop launch):
-
-```bash
-ros2 launch skill23_studio teleop_mecanum.launch.py   # or xdrive/grip/allterrain
-```
-
-**Terminal 2 — laptop**:
-
-```bash
+export ROS_DOMAIN_ID=0
+export ROS_LOCALHOST_ONLY=0
 ./start_teleop_capture.sh
-# or:
-ros2 run joy joy_node
-python3 teleop_capture.py
 ```
 
-## Buttons
+| Button | Default index | Action |
+|--------|---------------|--------|
+| A | 0 | YOLO capture + save |
+| B | 1 | AprilTag capture + save |
 
-| Button | Index | Action |
-|--------|-------|--------|
-| A | 0 | YOLO capture |
-| B | 1 | AprilTag capture |
+### Change button numbers
 
-Override: `YOLO_BTN=2 TAG_BTN=3 ./start_teleop_capture.sh`
+```bash
+# find your indices:
+ros2 topic echo /joy
+# then:
+YOLO_BTN=2 TAG_BTN=3 ./start_teleop_capture.sh
+# or:
+python3 teleop_capture.py --yolo-btn 2 --tag-btn 3
+```
+
+## Keyboard backup (no gamepad)
+
+Do **not** run `joy_node` at the same time (fights `/cmd_vel`).
+
+```bash
+./start_keyboard_teleop.sh
+# focus the OpenCV window
+```
+
+| Key | Action |
+|-----|--------|
+| W / S | forward / back |
+| A / D | strafe left / right |
+| Q / E | rotate |
+| SPACE | stop |
+| Y | YOLO capture |
+| T | AprilTag capture |
+| ESC / X | quit |
+
+## YOLO weights
+
+Put trained weights at `models/best.pt`, or:
+
+```bash
+export YOLO_MODEL=/path/to/your.pt
+```
+
+## AprilTag — no download in Docker
+
+At startup the node logs the backend:
+
+1. **`pupil_apriltags`** if already installed in the image/env
+2. else **OpenCV** `DICT_APRILTAG_36h11` / aruco (bundled with opencv — no pip)
+
+It never calls `pip install` and never downloads models. If neither backend
+exists, AprilTag button fails with a clear error (YOLO still works if
+`ultralytics` + `best.pt` are present offline).
 
 ## Output
 
 ```
 captures/
-  yolo_YYYYMMDD_*.jpg
-  apriltag_YYYYMMDD_*.jpg
+  yolo_*.jpg
+  apriltag_*.jpg
   detections.txt
 ```
-
-Each txt line has timestamp, robot pose (x,y,yaw), object/tag id, image coords.

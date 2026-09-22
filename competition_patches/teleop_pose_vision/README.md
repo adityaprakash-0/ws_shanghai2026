@@ -158,3 +158,27 @@ strafe (`axis_linear_y: 0`).
   change `vision_gate_node.py` or installed AprilTag packages.
 - Pi changes are **new** launch/params/pose files + one `setup.py` entry.
 - Existing Studio / commission / OMS flows are untouched.
+
+
+---
+
+## Camera live view
+
+Pi sets `start_streams_on_init:=true` → Orbbec **starts streams** (live frames), not idle/toggle-off. Laptop shows continuous LIVE window; YOLO/AprilTag only on button/key.
+
+## Change gamepad capture buttons
+
+```bash
+ros2 topic echo /joy          # see button indices
+YOLO_BTN=2 TAG_BTN=3 ./start_teleop_capture.sh
+# or: python3 teleop_capture.py --yolo-btn 2 --tag-btn 3
+```
+
+## Keyboard backup (laptop)
+
+Copy also: `keyboard_teleop.py`, `start_keyboard_teleop.sh`  
+Do **not** run joy_node together. Keys: W/S move, A/D strafe, Q/E turn, Y=YOLO, T=AprilTag, SPACE=stop.
+
+## AprilTag — no download
+
+Uses installed `pupil_apriltags` if present, else OpenCV AprilTag dict. Does **not** pip-install or download inside Docker.

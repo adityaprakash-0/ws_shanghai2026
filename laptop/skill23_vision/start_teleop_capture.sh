@@ -11,11 +11,12 @@ if [[ -f /opt/ros/humble/setup.bash ]]; then
   source /opt/ros/humble/setup.bash
 fi
 
-YOLO_BTN="${YOLO_BTN:-0}"   # A
-TAG_BTN="${TAG_BTN:-1}"     # B
+YOLO_BTN="${YOLO_BTN:-0}"   # A  — change if your pad differs
+TAG_BTN="${TAG_BTN:-1}"     # B  — change if your pad differs
 OUT="${OUT:-$ROOT/captures}"
 
 echo "[skill23_vision] domain=$ROS_DOMAIN_ID  YOLO_BTN=$YOLO_BTN  TAG_BTN=$TAG_BTN"
+echo "[skill23_vision] Tip: find button indices with:  ros2 topic echo /joy"
 echo "[skill23_vision] starting joy_node + teleop_capture (Ctrl+C stops both)"
 
 ros2 run joy joy_node &

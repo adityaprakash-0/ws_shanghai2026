@@ -172,6 +172,20 @@ def run_apriltag(frame: np.ndarray) -> Dict[str, Any]:
 # Node
 # ---------------------------------------------------------------------------
 
+def apriltag_backend_info() -> str:
+    """Report which AprilTag backend will be used — never downloads anything."""
+    try:
+        import pupil_apriltags  # noqa: F401
+        return 'pupil_apriltags (already installed)'
+    except Exception:
+        pass
+    if hasattr(cv2, 'aruco') and (
+            hasattr(cv2.aruco, 'DICT_APRILTAG_36h11')
+            or hasattr(cv2.aruco, 'DICT_4X4_50')):
+        return 'OpenCV aruco AprilTag dict (no download)'
+    return 'NONE — install opencv with aruco or pupil_apriltags offline'
+
+
 class TeleopCaptureNode(Node):
     def __init__(
             self,
@@ -179,7 +193,8 @@ class TeleopCaptureNode(Node):
             out_dir: Path,
             yolo_btn: int,
             tag_btn: int,
-            conf: float) -> None:
+            conf: float,
+            live_view: bool = True) -> None:
         super().__init__('teleop_capture')
         self._out = out_dir
         self._out.mkdir(parents=True, exist_ok=True)
@@ -187,6 +202,7 @@ class TeleopCaptureNode(Node):
         self._yolo_btn = yolo_btn
         self._tag_btn = tag_btn
         self._conf = conf
+        self._live_view = live_view
 
         self._frame: Optional[np.ndarray] = None
         self._pose = (0.0, 0.0, 0.0)
@@ -208,9 +224,15 @@ class TeleopCaptureNode(Node):
             Float64MultiArray, '/robot_pose_xyyaw', self._on_xyyaw, 10)
         self.create_subscription(Joy, '/joy', self._on_joy, 10)
 
+        if self._live_view:
+            # Continuous live preview while driving (~10 Hz)
+            self.create_timer(0.1, self._show_live)
+
         self.get_logger().info(
             f'teleop_capture ready  YOLO btn={yolo_btn}  AprilTag btn={tag_btn}  '
-            f'out={self._out}')
+            f'live_view={live_view}  out={self._out}')
+        self.get_logger().info(f'AprilTag backend: {apriltag_backend_info()}')
+        self.get_logger().info(f'YOLO weights: {_yolo_path()}')
 
     def _on_compressed(self, msg: CompressedImage) -> None:
         frame = _compressed_to_bgr(msg)
@@ -270,6 +292,20 @@ class TeleopCaptureNode(Node):
 
     def _show(self, title: str, img: np.ndarray) -> None:
         cv2.imshow(title, img)
+        cv2.waitKey(1)
+
+    def _show_live(self) -> None:
+        """Always-on live camera window (does not run YOLO/AprilTag)."""
+        if self._frame is None:
+            return
+        vis = self._frame.copy()
+        x, y, yaw = self._pose
+        cv2.putText(
+            vis,
+            f'LIVE  pose x={x:.2f} y={y:.2f} yaw={yaw:.2f}  '
+            f'YOLO=btn{self._yolo_btn} TAG=btn{self._tag_btn}',
+            (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
+        cv2.imshow('teleop live', vis)
         cv2.waitKey(1)
 
     def _capture_yolo(self) -> None:
@@ -361,6 +397,9 @@ def main(argv=None) -> None:
     parser.add_argument('--yolo-btn', type=int, default=0, help='Joy button for YOLO (A=0)')
     parser.add_argument('--tag-btn', type=int, default=1, help='Joy button for AprilTag (B=1)')
     parser.add_argument('--conf', type=float, default=0.4, help='YOLO confidence')
+    parser.add_argument(
+        '--no-live', action='store_true',
+        help='disable continuous live preview window')
     args, ros_args = parser.parse_known_args(argv)
 
     rclpy.init(args=ros_args)
@@ -369,6 +408,7 @@ def main(argv=None) -> None:
         yolo_btn=args.yolo_btn,
         tag_btn=args.tag_btn,
         conf=args.conf,
+        live_view=not args.no_live,
     )
     try:
         rclpy.spin(node)
