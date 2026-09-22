@@ -61,7 +61,9 @@ inside `console_scripts`.
 | This patch file | Copy to |
 |---|---|
 | `skill23_vision/teleop_capture.py` | `teleop_capture.py` **(NEW)** |
+| `skill23_vision/keyboard_teleop.py` | `keyboard_teleop.py` **(NEW)** |
 | `skill23_vision/start_teleop_capture.sh` | `start_teleop_capture.sh` **(NEW)** |
+| `skill23_vision/start_keyboard_teleop.sh` | `start_keyboard_teleop.sh` **(NEW)** |
 | `skill23_vision/requirements.txt` | merge / use if you need deps |
 | `skill23_vision/README_LAPTOP.md` | optional reference |
 | `skill23_vision/models/README.txt` | `models/README.txt` — put `best.pt` in `models/` |
