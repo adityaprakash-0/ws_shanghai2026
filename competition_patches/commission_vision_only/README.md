@@ -27,6 +27,48 @@ Nav module + full OMS pick code paths are left in the repo; commission simply by
 
 ---
 
+## Dashboard **detect_oms** — what it does now
+
+In Commissioning, the pick-mode radio **detect_oms** (Mode 1) still appears, but with this patch it **does not** run full OMS pick (`oms_pick`).
+
+| UI choice | What actually runs now |
+|---|---|
+| **detect_oms** (Mode 1) | Reach pick → base yaw → **classify** (camera + YOLO only) → assigned drop → wait 5 s |
+| **align_move_detect_oms** (Mode 2) | Reach pick → align+distance → **classify** → drop → wait 5 s |
+
+No OMS home / pre-look / gripper / linear. Selecting detect_oms is exactly the vision-only flow you asked for.
+
+---
+
+## Which YAML is used for Detect+Align / classify
+
+Commission Start Nav2+camera loads Detect+Align with:
+
+```text
+src/skill23_studio/config/wp_detect_align.yaml
+```
+
+Resolved by `detect_align_paths.detect_align_yaml_for_robot()` and passed as `--params-file` to `studio_detect_align` from `studio_nav2.launch.py` (included by `studio_commission.launch.py`).
+
+**Tune here for vision classify:**
+
+- `model_dir` — empty = default `models/yolov8n_ncnn/`
+- `conf_threshold`, `need_frames`, `detect_wait_sec`, camera topics, etc.
+
+**Not used for live commission classify:**
+
+- `config/detect_align_oms_pick.yaml` — bench / full OMS pick test only
+
+After editing `wp_detect_align.yaml`, rebuild is not always required for YAML if you run from source share, but safest is:
+
+```bash
+colcon build --packages-select skill23_studio && source install/setup.bash
+```
+
+then restart Nav2+camera.
+
+---
+
 ## What is **pick count**? (example)
 
 **Count** = how many times that pick location must still be visited before the mission is done with it.
