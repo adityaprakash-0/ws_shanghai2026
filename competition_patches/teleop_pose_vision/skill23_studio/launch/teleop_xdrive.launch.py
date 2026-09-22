@@ -1,0 +1,17 @@
+"""Thin wrapper — xdrive teleop (strafe ON)."""
+from launch import LaunchDescription
+from launch.actions import IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from ament_index_python.packages import get_package_share_directory
+import os
+
+
+def generate_launch_description():
+    share = get_package_share_directory('skill23_studio')
+    return LaunchDescription([
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                os.path.join(share, 'launch', 'teleop_arena.launch.py')),
+            launch_arguments=[('robot', 'xdrive')],
+        ),
+    ])
