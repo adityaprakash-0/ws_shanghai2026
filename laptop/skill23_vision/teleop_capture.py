@@ -267,12 +267,20 @@ class TeleopCaptureNode(Node):
         if self._busy:
             return
         if pressed(self._yolo_btn):
+            self.get_logger().info(
+                f'[BUTTON] YOLO pressed (joy button {self._yolo_btn}) — capturing…')
+            print(f'[BUTTON] YOLO pressed (joy button {self._yolo_btn}) — capturing…',
+                  flush=True)
             self._busy = True
             try:
                 self._capture_yolo()
             finally:
                 self._busy = False
         elif pressed(self._tag_btn):
+            self.get_logger().info(
+                f'[BUTTON] AprilTag pressed (joy button {self._tag_btn}) — capturing…')
+            print(f'[BUTTON] AprilTag pressed (joy button {self._tag_btn}) — capturing…',
+                  flush=True)
             self._busy = True
             try:
                 self._capture_apriltag()
