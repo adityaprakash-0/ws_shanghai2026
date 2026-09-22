@@ -1013,7 +1013,82 @@ class DetectAlignNode(Node):
         if mode in ('oms_drop', 'drop'):
             self._run_oms_drop(cmd, gen, cmd_id)
             return
+        # Vision-only: color ON → YOLO class → color OFF. No OMS / depth / arm.
+        if mode in ('classify', 'identify', 'detect_only'):
+            self._run_classify(cmd, gen, cmd_id)
+            return
         self._run_detect_align(cmd, gen, cmd_id)
+
+    def _run_classify(self, cmd: dict, gen: int, cmd_id: str) -> None:
+        """Commission vision ID only — enable frames at pick, return class_name."""
+        del cmd  # no extra fields required
+        extra_out: Dict[str, Any] = {}
+        try:
+            self._ensure_detector()
+        except Exception as exc:
+            self._finish(
+                cmd_id, False, f'model load failed: {exc}', gen, extra_out,
+                mode='classify')
+            return
+
+        self._publish_status(state='classify', message='enabling color stream')
+        self._flog('info', 'CLASSIFY begin (vision only, no OMS)')
+        self._set_cam(True, False)
+        if not self._wait_stream_frames(gen, self._stream_need, self._stream_timeout):
+            self._finish(
+                cmd_id, False,
+                f'no color stream ({self._color_n} frames)',
+                gen, extra_out, mode='classify')
+            return
+
+        best_extra = None
+        best_obj = None
+        frames = 0
+        t0 = time.time()
+        while frames < self._need_frames and time.time() - t0 < self._detect_wait:
+            if self._cancel.is_set() or gen != self._job_gen:
+                self._finish(
+                    cmd_id, False, 'canceled', gen, extra_out, mode='classify')
+                return
+            snap, obj, size, rgb, note = self._one_snapshot_detect(
+                gen, self._skip_frames, max(4.0, self._detect_wait))
+            if snap is None or obj is None or size is None:
+                self._flog('warn', f'classify frame: {note}')
+                continue
+            frames += 1
+            w, h = size
+            u_px, v_px = bbox_center_px(obj)
+            cand = {
+                'bbox': [round(obj.x1, 1), round(obj.y1, 1),
+                         round(obj.x2, 1), round(obj.y2, 1)],
+                'conf': round(float(obj.conf), 3),
+                'class_id': int(obj.class_id),
+                'class_name': obj.name,
+                'size': [w, h],
+                'u_px': round(u_px, 1),
+                'v_px': round(v_px, 1),
+            }
+            self._flog(
+                'info',
+                f'classify frame {frames}/{self._need_frames}: {obj.name} '
+                f'{float(obj.conf) * 100:.0f}%')
+            if best_obj is None or float(obj.conf) > float(best_obj.conf):
+                best_obj = obj
+                best_extra = cand
+
+        self._set_cam(False, False)
+        self._drop_detector()
+        if best_extra is None:
+            self._finish(
+                cmd_id, False, 'no detection', gen, extra_out, mode='classify')
+            return
+        extra_out.update(best_extra)
+        name = str(best_extra.get('class_name') or '')
+        conf = float(best_extra.get('conf') or 0.0)
+        self._finish(
+            cmd_id, True,
+            f'classified {name} ({conf * 100:.0f}%)',
+            gen, extra_out, mode='classify')
 
     def _run_oms_drop(self, cmd: dict, gen: int, cmd_id: str) -> None:
         self._publish_status(state='oms_drop', message='drop: OMS home stub')

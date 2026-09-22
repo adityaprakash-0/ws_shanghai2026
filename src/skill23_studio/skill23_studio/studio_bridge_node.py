@@ -1427,6 +1427,11 @@ class StudioBridge(Node):
 
         Dashboard Home OMS button — keeps CPU low until mission WP wakes OMS.
         """
+        if self.session.get('deploy_module') == 'commission':
+            msg = (
+                'Vision-only commissioning — OMS / Home OMS is disabled. '
+                'Use Start mission for classify → drop wait → home.')
+            return {'ok': False, 'error': msg, 'message': msg}
         if (
             self.session.get('deploy_module') == 'nav'
             and not self.session.get('oms_enabled', False)
@@ -1435,7 +1440,7 @@ class StudioBridge(Node):
                 'Tick "Enable OMS" before Start Nav2, then press Home OMS. '
                 'The tick does not start OMS — only Home OMS / a WP does.')
             return {'ok': False, 'error': msg, 'message': msg}
-        # Commission always allowed; Home OMS also marks enabled for this session.
+        # Home OMS also marks enabled for this session.
         self.session['oms_enabled'] = True
         robot = str(self.session.get('robot') or 'allterrain')
         try:
@@ -1570,7 +1575,8 @@ class StudioBridge(Node):
             ok = bool(data.get('success'))
             mode = str(data.get('mode') or 'align')
             text = str(data.get('message') or '')
-            if mode in ('detect_align', 'oms_pick'):
+            if mode in ('detect_align', 'oms_pick', 'classify', 'identify',
+                        'detect_only'):
                 self._commission['last_detect_ok'] = ok
                 if data.get('class_name'):
                     self._commission['detected_object'] = normalize_object_name(
@@ -2126,11 +2132,12 @@ class StudioBridge(Node):
             if mode == 'align_move_detect_oms':
                 self._commission_start_align_move_pick()
             else:
-                # Mode 1: Detect+Align OMS pick (optional brief yaw first).
+                # Vision-only: brief yaw (base, no OMS), then classify.
                 self._commission_start_yaw_align(kind='pick')
         elif phase == 'nav_drop':
+            # No OMS at drop — hold 5 s then continue to next pick.
             self._commission_pause_nav()
-            self._commission_start_yaw_align(kind='drop')
+            self._commission_start_drop_wait(5.0)
         elif phase == 'nav_home':
             self._commission_finish()
         else:
@@ -2138,7 +2145,7 @@ class StudioBridge(Node):
             self._commission_finish()
 
     def _commission_start_align_move_pick(self) -> None:
-        """Mode 2: Align + distance, then oms_pick."""
+        """Mode 2: Align + distance, then vision classify (no OMS)."""
         wp = self._commission_current_pick_wp()
         if wp is None:
             self._commission_skip_pick('no pick waypoint')
@@ -2172,16 +2179,13 @@ class StudioBridge(Node):
             f'{pick} align+move dist={dist:.3f}m yaw={math.degrees(yaw):.1f}°')
 
     def _commission_start_yaw_align(self, kind: str = 'pick') -> None:
+        # Drop no longer yaw-aligns (wait-only). Keep pick yaw for facing object.
         if kind == 'drop':
-            indexed = self._commission.get('indexed') or {}
-            drop_sticker = str(self._commission.get('target_drop') or '')
-            wp = resolve_drop_wp(indexed.get('drops') or {}, drop_sticker)
-            phase = 'yaw_drop'
-            tag = drop_sticker or 'drop'
-        else:
-            wp = self._commission_current_pick_wp()
-            phase = 'yaw_pick'
-            tag = str(self._commission.get('current_pick') or 'pick')
+            self._commission_start_drop_wait(5.0)
+            return
+        wp = self._commission_current_pick_wp()
+        phase = 'yaw_pick'
+        tag = str(self._commission.get('current_pick') or 'pick')
         if wp is None:
             self._commission_skip_pick('no waypoint for yaw align')
             return
@@ -2206,64 +2210,55 @@ class StudioBridge(Node):
             f'{tag} yaw align {math.degrees(yaw):.1f}° '
             f'(±{self._commission_yaw_tol():.1f}°)')
 
-    def _commission_start_oms_pick(self) -> None:
+    def _commission_start_classify_pick(self) -> None:
+        """Vision-only object ID at pick — no OMS launch, frames on during detect."""
         wp = self._commission_current_pick_wp()
         if wp is None:
             self._commission_skip_pick('no pick waypoint')
             return
         pick = str(self._commission.get('current_pick') or '')
-        lift_mm = float(self._commission.get('lift_mm') or 0.0)
         attempt = int(self._commission.get('pick_retries') or 0) + 1
-        self._commission_set_phase('oms_pick', f'{pick} try {attempt}')
+        self._commission_set_phase('classify_pick', f'{pick} try {attempt}')
         self._commission['last_detect_ok'] = False
-        self._ensure_oms_ready_for_work()
-        cmd_id = f'cm_pick_{self._nav2_seq_gen}_{int(time.time() * 1000)}'
+        # Intentionally do NOT call _ensure_oms_ready_for_work().
+        cmd_id = f'cm_cls_{self._nav2_seq_gen}_{int(time.time() * 1000)}'
         payload = {
             'cmd_id': cmd_id,
-            'mode': 'oms_pick',
-            'lift_mm': lift_mm,
-            'timeout_sec': 180.0,
+            'mode': 'classify',
+            'timeout_sec': 60.0,
         }
         self._detect_cmd_pub.publish(String(data=json.dumps(payload)))
         self._nav2_action_cmd_id = cmd_id
-        self._nav2_action_kind = 'oms_pick'
-        self._nav2_action_deadline = time.time() + 200.0
+        self._nav2_action_kind = 'classify'
+        self._nav2_action_deadline = time.time() + 75.0
         self._commission_log(
-            f'OMS pick at {pick} lift={lift_mm:.0f}mm (try {attempt})')
+            f'Classify (vision only) at {pick} (try {attempt}) — no OMS')
+
+    def _commission_start_drop_wait(self, seconds: float = 5.0) -> None:
+        """Hold at drop for N seconds — no OMS."""
+        drop = str(self._commission.get('target_drop') or 'drop')
+        try:
+            wait_s = float(seconds)
+        except (TypeError, ValueError):
+            wait_s = 5.0
+        wait_s = min(120.0, max(0.5, wait_s))
+        self._commission_set_phase('wait_drop', drop)
+        self._nav2_wait_until = time.time() + wait_s
+        self._nav2_action_cmd_id = ''
+        self._nav2_action_kind = 'wait_drop'
+        self._nav2_action_deadline = 0.0
+        self._nav2_set_mission(
+            'wait_action', f'drop {drop} wait {wait_s:g}s')
+        self._commission_log(
+            f'Drop {drop} — wait {wait_s:g}s (no OMS)')
+
+    def _commission_start_oms_pick(self) -> None:
+        """Legacy name — redirects to vision-only classify (no OMS)."""
+        self._commission_start_classify_pick()
 
     def _commission_start_oms_drop(self) -> None:
-        """Run per-drop OMS sequence from the drop waypoint (dashboard)."""
-        drop = str(self._commission.get('target_drop') or 'drop')
-        indexed = self._commission.get('indexed') or {}
-        drop_wp = resolve_drop_wp(indexed.get('drops') or {}, drop) or {}
-        action = drop_wp.get('action') if isinstance(drop_wp, dict) else {}
-        if not isinstance(action, dict):
-            action = {}
-        sequence = action.get('sequence')
-        if not sequence:
-            # Fallback: home only (legacy stub behaviour).
-            sequence = ['home']
-        self._commission_set_phase('oms_drop', drop)
-        cmd_id = f'cm_drop_{self._nav2_seq_gen}_{int(time.time() * 1000)}'
-        self._nav2_action_cmd_id = cmd_id
-        self._nav2_action_kind = 'oms_drop'
-        try:
-            timeout = float(action.get('timeout_sec', 120.0) or 120.0)
-        except (TypeError, ValueError):
-            timeout = 120.0
-        timeout = min(600.0, max(10.0, timeout))
-        self._nav2_action_deadline = time.time() + timeout + 15.0
-        self._commission_log(
-            f'Drop {drop} — OMS sequence ({len(sequence) if isinstance(sequence, list) else "?"} steps)')
-        self._nav2_oms_cancel.clear()
-        self._ensure_oms_ready_for_work()
-        self._nav2_oms_thread = threading.Thread(
-            target=self._commission_run_drop_oms_job,
-            args=(cmd_id, drop_wp if isinstance(drop_wp, dict) else {}),
-            daemon=True,
-            name='cm_drop_oms',
-        )
-        self._nav2_oms_thread.start()
+        """Legacy name — redirects to drop wait (no OMS)."""
+        self._commission_start_drop_wait(5.0)
 
     def _commission_run_drop_oms_job(self, cmd_id: str, drop_wp: dict) -> None:
         from skill23_studio.nav.wp_oms_sequence import run_wp_oms_sequence
@@ -2306,7 +2301,14 @@ class StudioBridge(Node):
             f'oms_drop {"ok" if ok else "failed"}')
 
     def _ensure_oms_ready_for_work(self) -> None:
-        """Lazy-start OMS alongside Nav Titan if needed, then wake."""
+        """Lazy-start OMS alongside Nav Titan if needed, then wake.
+
+        Vision-only commissioning never starts OMS — raise instead of launching.
+        """
+        if self.session.get('deploy_module') == 'commission':
+            raise RuntimeError(
+                'Vision-only commissioning — OMS start is blocked '
+                '(classify / drop-wait only)')
         if (
             self.session.get('deploy_module') == 'nav'
             and not self.session.get('oms_enabled', False)
@@ -2383,7 +2385,11 @@ class StudioBridge(Node):
     def _commission_finish(self) -> None:
         self._commission_resume_nav()
         self._commission_set_phase('done', 'complete')
-        self._commission_log('Module G complete')
+        self._commission_log('Module G complete (vision-only) — solid red')
+        try:
+            self._light_tower_set('red')
+        except Exception as exc:
+            self.get_logger().warn(f'finish red light failed: {exc}')
         self._nav2_seq_active = False
         self._nav2_wait_until = 0.0
         self._nav2_action_cmd_id = ''
@@ -2409,39 +2415,28 @@ class StudioBridge(Node):
                     self._commission_start_yaw_align(kind='pick')
                     return
             self._commission['yaw_retries'] = 0
-            self._ensure_oms_ready_for_work()
-            self._commission_start_oms_pick()
+            self._commission_start_classify_pick()
             return
         if phase == 'align_move_pick':
             if 'failed' in reason.lower() or 'timeout' in reason.lower():
-                self._commission_log(f'Align+move failed: {reason} — trying oms_pick anyway')
-            self._ensure_oms_ready_for_work()
-            self._commission_start_oms_pick()
+                self._commission_log(
+                    f'Align+move failed: {reason} — trying classify anyway')
+            self._commission_start_classify_pick()
             return
         if phase == 'yaw_drop':
-            if 'failed' in reason.lower() or 'timeout' in reason.lower():
-                retries = int(self._commission.get('yaw_retries') or 0)
-                if retries < 1:
-                    self._commission['yaw_retries'] = retries + 1
-                    self._commission_start_yaw_align(kind='drop')
-                    return
-            self._commission['yaw_retries'] = 0
-            self._commission_start_oms_drop()
+            # Legacy phase — treat as drop wait complete path.
+            self._commission_start_drop_wait(5.0)
             return
-        if phase == 'oms_pick':
+        if phase in ('classify_pick', 'oms_pick'):
             detect_ok = bool(self._commission.get('last_detect_ok'))
             obj = str(self._commission.get('detected_object') or '')
-            # Sleep OMS after pick until drop sequence.
-            try:
-                self._oms_set_power('sleep')
-            except Exception:
-                pass
+            # No OMS sleep — OMS is not used in vision-only commission.
             if detect_ok and obj:
                 drop_sticker = drop_sticker_for_object(
                     self._commission.get('config') or {}, obj)
                 self._commission['target_drop'] = drop_sticker
                 self._commission_log(
-                    f'Picked {obj} → route to {drop_sticker or "?"}')
+                    f'Identified {obj} → route to {drop_sticker or "?"}')
                 if not drop_sticker:
                     self._commission_skip_pick('no drop assigned for object')
                     return
@@ -2455,14 +2450,13 @@ class StudioBridge(Node):
             retries = int(self._commission.get('pick_retries') or 0) + 1
             self._commission['pick_retries'] = retries
             max_r = self._commission_max_retries()
-            self._commission_log(f'Pick failed ({retries}/{max_r}): {reason}')
+            self._commission_log(f'Classify failed ({retries}/{max_r}): {reason}')
             if retries < max_r:
-                self._ensure_oms_ready_for_work()
-                self._commission_start_oms_pick()
+                self._commission_start_classify_pick()
             else:
-                self._commission_skip_pick('pick failed after retries')
+                self._commission_skip_pick('classify failed after retries')
             return
-        if phase == 'oms_drop':
+        if phase in ('wait_drop', 'oms_drop'):
             self._commission_after_drop_success()
             return
         self._commission_log(f'action done in phase {phase}: {reason}')
@@ -2510,14 +2504,15 @@ class StudioBridge(Node):
         self._commission['pick_index'] = 0
         counts = self._commission['remaining']
         self._commission_log(
-            f'Module G START from {source} — {len(picks)} pick(s) '
-            f'counts={counts}')
+            f'Module G START (vision-only) from {source} — {len(picks)} pick(s) '
+            f'counts={counts} — no OMS')
         self._commission_begin_pick()
         return {
             'ok': True,
             'started': True,
             'source': source,
             'mode': 'commission',
+            'vision_only': True,
             'picks': len(picks),
             'remaining': counts,
         }
@@ -4057,8 +4052,8 @@ class StudioBridge(Node):
                 start_camera = True
                 with_align = True  # yaw / align_move for pick modes
                 with_cobra = False
-                # Tick meaning for OMS: enabled for Home OMS / WP — never launch with stack.
-                oms_enabled = True
+                # Vision-only commission: never mark OMS enabled (no lazy OMS start).
+                oms_enabled = False
                 module = 'commission'
             elif module in ('nav', 'navigation', 'localisation', 'localization'):
                 # Honor dashboard camera tick (streams off until lookup WP).
@@ -4078,11 +4073,11 @@ class StudioBridge(Node):
                     if 'with_cobra' in body else False)
                 oms_enabled = (
                     bool(body.get('with_oms'))
-                    if 'with_oms' in body else bool(start_camera))
+                    if 'with_oms' in body else False)
             if module == 'commission' or start_camera:
                 with_cobra = False
                 if module == 'commission':
-                    oms_enabled = True
+                    oms_enabled = False
                     with_align = True
             if 'start_detect_align' in body:
                 with_detect_align = bool(body.get('start_detect_align'))
@@ -4095,9 +4090,10 @@ class StudioBridge(Node):
                 with_cobra = False
             if start_camera and module == 'commission':
                 with_cobra = False
-                oms_enabled = True
+                oms_enabled = False
                 with_align = True
             # Never launch OMS inside Nav2/commission — Home OMS / WP lazy-starts it.
+            # Vision-only commission never calls ensure_oms.
             with_oms_launch = False
             stack = 'nav2'
             yaml_path = maps.map_yaml_path(name)
