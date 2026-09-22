@@ -1,29 +1,16 @@
-"""Teleop arena — HW (gamepad ON) + drive + simple pose + camera.
+"""Teleop arena — HW (gamepad ON) + drive + simple_pose + Orbbec camera.
 
-Easy usage (Pi):
-
-  # Wi‑Fi DDS so laptop joy + camera share the same domain
-  export ROS_LOCALHOST_ONLY=0
   export ROS_DOMAIN_ID=0
-
-  ros2 launch skill23_studio teleop_arena.launch.py robot:=mecanum
-  ros2 launch skill23_studio teleop_arena.launch.py robot:=xdrive
-  ros2 launch skill23_studio teleop_arena.launch.py robot:=grip
-  ros2 launch skill23_studio teleop_arena.launch.py robot:=allterrain
-
-Or the thin wrappers:
+  export ROS_LOCALHOST_ONLY=0
   ros2 launch skill23_studio teleop_mecanum.launch.py
-  ...
+  # or: teleop_xdrive / teleop_grip / teleop_allterrain
+  # or: teleop_arena.launch.py robot:=mecanum
 
-Laptop (separate terminals, same ROS_DOMAIN_ID):
-  ros2 run joy joy_node
-  # then skill23_vision teleop_capture (YOLO / AprilTag buttons)
-
-Topics:
-  /robot_pose         geometry_msgs/Pose2D   — x, y, yaw (starts 0,0,0)
-  /robot_pose_xyyaw   Float64MultiArray      — [x, y, yaw]
-  /camera/color/...   Orbbec color stream
-  /joy                from laptop joy_node → Pi gamepad → /cmd_vel
+Starts (in order):
+  1. control_server  — Titans + IMU + gamepad (/joy → /cmd_vel)
+  2. <robot>_node    — motors + /wheel/odom (encoders + IMU yaw)
+  3. simple_pose     — /robot_pose from odom, origin 0,0,0
+  4. Orbbec Gemini E — color stream ON (/camera/color/...)
 """
 
 from __future__ import annotations
@@ -49,9 +36,10 @@ from skill23_studio.orbbec_dabai import (
     prefer_workspace_orbbec,
     wake_orbbec_usb,
 )
+from skill23_studio.ros_dds import studio_dds_launch_actions
 
 
-# robot → (drive package, drive executable, drive_type for pose, strafe?)
+# robot → (package, executable, pose drive_type, has_strafe)
 ROBOTS = {
     'mecanum': ('mecanum', 'mecanum_node', 'mecanum', True),
     'xdrive': ('xdrive', 'xdrive_node', 'xdrive', True),
@@ -65,7 +53,6 @@ def _teleop_params(robot: str) -> str:
     path = os.path.join(share, 'config', 'hw_params', f'teleop_{robot}.yaml')
     if os.path.isfile(path):
         return path
-    # source-tree fallback
     path = os.path.expanduser(
         f'~/skill23_ws/src/skill23_studio/config/hw_params/teleop_{robot}.yaml')
     if os.path.isfile(path):
@@ -73,50 +60,77 @@ def _teleop_params(robot: str) -> str:
     raise RuntimeError(f'Missing teleop_{robot}.yaml')
 
 
+def _sudo_control_cmd(exec_path: str, hw_params: str) -> list:
+    """Root control_server with the SAME DDS env as non-root nodes.
+
+    Shared-memory DDS breaks between sudo and vmx; force UDPv4 so /joy from
+    the laptop reaches gamepad and /imu reaches the drive node.
+    """
+    return [
+        'sudo', '-E', 'env',
+        f'ROS_DOMAIN_ID={os.environ.get("ROS_DOMAIN_ID", "0")}',
+        f'RMW_IMPLEMENTATION={os.environ.get("RMW_IMPLEMENTATION", "rmw_fastrtps_cpp")}',
+        f'FASTDDS_BUILTIN_TRANSPORTS={os.environ.get("FASTDDS_BUILTIN_TRANSPORTS", "UDPv4")}',
+        # Always Wi‑Fi DDS for teleop (laptop joy_node + vision)
+        'ROS_LOCALHOST_ONLY=0',
+        f'PATH={os.environ.get("PATH", "")}',
+        f'AMENT_PREFIX_PATH={os.environ.get("AMENT_PREFIX_PATH", "")}',
+        f'LD_LIBRARY_PATH={os.environ.get("LD_LIBRARY_PATH", "")}',
+        exec_path,
+        '--ros-args',
+        '-r', '__node:=control_server',
+        '--params-file', hw_params,
+    ]
+
+
+def _camera_cli_args() -> list:
+    """Studio Orbbec args, but streams start immediately (color for capture).
+
+    Keep enable_color/depth true (driver creates topics/services the same way
+    Studio does). start_streams_on_init true so laptop sees frames without
+    a toggle call.
+    """
+    prefer_workspace_orbbec()
+    clear_orbbec_device_lock()
+    wake_orbbec_usb()
+    args = [
+        a for a in dabai_cli_args()
+        if not a.startswith('start_streams_on_init:=')
+        and not a.startswith('enable_color:=')
+        and not a.startswith('enable_depth:=')
+    ]
+    args += [
+        'enable_color:=true',
+        'enable_depth:=true',
+        'start_streams_on_init:=true',
+    ]
+    return args
+
+
 def _setup(context, *args, **kwargs):
     robot = LaunchConfiguration('robot').perform(context).strip().lower()
     if robot not in ROBOTS:
         raise RuntimeError(
-            f"Unknown robot '{robot}'. Use: " + ' | '.join(ROBOTS))
+            f"Unknown robot '{robot}'. Use: " + ' | '.join(sorted(ROBOTS)))
 
     pkg, exe, drive_type, strafe = ROBOTS[robot]
     hw_params = _teleop_params(robot)
+
     studica_prefix = get_package_prefix('studica_control')
     exec_path = os.path.join(
         studica_prefix, 'lib', 'studica_control', 'manual_composition')
     if not os.path.isfile(exec_path):
         raise RuntimeError(f'manual_composition not found: {exec_path}')
 
-    # Camera: color ON at start so laptop can grab frames on button press
-    prefer_workspace_orbbec()
-    clear_orbbec_device_lock()
-    wake_orbbec_usb()
-    cam_args = dabai_cli_args()
-    # Override idle defaults for continuous teleop capture
-    cam_args = [
-        a for a in cam_args
-        if not a.startswith('start_streams_on_init:=')
-        and not a.startswith('enable_depth:=')
-        and not a.startswith('enable_color:=')
-    ] + [
-        'enable_color:=true',
-        'enable_depth:=false',
-        'start_streams_on_init:=true',
-    ]
+    # Force Wi‑Fi discovery for this process tree (laptop joy + camera)
+    os.environ['ROS_LOCALHOST_ONLY'] = '0'
+    os.environ.setdefault('FASTDDS_BUILTIN_TRANSPORTS', 'UDPv4')
+    os.environ.setdefault('RMW_IMPLEMENTATION', 'rmw_fastrtps_cpp')
+
+    cam_args = _camera_cli_args()
 
     control = ExecuteProcess(
-        cmd=[
-            'sudo', '-E', 'env',
-            f'ROS_DOMAIN_ID={os.environ.get("ROS_DOMAIN_ID", "0")}',
-            f'RMW_IMPLEMENTATION={os.environ.get("RMW_IMPLEMENTATION", "rmw_fastrtps_cpp")}',
-            f'ROS_LOCALHOST_ONLY={os.environ.get("ROS_LOCALHOST_ONLY", "0")}',
-            f'AMENT_PREFIX_PATH={os.environ.get("AMENT_PREFIX_PATH", "")}',
-            f'LD_LIBRARY_PATH={os.environ.get("LD_LIBRARY_PATH", "")}',
-            exec_path,
-            '--ros-args',
-            '-r', '__node:=control_server',
-            '--params-file', hw_params,
-        ],
+        cmd=_sudo_control_cmd(exec_path, hw_params),
         output='screen',
     )
 
@@ -141,7 +155,7 @@ def _setup(context, *args, **kwargs):
         }],
     )
 
-    # Same pattern Studio uses — easy to read, reliable over Wi‑Fi DDS
+    # Same invocation Studio process_manager uses
     camera = ExecuteProcess(
         cmd=['ros2', 'launch', 'orbbec_camera', 'gemini_e.launch.py'] + cam_args,
         output='screen',
@@ -149,11 +163,12 @@ def _setup(context, *args, **kwargs):
 
     return [
         LogInfo(msg=(
-            f'[teleop] robot={robot} drive={pkg}/{exe} '
-            f'strafe={"yes" if strafe else "no"} '
-            f'params={hw_params}'
+            f'[teleop] robot={robot}  hw={hw_params}  '
+            f'drive={pkg}/{exe}  strafe={"yes" if strafe else "no"}  '
+            f'camera=gemini_e color+depth streams ON'
         )),
         control,
+        # Wait for Titans/IMU before drive + pose
         TimerAction(period=2.0, actions=[drive]),
         TimerAction(period=3.0, actions=[pose]),
         TimerAction(period=4.0, actions=[camera]),
@@ -161,10 +176,10 @@ def _setup(context, *args, **kwargs):
 
 
 def generate_launch_description():
-    # Force Wi‑Fi DDS so laptop joy_node + vision see Pi topics
     return LaunchDescription([
-        SetEnvironmentVariable(name='RMW_IMPLEMENTATION', value='rmw_fastrtps_cpp'),
-        SetEnvironmentVariable(name='FASTDDS_BUILTIN_TRANSPORTS', value='UDPv4'),
+        # Clear stale DDS shm + UDPv4 (root ↔ user ↔ laptop)
+        *studio_dds_launch_actions(),
+        # Override Studio's default localhost-only so laptop sees Pi
         SetEnvironmentVariable(name='ROS_LOCALHOST_ONLY', value='0'),
         DeclareLaunchArgument(
             'robot', default_value='mecanum',
