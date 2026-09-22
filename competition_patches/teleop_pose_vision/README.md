@@ -119,6 +119,55 @@ Do **not** run `joy_node` at the same time (both publish `/cmd_vel`).
 | T | AprilTag |
 | ESC / X | quit |
 
+### 10) If I run `joy_node` with sudo, will `teleop_capture` see `/joy`?
+
+**Often no** if teleop runs as a normal user. Fast DDS shared memory breaks
+across **root ↔ user**, so sudo `joy_node` and user `teleop_capture` may not
+discover each other.
+
+**Preferred (no sudo on laptop):**
+
+```bash
+export ROS_DOMAIN_ID=0
+export ROS_LOCALHOST_ONLY=0
+export FASTDDS_BUILTIN_TRANSPORTS=UDPv4
+source /opt/ros/humble/setup.bash
+ros2 run joy joy_node                    # NOT sudo
+# other terminal:
+python3 teleop_capture.py                # NOT sudo
+# or simply:
+./start_teleop_capture.sh
+```
+
+Correct ROS 2 command is `ros2 run joy joy_node` (not `ros run joy_node joy_node`).
+
+**If you insist on sudo for joy:** run **both** as root with the **same** env
+and force UDP:
+
+```bash
+export ROS_DOMAIN_ID=0
+export ROS_LOCALHOST_ONLY=0
+export FASTDDS_BUILTIN_TRANSPORTS=UDPv4
+source /opt/ros/humble/setup.bash
+
+sudo -E env PATH=$PATH PYTHONPATH=$PYTHONPATH LD_LIBRARY_PATH=$LD_LIBRARY_PATH \
+  FASTDDS_BUILTIN_TRANSPORTS=UDPv4 \
+  ROS_DOMAIN_ID=$ROS_DOMAIN_ID \
+  ROS_LOCALHOST_ONLY=0 \
+  ros2 run joy joy_node
+
+# other terminal — also sudo (same env):
+sudo -E env PATH=$PATH PYTHONPATH=$PYTHONPATH LD_LIBRARY_PATH=$LD_LIBRARY_PATH \
+  FASTDDS_BUILTIN_TRANSPORTS=UDPv4 \
+  ROS_DOMAIN_ID=$ROS_DOMAIN_ID \
+  ROS_LOCALHOST_ONLY=0 \
+  python3 teleop_capture.py
+```
+
+OpenCV windows / display can be worse under sudo. Prefer no sudo on the laptop.
+Pi `control_server` already gets UDPv4 from the teleop launch so it can see
+laptop `/joy` when joy runs as a normal user.
+
 ---
 
 ## What to copy where

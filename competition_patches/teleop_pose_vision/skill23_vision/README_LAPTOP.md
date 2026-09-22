@@ -15,6 +15,7 @@ run **only** when you press the capture button/key.
 ```bash
 export ROS_DOMAIN_ID=0
 export ROS_LOCALHOST_ONLY=0
+export FASTDDS_BUILTIN_TRANSPORTS=UDPv4
 ./start_teleop_capture.sh
 ```
 
@@ -33,6 +34,47 @@ YOLO_BTN=2 TAG_BTN=3 ./start_teleop_capture.sh
 # or:
 python3 teleop_capture.py --yolo-btn 2 --tag-btn 3
 ```
+
+### sudo joy_node vs teleop_capture (root ↔ user)
+
+**Preferred: do not sudo on the laptop.** Run both as the same user:
+
+```bash
+export ROS_DOMAIN_ID=0
+export ROS_LOCALHOST_ONLY=0
+export FASTDDS_BUILTIN_TRANSPORTS=UDPv4
+source /opt/ros/humble/setup.bash
+ros2 run joy joy_node          # NOT sudo  (ROS 2: ros2 run joy joy_node)
+python3 teleop_capture.py      # NOT sudo
+```
+
+If `joy_node` is **sudo** and `teleop_capture` is a **normal user**, Fast DDS
+shared memory often fails across root ↔ user → teleop never sees `/joy`.
+
+**If you insist on sudo for joy:** run **both** as root with the same env and
+force UDP:
+
+```bash
+export ROS_DOMAIN_ID=0
+export ROS_LOCALHOST_ONLY=0
+export FASTDDS_BUILTIN_TRANSPORTS=UDPv4
+source /opt/ros/humble/setup.bash
+
+sudo -E env PATH=$PATH PYTHONPATH=$PYTHONPATH LD_LIBRARY_PATH=$LD_LIBRARY_PATH \
+  FASTDDS_BUILTIN_TRANSPORTS=UDPv4 \
+  ROS_DOMAIN_ID=$ROS_DOMAIN_ID \
+  ROS_LOCALHOST_ONLY=0 \
+  ros2 run joy joy_node
+
+# other terminal — also sudo:
+sudo -E env PATH=$PATH PYTHONPATH=$PYTHONPATH LD_LIBRARY_PATH=$LD_LIBRARY_PATH \
+  FASTDDS_BUILTIN_TRANSPORTS=UDPv4 \
+  ROS_DOMAIN_ID=$ROS_DOMAIN_ID \
+  ROS_LOCALHOST_ONLY=0 \
+  python3 teleop_capture.py
+```
+
+OpenCV display can be worse under sudo. Prefer no sudo on the laptop.
 
 ## Keyboard backup (no gamepad)
 
