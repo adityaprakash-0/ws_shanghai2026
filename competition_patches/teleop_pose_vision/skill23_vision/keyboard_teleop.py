@@ -164,6 +164,8 @@ class KeyboardTeleop(Node):
             self._vx, self._vy, self._wz = 0.0, 0.0, -self._ang
         elif k in (ord('y'), ord('Y')):
             if not self._busy:
+                self.get_logger().info('[KEY] Y pressed — YOLO capturing…')
+                print('[KEY] Y pressed — YOLO capturing…', flush=True)
                 self._busy = True
                 try:
                     self._capture_yolo()
@@ -171,6 +173,8 @@ class KeyboardTeleop(Node):
                     self._busy = False
         elif k in (ord('t'), ord('T')):
             if not self._busy:
+                self.get_logger().info('[KEY] T pressed — AprilTag capturing…')
+                print('[KEY] T pressed — AprilTag capturing…', flush=True)
                 self._busy = True
                 try:
                     self._capture_apriltag()
