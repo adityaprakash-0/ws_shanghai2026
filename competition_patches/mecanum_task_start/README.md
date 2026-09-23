@@ -78,6 +78,30 @@ File: `mypackage/mypackage/task_manager_mecanum.py`
   with `params: "red"` (solid, no blink)
 - Also prints `MISSION COMPLETE` to the terminal
 
+### Change finish light to blinking red later
+
+In `_mission_complete()`, change:
+
+```python
+self._set_light('red')          # solid
+```
+
+to one of:
+
+```python
+self._set_light('red:blink')    # software blink at light_tower.default_blink_hz (1.0 in yaml)
+self._set_light('red:2.0')      # software blink at 2 Hz (any number)
+self._set_light('red:blink_hw') # hardware blink (continuous pin LOW)
+```
+
+`_set_light()` already passes the string straight to `/light_tower/set` as `params`.
+Light_tower `SetData` format: `"<color>"` = solid, `"<color>:blink"` / `"<color>:<hz>"` / `"<color>:blink_hw"`.
+
+Note: `follow_cmd_vel` pauses for `override_hold_sec` (2 s in yaml) after a SetData
+call, then may overwrite with stopped color again. For a lasting blink finish,
+either raise `override_hold_sec` or set `follow_cmd_vel: false` after the mission
+(or leave the blink as a short end flash).
+
 ## Wait time between sequence steps
 
 Same file, top constants:
