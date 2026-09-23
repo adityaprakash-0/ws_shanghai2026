@@ -14,6 +14,7 @@ Tune REFERENCES or match_threshold if lighting changes (see README).
 from __future__ import annotations
 
 import math
+import time
 from typing import Dict, Optional, Tuple
 
 import rclpy
@@ -44,13 +45,17 @@ class ColoreDetectNode(Node):
         self.declare_parameter('color_info_topic', '/colore0/color_info')
         self.declare_parameter('match_threshold', 0.08)
         self.declare_parameter('min_brightness', 0.02)  # reject near-black XYZ
+        # When watching, print live xy this often (Hz). 0 = off. Use while calibrating.
+        self.declare_parameter('log_xy_hz', 2.0)
 
         self._thresh = float(self.get_parameter('match_threshold').value)
         self._min_y = float(self.get_parameter('min_brightness').value)
+        self._log_xy_hz = float(self.get_parameter('log_xy_hz').value)
         info_topic = str(self.get_parameter('color_info_topic').value)
 
         self._watch: Optional[str] = None
         self._found_latched = False
+        self._last_xy_log = 0.0
 
         self._found_pub = self.create_publisher(Bool, '/colore_detect/found', 10)
         self._label_pub = self.create_publisher(String, '/colore_detect/label', 10)
@@ -63,7 +68,10 @@ class ColoreDetectNode(Node):
 
         self.get_logger().info(
             f'colore_detect ready  info={info_topic}  colors={list(ALLOWED)}  '
-            f'thresh={self._thresh}')
+            f'thresh={self._thresh}  log_xy_hz={self._log_xy_hz}')
+        print(
+            f'colore_detect ready — colors={list(ALLOWED)} thresh={self._thresh}',
+            flush=True)
 
     def _on_watch(self, msg: String) -> None:
         name = (msg.data or '').strip().lower()
@@ -71,13 +79,21 @@ class ColoreDetectNode(Node):
             self._watch = None
             self._found_latched = False
             self.get_logger().info('colore_detect WATCH off')
+            print('colore_detect WATCH off', flush=True)
             return
         if name not in REFERENCE_XY:
             self.get_logger().warn(f'unknown color "{name}" — allowed: {ALLOWED}')
+            print(f'unknown color "{name}" — allowed: {ALLOWED}', flush=True)
             return
         self._watch = name
         self._found_latched = False
-        self.get_logger().info(f'colore_detect WATCH → {name}')
+        ref = REFERENCE_XY[name]
+        self.get_logger().info(
+            f'colore_detect WATCH → {name}  ref_xy=({ref[0]:.3f},{ref[1]:.3f})  '
+            f'thresh={self._thresh}')
+        print(
+            f'colore_detect WATCH → {name}  ref=({ref[0]:.3f},{ref[1]:.3f})',
+            flush=True)
 
     def _on_info(self, msg) -> None:
         if self._watch is None or self._found_latched:
@@ -89,6 +105,18 @@ class ColoreDetectNode(Node):
         x, y = X / s, Y / s
         ref = REFERENCE_XY[self._watch]
         dist = math.hypot(x - ref[0], y - ref[1])
+
+        # Live calibration log (does not affect match speed)
+        if self._log_xy_hz > 0.0:
+            now = time.monotonic()
+            if now - self._last_xy_log >= 1.0 / self._log_xy_hz:
+                self._last_xy_log = now
+                line = (
+                    f'  xy=({x:.3f},{y:.3f})  dist_to_{self._watch}={dist:.3f}  '
+                    f'thresh={self._thresh}  RGB=({msg.r},{msg.g},{msg.b})')
+                self.get_logger().info(line)
+                print(line, flush=True)
+
         if dist > self._thresh:
             return
         self._found_latched = True
@@ -100,6 +128,9 @@ class ColoreDetectNode(Node):
         self._found_pub.publish(found)
         self.get_logger().info(
             f'COLOR FOUND {self._watch}  xy=({x:.3f},{y:.3f}) dist={dist:.3f}')
+        print(
+            f'>>> COLOR FOUND {self._watch}  xy=({x:.3f},{y:.3f}) dist={dist:.3f}',
+            flush=True)
 
 
 def main(args=None) -> None:

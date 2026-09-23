@@ -152,7 +152,7 @@ control_server:
         transport: "usb"
         can_id: 0
         serial_port: "/dev/ttyACM0"   # change if your Colore enumerates elsewhere
-        publish_rate_hz: 10
+        publish_rate_hz: 20              # higher = lower detect latency (~50 ms)
         publish_outputs: ["info"]     # /colore0/color_info (CIE XYZ + RGB)
         brightness: 50
         measmode: "off"

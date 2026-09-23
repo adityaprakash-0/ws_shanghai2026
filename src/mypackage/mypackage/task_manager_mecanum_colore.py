@@ -20,7 +20,7 @@ import sys
 from typing import List, Optional, Sequence, Tuple
 
 import rclpy
-from geometry_msgs.msg import Point
+from geometry_msgs.msg import Point, Twist
 from rclpy.node import Node
 from std_msgs.msg import Bool, Float32, String
 
@@ -73,6 +73,9 @@ class TaskManagerMecanumColore(Node):
         self.move_pub = self.create_publisher(Point, '/pid_move/goal', 10)
         self.turn_pub = self.create_publisher(Float32, '/pid_turn/goal', 10)
         self.cancel_pub = self.create_publisher(Bool, '/pid_move/cancel', 10)
+        # Direct emergency stop — published BEFORE / with cancel so motors halt
+        # without waiting an extra DDS hop through pid_move alone.
+        self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
         self.watch_pub = self.create_publisher(String, '/colore_detect/watch', 10)
 
         self.create_subscription(Bool, '/pid_move/done', self._on_move_done, 10)
@@ -119,6 +122,13 @@ class TaskManagerMecanumColore(Node):
         self.get_logger().info(
             f'Colore mission ready — colors={self._color_slots}  '
             f'steps={len(self.mission_plan)}. Press START (DIO 8) to begin.')
+        self.get_logger().info(
+            f'START polarity: invert_start={self._invert}  '
+            f'(HW unpressed=True / pressed=False → logical press = not raw)')
+        print(
+            f'Ready. START: HW True=unpressed False=pressed; '
+            f'invert={self._invert}. Press physical START when ready.',
+            flush=True)
 
     # ----- feedback -----
 
@@ -134,8 +144,13 @@ class TaskManagerMecanumColore(Node):
     # ----- start -----
 
     def _on_start_switch(self, msg: Bool) -> None:
+        # HW: unpressed → True, pressed → False. invert_start=True flips that
+        # so pressed_logical is True only when the button is physically down.
         raw = bool(msg.data)
         pressed = (not raw) if self._invert else raw
+        if pressed != self._prev_pressed:
+            self.get_logger().info(
+                f'start_switch: hw_raw={raw}  pressed_logical={pressed}')
         if pressed and not self._prev_pressed:
             if not self._started and not self._finished:
                 self.get_logger().info('>>> START PRESSED — beginning colore mission')
@@ -250,11 +265,27 @@ class TaskManagerMecanumColore(Node):
 
     # ----- color hit -----
 
+    def _emergency_stop(self) -> None:
+        """Halt motors immediately: zero /cmd_vel + cancel PID (no /done)."""
+        self.cmd_vel_pub.publish(Twist())  # zeros — stop mecanum now
+        c = Bool()
+        c.data = True
+        self.cancel_pub.publish(c)
+        print('>>> EMERGENCY STOP: /cmd_vel=0 + /pid_move/cancel', flush=True)
+        self.get_logger().info('EMERGENCY STOP: /cmd_vel=0 + /pid_move/cancel')
+
     def _on_color_found(self, msg: Bool) -> None:
         if not msg.data or not self._move_watching or self._handling_hit:
             return
         if not self._busy:
             return
+
+        # 1) STOP FIRST — before lights / prints / remaining math (min lag)
+        self._handling_hit = True
+        self._move_watching = False
+        self._busy = False
+        self._emergency_stop()
+
         traveled = self._traveled()
         remain = self._goal_dist - traveled
         self.get_logger().info(
@@ -262,24 +293,18 @@ class TaskManagerMecanumColore(Node):
             f'(goal {self._goal_dist:.3f} → remain {remain:.3f} m)')
         print(
             f'!!! COLOR FOUND "{self._active_color}" at {traveled:.3f} m — '
-            f'stopping, then finish remaining {remain:.3f} m',
+            f'stopped; will finish remaining {remain:.3f} m after buzzer+green',
             flush=True)
-
-        self._handling_hit = True
-        self._move_watching = False
-        self._busy = False
-
-        # Cancel active PID move (no /done published)
-        c = Bool()
-        c.data = True
-        self.cancel_pub.publish(c)
 
         self._pending_remain = remain
         self._pending_axis = self._goal_axis
         self._pending_heading = self._goal_heading
         self._set_watch_off()
+
+        # 2) Buzzer 3 s  (see _after_buzzer → green flash → remaining move)
         self._set_light('buzzer')
-        self.get_logger().info(f'Buzzer ON for {BUZZER_SEC}s')
+        self.get_logger().info(f'light_tower → buzzer  ({BUZZER_SEC}s)')
+        print(f'>>> BUZZER ON for {BUZZER_SEC}s', flush=True)
         if self._timer:
             self._timer.cancel()
         self._timer = self.create_timer(BUZZER_SEC, self._after_buzzer)
@@ -290,7 +315,8 @@ class TaskManagerMecanumColore(Node):
             self._timer = None
         self._set_light('off')
         self._set_light('green:2.0')  # flash green ~2 Hz
-        self.get_logger().info(f'Green flash for {GREEN_FLASH_SEC}s')
+        self.get_logger().info(f'light_tower → green:2.0  ({GREEN_FLASH_SEC}s)')
+        print(f'>>> GREEN FLASH for {GREEN_FLASH_SEC}s', flush=True)
         self._timer = self.create_timer(GREEN_FLASH_SEC, self._after_green)
 
     def _after_green(self) -> None:
@@ -298,6 +324,7 @@ class TaskManagerMecanumColore(Node):
             self._timer.cancel()
             self._timer = None
         self._set_light('off')
+        print('>>> GREEN FLASH done — resuming remaining distance', flush=True)
         remain = self._pending_remain
         axis = self._pending_axis
         heading = self._pending_heading
@@ -305,7 +332,7 @@ class TaskManagerMecanumColore(Node):
 
         if abs(remain) > REMAIN_TOL_M:
             self.get_logger().info(f'Continuing remaining {remain:.3f} m (no color watch)')
-            print(f'Continuing remaining {remain:.3f} m', flush=True)
+            print(f'>>> CONTINUING remaining {remain:.3f} m (color watch OFF)', flush=True)
             self._continuing_remain = True
             self._busy = True
             self._move_watching = False
@@ -319,6 +346,7 @@ class TaskManagerMecanumColore(Node):
             self.move_pub.publish(goal)
         else:
             self.get_logger().info('Remaining distance negligible — advance sequence')
+            print('>>> Remaining ~0 — next step', flush=True)
             self.current_step += 1
             self._schedule_next(BETWEEN_STEPS_SEC)
 

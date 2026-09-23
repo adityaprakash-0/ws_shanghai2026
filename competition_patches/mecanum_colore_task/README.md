@@ -4,78 +4,11 @@ Offline kit for a **mecanum-only** autonomous sequence that pauses on a named
 color (red / green / blue / orange / purple), buzzes, flashes green, then
 finishes the remaining distance.
 
-## Behavior (what you asked for)
+---
 
-1. Launch HW in terminal 1 (does **not** start the task manager).
-2. In terminal 2 run `task_manager_mecanum_colore` — it **asks a color name for
-   each `colore_on`** in the plan (1st, then 2nd, …), then waits.
-3. Press physical **START** (DIO 8) → sequence begins.
-4. Example plan: strafe 50 cm → colore on → move forward 200 cm → colore off →
-   strafe 70 cm → colore on → move 100 cm → colore off.
-5. While colore is **on** and the robot is moving, `colore_detect` watches for
-   the assigned color. On match:
-   - publish `/pid_move/cancel` (immediate stop; **no** `/pid_move/done`)
-   - buzzer **3 s** via `/light_tower/set`
-   - green flash **2 s** (`green:2.0`)
-   - turn watch **off**
-   - publish a new move for the **remaining** distance (e.g. found at 1.30 m of
-     2.00 m → continue 0.70 m), then continue the rest of the plan.
+## How to launch
 
-## Wiring (topics / services)
-
-```text
-                    ┌─────────────────────┐
-  DIO8 start_switch │  /start_switch/state│──► task_manager_mecanum_colore
-                    └─────────────────────┘         │
-                                                    │ /pid_move/goal  (Point)
-                                                    │ /pid_move/cancel (Bool)
-                                                    │ /pid_turn/goal   (Float32)
-                                                    ▼
-                                             pid_move / pid_turn
-                                                    │
-                                                    │ /cmd_vel
-                                                    ▼
-                                              mecanum_node
-                                                    │
-                         /robot_distance_x|y ◄──────┘
-                         /gyro_z
-
-  Colore USB ──► /colore0/color_info ──► colore_detect
-                       ▲                      │
-                       │   /colore_detect/watch (String color name, ""=off)
-                       │   /colore_detect/found (Bool) ──► task manager
-                       │
-  light_tower ◄── /light_tower/set  (buzzer | green:2.0 | red | off)
-```
-
-| Piece | Topic / service | Notes |
-|-------|-----------------|--------|
-| Start button | `/start_switch/state` | HW: unpressed=`True`, pressed=`False`; task mgr **inverts** |
-| Move goal | `/pid_move/goal` | `Point.x=dist_m`, `y=0 fwd / 1 strafe`, `z=heading` |
-| Move cancel | `/pid_move/cancel` | **New** in `pid_move.cpp` — stop without `/done` |
-| Move done | `/pid_move/done` | Normal completion only |
-| Turn | `/pid_turn/goal` / `/done` | Same as mecanum task |
-| Distance | `/robot_distance_x`, `/robot_distance_y` | Used to compute remaining after color hit |
-| Colore HW | `/colore0/color_info` | CIE XYZ + RGB (`ColoreColorMsg`) |
-| Watch | `/colore_detect/watch` | `std_msgs/String` color name; empty = off |
-| Found | `/colore_detect/found` | `std_msgs/Bool` latched once per watch |
-| Lights | `/light_tower/set` | `SetData` params: `buzzer`, `green:2.0`, `red`, `off` |
-
-**Gamepad is off** in params so PID owns `/cmd_vel`.  
-**No `light_status` node** (would fight light_tower).
-
-## Files to copy
-
-| This patch file | Destination on Pi |
-|---|---|
-| `mypackage/mypackage/colore_detect_node.py` | `src/mypackage/mypackage/colore_detect_node.py` **NEW** |
-| `mypackage/mypackage/task_manager_mecanum_colore.py` | `src/mypackage/mypackage/task_manager_mecanum_colore.py` **NEW** |
-| `mypackage/setup.py` | `src/mypackage/setup.py` (adds console_scripts) |
-| `mecanum/src/pid_move.cpp` | `src/mecanum/src/pid_move.cpp` (adds `/pid_move/cancel`) |
-| `studica_control/launch/mecanum_colore_task_m.py` | `src/studica_ws/src/studica_control/launch/…` **NEW** |
-| `studica_control/config/params_mecanum_colore_task.yaml` | `src/studica_ws/src/studica_control/config/…` **NEW** |
-
-## Build
+**Build once** (after copying these files onto the Pi):
 
 ```bash
 cd ~/skill23_ws
@@ -84,94 +17,194 @@ colcon build --packages-select mypackage studica_control mecanum
 source install/setup.bash
 ```
 
-Confirm executables:
-
-```bash
-ros2 pkg executables mypackage | grep -E 'colore|mecanum_colore'
-# colore_detect
-# task_manager_mecanum_colore
-```
-
-## Run
-
-**Terminal 1 — hardware + detect:**
+**Terminal 1 — HW + PID + colore_detect** (no task manager):
 
 ```bash
 export ROS_DOMAIN_ID=0
+source ~/skill23_ws/install/setup.bash
 ros2 launch studica_control mecanum_colore_task_m.py
 ```
 
-Wait until you see Colore / `colore_detect ready` and mecanum/PID up.
+Wait until you see Colore up and `colore_detect ready`.
 
-**Terminal 2 — mission (interactive):**
+**Terminal 2 — interactive mission node:**
 
 ```bash
 source ~/skill23_ws/install/setup.bash
 ros2 run mypackage task_manager_mecanum_colore
 ```
 
+1. It asks **Color name for colore_on #1**, then **#2**, … (one per `colore_on` in the plan).
+2. Type e.g. `red` then Enter. It saves the slots.
+3. Press the physical **START** button (DIO pin 8).
+4. Sequence runs; watch both terminals for logs.
+
+Optional params file override:
+
+```bash
+ros2 launch studica_control mecanum_colore_task_m.py \
+  params_file:=/full/path/to/params_mecanum_colore_task.yaml
+```
+
+---
+
+## START button polarity (inverted — yes)
+
+Hardware `/start_switch/state` (`std_msgs/Bool`):
+
+| Physical button | Topic value |
+|-----------------|-------------|
+| **Not pressed** | `True` |
+| **Pressed**     | `False` |
+
+Task manager has **`invert_start: True`** (default). Code:
+
+```python
+# task_manager_mecanum_colore.py — _on_start_switch
+raw = bool(msg.data)
+pressed = (not raw) if self._invert else raw   # invert_start=True → pressed when raw=False
+```
+
+So a physical press (`raw=False`) becomes `pressed_logical=True` and starts the mission.
 You will see:
 
 ```text
-=== Mecanum Colore Mission — assign colors ===
-Allowed: red, green, blue, orange, purple
-This mission has 2 colore_on segment(s).
-
-Color name for colore_on #1: red
-  → slot 1 = red
-Color name for colore_on #2: blue
-  → slot 2 = blue
-
-Colors saved. Press the physical START button when ready.
+start_switch: hw_raw=False  pressed_logical=True
+>>> START PRESSED — beginning colore mission
 ```
 
-Press **START**. Example log flow:
+---
+
+## Where it stops / buzzes / flashes green / finishes remaining
+
+All in `mypackage/mypackage/task_manager_mecanum_colore.py`:
+
+| Step | Function | What happens |
+|------|----------|----------------|
+| 1. Color found | `_on_color_found` | **Immediately** calls `_emergency_stop()` → publishes **`/cmd_vel` zero** + **`/pid_move/cancel`** (pid does **not** publish `/done`) |
+| 2. Buzzer | same → `_set_light('buzzer')` | service `/light_tower/set` params `"buzzer"` for **`BUZZER_SEC` (3.0)** |
+| 3. Green flash | `_after_buzzer` | `_set_light('green:2.0')` for **`GREEN_FLASH_SEC` (2.0)** |
+| 4. Remaining | `_after_green` | publishes new `/pid_move/goal` with `remain = goal − traveled` (color watch already off) |
+
+Terminal prints you should see on hit:
 
 ```text
->>> START PRESSED — beginning colore mission
-MOVE 0.5 m (strafe)
-COLORE ON — watching "red"
-MOVE 2.0 m (fwd/back) [watching red]
-!!! COLOR FOUND "red" at 1.300 m — stopping, then finish remaining 0.700 m
-Buzzer ON for 3s → Green flash for 2s → Continuing remaining 0.700 m
-COLORE OFF
-MOVE 0.7 m (strafe)
-COLORE ON — watching "blue"
-…
-========== MISSION COMPLETE ==========
+>>> COLOR FOUND red  xy=(…) dist=…          # from colore_detect
+>>> EMERGENCY STOP: /cmd_vel=0 + /pid_move/cancel
+!!! COLOR FOUND "red" at 1.300 m — stopped; will finish remaining 0.700 m …
+>>> BUZZER ON for 3.0s
+>>> GREEN FLASH for 2.0s
+>>> GREEN FLASH done — resuming remaining distance
+>>> CONTINUING remaining 0.700 m (color watch OFF)
 ```
 
-## Edit the sequence
+`pid_move` also logs `pid_move CANCELED — dist_x=…`.
 
-In `task_manager_mecanum_colore.py`, edit **`DEFAULT_MISSION_PLAN`** (one place —
-prompts count `colore_on` from the same list):
+### Immediate stop (low lag)
+
+On match the task manager **stops first**, then does lights:
+
+1. Zero `/cmd_vel` directly (mecanum stops without waiting only on cancel)
+2. `/pid_move/cancel` so PID loop goes inactive and will not keep driving
+3. Then buzzer / green / remaining
+
+Colore sample rate is **`publish_rate_hz: 20`** (~50 ms max sensor lag) in
+`params_mecanum_colore_task.yaml`. Detect + cancel is event-driven (no extra sleep).
+
+---
+
+## Calibrate colors — step by step
+
+Matching uses **CIE chromaticity** from XYZ:
+
+```text
+x = X / (X + Y + Z)
+y = Y / (X + Y + Z)
+```
+
+Distance to the reference must be ≤ `match_threshold` (default **0.08**).
+
+### Step 1 — Launch HW only
+
+```bash
+ros2 launch studica_control mecanum_colore_task_m.py
+```
+
+### Step 2 — Watch raw XYZ / RGB
+
+```bash
+ros2 topic echo /colore0/color_info
+```
+
+Hold the **real arena target** (the exact card/tape the robot will see) ~same
+distance/angle as on the course. Note several samples of `x`, `y`, `z` (and `r,g,b`).
+
+### Step 3 — Compute xy
+
+Example: X=0.42, Y=0.22, Z=0.08 → sum=0.72 →  
+`x=0.42/0.72=0.583`, `y=0.22/0.72=0.306` → that is your red reference.
+
+Or use live logs: with detect running, force a watch:
+
+```bash
+ros2 topic pub --once /colore_detect/watch std_msgs/msg/String "{data: 'red'}"
+```
+
+With `log_xy_hz: 2.0` (launch default) the detect terminal prints every ~0.5 s:
+
+```text
+  xy=(0.583,0.306)  dist_to_red=0.045  thresh=0.08  RGB=(…)
+```
+
+When `dist_to_<color>` stays **below** threshold on the target and **above** on
+non-targets, the reference/threshold are good.
+
+### Step 4 — Write reference into code
+
+Edit `colore_detect_node.py`:
 
 ```python
-DEFAULT_MISSION_PLAN = [
-    ('move', 0.50, 1.0, 0.0),   # dist_m, axis 0=fwd/1=strafe, heading_lock
-    ('colore_on',),             # prompts for color #1 before START
-    ('move', 2.00, 0.0, 0.0),   # watched while colore active
-    ('colore_off',),
-    ('move', 0.70, 1.0, 0.0),
-    ('colore_on',),             # prompts for color #2
-    ('move', 1.00, 0.0, 0.0),
-    ('colore_off',),
-    # ('turn', -90.0),
-]
+REFERENCE_XY = {
+    'red': (0.583, 0.306),      # your measured values
+    'green': (0.30, 0.60),
+    'blue': (0.15, 0.20),
+    'orange': (0.55, 0.41),
+    'purple': (0.28, 0.18),
+}
 ```
 
-Timings at top of the same file:
+Rebuild:
+
+```bash
+colcon build --packages-select mypackage && source install/setup.bash
+```
+
+### Step 5 — Tune threshold if needed
+
+| Problem | Fix |
+|---------|-----|
+| Misses the color / only matches when very close | **Raise** `match_threshold` (e.g. `0.10`–`0.12`) in launch |
+| False triggers on other colors / floor | **Lower** threshold (e.g. `0.05`) or re-calibrate xy |
+| Matches black / empty | Raise `min_brightness` (default `0.02`) |
+| Slow to notice color | Raise `colore0.publish_rate_hz` (already 20); check USB port |
+
+In launch file:
 
 ```python
-BUZZER_SEC = 3.0
-GREEN_FLASH_SEC = 2.0
-BETWEEN_STEPS_SEC = 1.0
+parameters=[{
+    'match_threshold': 0.08,   # try 0.05 .. 0.12
+    'min_brightness': 0.02,
+    'log_xy_hz': 2.0,          # 0 = quiet; 2 = calibration prints
+}],
 ```
 
-## Add a new color
+---
 
-1. Open `colore_detect_node.py`.
-2. Add an entry to **`REFERENCE_XY`** (CIE chromaticity xy under your arena light):
+## Add a new color — step by step
+
+1. Calibrate that color (steps above) → get `(x, y)`.
+2. Open `src/mypackage/mypackage/colore_detect_node.py`.
+3. Add one line to `REFERENCE_XY`:
 
 ```python
 REFERENCE_XY = {
@@ -180,65 +213,90 @@ REFERENCE_XY = {
     'blue': (0.15, 0.20),
     'orange': (0.55, 0.41),
     'purple': (0.28, 0.18),
-    'yellow': (0.45, 0.48),   # NEW — calibrate on floor
+    'yellow': (0.45, 0.48),   # NEW
 }
 ```
 
-`ALLOWED` is derived from those keys, so the terminal prompt accepts the new name
-automatically. Rebuild / reinstall `mypackage`.
+4. `ALLOWED` is built from those keys — the prompt accepts `yellow` automatically.
+5. Rebuild `mypackage`.
+6. Put `('colore_on',)` in `DEFAULT_MISSION_PLAN` and type `yellow` when asked.
 
-### How to calibrate xy
+No YAML change required (matching is in the Python node, not HW `match_references`).
 
-With HW + `colore_detect` running:
+---
 
-```bash
-ros2 topic echo /colore0/color_info
+## Tune stop / timings
+
+File: `task_manager_mecanum_colore.py` (top constants):
+
+```python
+START_SETTLE_SEC = 0.5    # after START before first step
+BETWEEN_STEPS_SEC = 1.0   # pause between finished steps
+BUZZER_SEC = 3.0          # light_tower buzzer after color hit
+GREEN_FLASH_SEC = 2.0     # green:2.0 blink duration
+REMAIN_TOL_M = 0.03       # skip remaining move if |remain| smaller
 ```
 
-Hold the target color in front of the sensor. Note XYZ →  
-`x = X/(X+Y+Z)`, `y = Y/(X+Y+Z)`. Put that pair in `REFERENCE_XY`.
+PID speed (how hard it brakes/rolls after cancel) is in `mecanum/src/pid_move.cpp`
+(`max_move_speed_`, etc.). Cancel itself publishes zero twist immediately.
 
-If matches are flaky, raise/lower `match_threshold` (launch param default `0.08`)
-or `min_brightness`.
+`light_tower.override_hold_sec: 6.0` in colore params so follow_cmd_vel does not
+steal the tower during buzzer+green.
 
-## Params notes
+---
 
-`params_mecanum_colore_task.yaml`:
+## Edit the sequence
 
-- `colore.enabled: true`, `publish_outputs: ["info"]`
-- `serial_port: "/dev/ttyACM0"` — change if needed (`ls /dev/ttyACM*`)
-- `light_tower.override_hold_sec: 6.0` so follow_cmd_vel does not steal the
-  tower during buzzer (3 s) + green flash (2 s)
-- `gamepad.enabled: false`
-- `dio.start_switch` pin **8**
+Same file, **`DEFAULT_MISSION_PLAN`** (prompts count `colore_on` from this list):
 
-Everyday teleop params (`params_mecanum.yaml`) are untouched.
+```python
+DEFAULT_MISSION_PLAN = [
+    ('move', 0.50, 1.0, 0.0),   # dist_m, axis 0=fwd / 1=strafe, heading_lock
+    ('colore_on',),
+    ('move', 2.00, 0.0, 0.0),
+    ('colore_off',),
+    ('move', 0.70, 1.0, 0.0),
+    ('colore_on',),
+    ('move', 1.00, 0.0, 0.0),
+    ('colore_off',),
+]
+```
 
-## Debug checklist
+---
+
+## Wiring summary
+
+| Piece | Topic / service | Notes |
+|-------|-----------------|--------|
+| Start | `/start_switch/state` | unpressed=`True`, pressed=`False`; **invert** in task mgr |
+| Move | `/pid_move/goal` | `x=dist`, `y=0/1`, `z=heading` |
+| Cancel | `/pid_move/cancel` + `/cmd_vel=0` | immediate stop, no `/done` |
+| Distance | `/robot_distance_x\|y` | remaining = goal − traveled |
+| Colore | `/colore0/color_info` | XYZ + RGB |
+| Watch / found | `/colore_detect/watch`, `/found` | String / Bool |
+| Lights | `/light_tower/set` | `buzzer`, `green:2.0`, `red`, `off` |
+
+---
+
+## Files to copy
+
+| This patch file | Destination on Pi |
+|---|---|
+| `mypackage/mypackage/colore_detect_node.py` | `src/mypackage/mypackage/` |
+| `mypackage/mypackage/task_manager_mecanum_colore.py` | `src/mypackage/mypackage/` |
+| `mypackage/setup.py` | `src/mypackage/setup.py` |
+| `mecanum/src/pid_move.cpp` | `src/mecanum/src/pid_move.cpp` |
+| `studica_control/launch/mecanum_colore_task_m.py` | `src/studica_ws/src/studica_control/launch/` |
+| `studica_control/config/params_mecanum_colore_task.yaml` | `src/studica_ws/src/studica_control/config/` |
+
+## Debug
 
 ```bash
-# Colore publishing?
 ros2 topic echo /colore0/color_info
-
-# Detect node watching?
-ros2 topic pub --once /colore_detect/watch std_msgs/msg/String "{data: 'red'}"
 ros2 topic echo /colore_detect/found
-
-# Cancel works?
-ros2 topic pub --once /pid_move/cancel std_msgs/msg/Bool "{data: true}"
-
-# Lights
+ros2 topic echo /start_switch/state   # True=up, False=pressed
+ros2 topic pub --once /colore_detect/watch std_msgs/msg/String "{data: 'red'}"
 ros2 service call /light_tower/set studica_control/srv/SetData "{params: 'buzzer'}"
 ros2 service call /light_tower/set studica_control/srv/SetData "{params: 'green:2.0'}"
-ros2 service call /light_tower/set studica_control/srv/SetData "{params: 'off'}"
-
-# Start switch polarity
-ros2 topic echo /start_switch/state
-# unpressed → true ; pressed → false
+ros2 topic pub --once /pid_move/cancel std_msgs/msg/Bool "{data: true}"
 ```
-
-## Relation to mecanum_task_start
-
-Plain PID sequence without color: use `competition_patches/mecanum_task_start`.  
-This patch adds Colore + mid-move interrupt + remaining distance. Do not run both
-task managers at once.

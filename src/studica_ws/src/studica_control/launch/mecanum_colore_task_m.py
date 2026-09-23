@@ -95,6 +95,7 @@ def generate_launch_description():
             'color_info_topic': '/colore0/color_info',
             'match_threshold': 0.08,
             'min_brightness': 0.02,
+            'log_xy_hz': 2.0,   # live xy print while watching (0=off)
         }],
     )
 
