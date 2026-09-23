@@ -6,18 +6,153 @@ finishes the remaining distance.
 
 ---
 
-## How to launch
+## Complete installation and run order
 
-**Build once** (after copying these files onto the Pi):
+Follow these steps in order. The examples assume:
+
+```text
+Competition patch: ~/Downloads/competition_patches/mecanum_colore_task
+ROS workspace:     ~/skill23_ws
+```
+
+Change the first path if you saved `competition_patches` elsewhere.
+
+### 1. Stop old ROS launches
+
+Press Ctrl+C in terminals running old robot launches. Do not run the old
+mecanum launch, calibration launch, and mission launch together.
+
+### 2. Copy every patch file to the workspace
+
+```bash
+cd ~/skill23_ws
+
+mkdir -p src/mypackage/mypackage
+mkdir -p src/mypackage/launch
+mkdir -p src/mecanum/src
+mkdir -p src/studica_ws/src/studica_control/config
+mkdir -p src/studica_ws/src/studica_control/launch
+
+cp ~/Downloads/competition_patches/mecanum_colore_task/mypackage/mypackage/colore_calibrate_node.py \
+   src/mypackage/mypackage/
+cp ~/Downloads/competition_patches/mecanum_colore_task/mypackage/mypackage/colore_detect_node.py \
+   src/mypackage/mypackage/
+cp ~/Downloads/competition_patches/mecanum_colore_task/mypackage/mypackage/task_manager_mecanum_colore.py \
+   src/mypackage/mypackage/
+cp ~/Downloads/competition_patches/mecanum_colore_task/mypackage/launch/colore_calibrate.launch.py \
+   src/mypackage/launch/
+cp ~/Downloads/competition_patches/mecanum_colore_task/mypackage/setup.py \
+   src/mypackage/setup.py
+
+cp ~/Downloads/competition_patches/mecanum_colore_task/mecanum/src/pid_move.cpp \
+   src/mecanum/src/pid_move.cpp
+
+cp ~/Downloads/competition_patches/mecanum_colore_task/studica_control/config/params_mecanum_colore_task.yaml \
+   src/studica_ws/src/studica_control/config/
+cp ~/Downloads/competition_patches/mecanum_colore_task/studica_control/launch/mecanum_colore_task_m.py \
+   src/studica_ws/src/studica_control/launch/
+```
+
+What was copied:
+
+| File | Purpose |
+|------|---------|
+| `colore_calibrate_node.py` | Takes 40 readings and prints the XY reference |
+| `colore_calibrate.launch.py` | Interactive calibration launch; starts Colore HW and calibration node |
+| `colore_detect_node.py` | Detects the saved color during the mission |
+| `task_manager_mecanum_colore.py` | Prompts colors, waits START, runs the mission and hit actions |
+| `setup.py` | Registers all three Python executables and installs launch files |
+| `pid_move.cpp` | Adds immediate `/pid_move/cancel` support |
+| `params_mecanum_colore_task.yaml` | HW params: Titan, IMU, DIO 8, light tower, Colore USB |
+| `mecanum_colore_task_m.py` | Launches mission hardware, PID nodes and `colore_detect` |
+
+### 3. Rebuild all changed packages
+
+The first build must include **all three** changed packages:
 
 ```bash
 cd ~/skill23_ws
 source /opt/ros/humble/setup.bash
-colcon build --packages-select mypackage studica_control mecanum
+colcon build --packages-select mypackage mecanum studica_control
 source install/setup.bash
 ```
 
-**Terminal 1 — HW + PID + colore_detect** (no task manager):
+Confirm the new Python nodes exist:
+
+```bash
+ros2 pkg executables mypackage | grep colore
+```
+
+Expected entries include:
+
+```text
+mypackage colore_calibrate
+mypackage colore_detect
+mypackage task_manager_mecanum_colore
+```
+
+### 4. Calibrate each physical color
+
+The calibration launch starts the control server itself. Do **not** start
+`mecanum_colore_task_m.py` while calibrating.
+
+```bash
+source ~/skill23_ws/install/setup.bash
+ros2 launch mypackage colore_calibrate.launch.py
+```
+
+The terminal asks:
+
+```text
+Enter the color name to calibrate: red
+Place the "red" target under the sensor at competition height.
+Press ENTER when the target is steady:
+```
+
+Keep the target still. The node takes 40 readings and prints:
+
+```text
+COPY THIS LINE into REFERENCE_XY:
+    'red': (0.5830, 0.3070),
+```
+
+Save that printed line. Press Ctrl+C after the result. Run the same calibration
+launch again for green, blue, orange, purple, or any new color. You can collect
+all references before editing the main detector.
+
+### 5. Put calibrated references into the detector
+
+Open:
+
+```text
+~/skill23_ws/src/mypackage/mypackage/colore_detect_node.py
+```
+
+Replace the example values inside `REFERENCE_XY` with the printed values:
+
+```python
+REFERENCE_XY = {
+    'red': (0.5830, 0.3070),
+    'green': (0.3012, 0.5841),
+    'blue': (0.1620, 0.1840),
+    'orange': (0.5310, 0.4020),
+    'purple': (0.2810, 0.1910),
+    'yellow': (0.4521, 0.4718),  # optional new color
+}
+```
+
+Do not create two entries with the same name; replace the old line.
+
+### 6. Rebuild only `mypackage` after changing references
+
+```bash
+cd ~/skill23_ws
+source /opt/ros/humble/setup.bash
+colcon build --packages-select mypackage
+source install/setup.bash
+```
+
+### 7. Start the actual mission hardware — Terminal 1
 
 ```bash
 export ROS_DOMAIN_ID=0
@@ -25,21 +160,65 @@ source ~/skill23_ws/install/setup.bash
 ros2 launch studica_control mecanum_colore_task_m.py
 ```
 
-Wait until you see Colore up and `colore_detect ready`.
+This launch uses:
 
-**Terminal 2 — interactive mission node:**
+```text
+~/skill23_ws/src/studica_ws/src/studica_control/config/params_mecanum_colore_task.yaml
+```
+
+It starts:
+
+1. `control_server` — Titan, IMU, DIO 8, light tower and Colore USB
+2. `mecanum_node`
+3. `pid_move`
+4. `pid_turn`
+5. `colore_detect`
+
+It deliberately does **not** start the task manager because the task manager
+must ask for colors in a separate interactive terminal.
+
+Wait until Terminal 1 shows `colore_detect ready`.
+
+### 8. Start the task manager — Terminal 2
 
 ```bash
+export ROS_DOMAIN_ID=0
 source ~/skill23_ws/install/setup.bash
 ros2 run mypackage task_manager_mecanum_colore
 ```
 
-1. It asks **Color name for colore_on #1**, then **#2**, … (one per `colore_on` in the plan).
-2. Type e.g. `red` then Enter. It saves the slots.
-3. Press the physical **START** button (DIO pin 8).
-4. Sequence runs; watch both terminals for logs.
+It asks one color for every `('colore_on',)` in `DEFAULT_MISSION_PLAN`:
 
-Optional params file override:
+```text
+Color name for colore_on #1: red
+Color name for colore_on #2: blue
+Colors saved. Press the physical START button when ready.
+```
+
+### 9. Press the physical START button
+
+The button is DIO pin 8:
+
+```text
+Not pressed → /start_switch/state = True
+Pressed     → /start_switch/state = False
+```
+
+The task manager inverts this value, so the mission starts when the physical
+button produces `False`.
+
+### 10. Observe the color-hit sequence
+
+When the selected color is found during a watched move:
+
+1. `/cmd_vel=0` and `/pid_move/cancel` stop the robot
+2. Buzzer runs for 3 seconds
+3. Green flashes for 2 seconds
+4. Color watching turns off
+5. Robot completes the remaining move distance
+6. Mission continues
+
+Optional mission params override:
 
 ```bash
 ros2 launch studica_control mecanum_colore_task_m.py \
