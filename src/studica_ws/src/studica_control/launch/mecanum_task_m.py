@@ -81,12 +81,8 @@ def generate_launch_description():
         output='screen',
     )
 
-    light_status_node = Node(
-        package='mecanum',
-        executable='light_status',
-        name='light_status',
-        output='screen',
-    )
+    # light_tower (in control_server) already does moving/stopped via follow_cmd_vel
+    # — do NOT also run mecanum light_status (would fight over /light_tower/set)
 
     task_manager_node = Node(
         package='mypackage',
@@ -107,6 +103,5 @@ def generate_launch_description():
         mecanum_node,
         pid_move_node,
         pid_turn_node,
-        light_status_node,
         task_manager_node,
     ])

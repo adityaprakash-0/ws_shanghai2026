@@ -8,8 +8,12 @@ Offline kit: copy onto Pi competition workspace, rebuild, run.
 2. Hardware polarity: unpressed=`True`, pressed=`False` on `/start_switch/state`
 3. Task manager **inverts** → pressed becomes logical `True` → mission starts
 4. Runs `mission_plan` (move / turn) via `/pid_move` and `/pid_turn`
-5. While driving, **light_status** sets tower green=moving / red=stopped from `/cmd_vel`
+5. While driving, **light_tower** (`follow_cmd_vel`) sets colors from `/cmd_vel`
+   (default: green=moving, red=stopped — tune in `params_mecanum_task.yaml`)
 6. When last step finishes → task manager sends **solid red** to `/light_tower/set` and prints `MISSION COMPLETE`
+
+**No `light_status` node** — that was a separate mecanum helper that also called
+`/light_tower/set` and would fight the light_tower component. Not launched.
 
 ## Files to copy
 
