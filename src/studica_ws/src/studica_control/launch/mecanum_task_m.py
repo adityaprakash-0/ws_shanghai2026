@@ -6,8 +6,8 @@ Starts:
   1. control_server (sudo) — Titan, IMU, light_tower, start_switch DIO 8
   2. mecanum_node
   3. pid_move + pid_turn
-  4. light_status (green=moving / red=stopped via /cmd_vel)
-  5. task_manager_mecanum — waits for START, then runs sequence
+  4. task_manager_mecanum — waits for START, then runs sequence
+     (moving/stopped lights: light_tower follow_cmd_vel; finish: solid red)
 
 Params: config/params_mecanum_task.yaml
   - dio.start_switch pin 8 (input)
