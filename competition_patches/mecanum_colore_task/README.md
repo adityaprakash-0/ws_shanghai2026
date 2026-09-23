@@ -91,6 +91,70 @@ mypackage colore_detect
 mypackage task_manager_mecanum_colore
 ```
 
+### 3A. Find the Colore USB serial port
+
+Connect the Colore sensor to USB, then run:
+
+```bash
+ls /dev/ttyACM*
+```
+
+Example result:
+
+```text
+/dev/ttyACM0
+```
+
+Put that exact path in:
+
+```text
+~/skill23_ws/src/studica_ws/src/studica_control/config/params_mecanum_colore_task.yaml
+```
+
+```yaml
+colore:
+  enabled: true
+  sensors: ["colore0"]
+  colore0:
+    transport: "usb"
+    serial_port: "/dev/ttyACM0"
+```
+
+If `ttyACM0` does not appear, check both common USB serial names:
+
+```bash
+ls /dev/ttyACM* /dev/ttyUSB* 2>/dev/null
+```
+
+To see exactly which device appears, first disconnect the sensor, run:
+
+```bash
+sudo dmesg -w
+```
+
+Then reconnect the sensor. Look for a message similar to:
+
+```text
+cdc_acm ... ttyACM0: USB ACM device
+```
+
+Press Ctrl+C to stop `dmesg`. For detailed information about the detected port:
+
+```bash
+udevadm info --query=property --name=/dev/ttyACM0
+```
+
+If ROS reports permission denied:
+
+```bash
+sudo usermod -aG dialout $USER
+```
+
+Log out and log back in after adding the group, then reconnect the sensor.
+
+The port number can change to `/dev/ttyACM1` if another serial device is
+connected. Always use the path reported on that robot.
+
 ### 4. Calibrate each physical color
 
 The calibration launch starts the control server itself. Do **not** start
