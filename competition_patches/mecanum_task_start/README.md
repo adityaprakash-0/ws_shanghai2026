@@ -68,6 +68,53 @@ self.mission_plan = [
 ]
 ```
 
+## Where solid red is sent at the end
+
+File: `mypackage/mypackage/task_manager_mecanum.py`
+
+- After the last step’s `/pid_*/done`, `_start_next_task()` sees
+  `current_step >= len(mission_plan)` and calls **`_mission_complete()`**
+- `_mission_complete()` → `_set_light('red')` → service **`/light_tower/set`**
+  with `params: "red"` (solid, no blink)
+- Also prints `MISSION COMPLETE` to the terminal
+
+## Wait time between sequence steps
+
+Same file, top constants:
+
+```python
+START_SETTLE_SEC = 0.5   # after START press, before first task
+BETWEEN_STEPS_SEC = 1.0  # after each move/turn DONE, before next task
+```
+
+Change `BETWEEN_STEPS_SEC` if you want a longer/shorter pause between steps.
+
+## Where to configure speeds
+
+Not in task_manager — in the **PID C++ nodes** (rebuild `mecanum` after edit):
+
+**Move** — `src/mecanum/src/pid_move.cpp` (constructor):
+
+```cpp
+min_move_speed_ = 0.13;
+max_move_speed_ = 0.20;
+// also Kp_dist_, Kd_dist_, dist_tolerance_, Kp_angle_, …
+```
+
+**Turn** — `src/mecanum/src/pid_turn.cpp` (constructor):
+
+```cpp
+min_speed_ = 0.13;
+max_speed_ = 0.20;
+// also Kp_, Kd_, tolerance_
+```
+
+Then:
+
+```bash
+colcon build --packages-select mecanum && source install/setup.bash
+```
+
 ## Wiring checklist
 
 | Item | Topic / config |

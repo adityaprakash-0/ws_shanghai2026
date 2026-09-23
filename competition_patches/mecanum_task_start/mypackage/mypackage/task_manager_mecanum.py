@@ -11,8 +11,8 @@ This node INVERTS that so:
 
 Sequence starts on rising edge of pressed_logical (button press).
 When the last step finishes → solid red on /light_tower/set and MISSION COMPLETE.
-Moving/stopped colors during the run come from mecanum light_status (or
-light_tower follow_cmd_vel) watching /cmd_vel.
+Moving/stopped colors during the run come from light_tower follow_cmd_vel
+watching /cmd_vel (in params_mecanum_task.yaml).
 """
 
 from __future__ import annotations
@@ -26,6 +26,11 @@ try:
     from studica_control.srv import SetData
 except ImportError:  # pragma: no cover
     SetData = None
+
+
+# ----- timings you can change -----
+START_SETTLE_SEC = 0.5   # delay after START press before first task
+BETWEEN_STEPS_SEC = 1.0  # wait after each move/turn done before next task
 
 
 class TaskManager(Node):
@@ -100,7 +105,7 @@ class TaskManager(Node):
                 # short settle then first task
                 if self._timer is not None:
                     self._timer.cancel()
-                self._timer = self.create_timer(0.5, self._start_next_task)
+                self._timer = self.create_timer(START_SETTLE_SEC, self._start_next_task)
             elif self._finished:
                 self.get_logger().info(
                     'START pressed but mission already finished — restart launch to run again')
@@ -117,11 +122,11 @@ class TaskManager(Node):
         self._busy = False
         self.get_logger().info(
             f'Action DONE (step {self.current_step + 1}/'
-            f'{len(self.mission_plan)}). Next in 1.0 s…')
+            f'{len(self.mission_plan)}). Next in {BETWEEN_STEPS_SEC} s…')
         self.current_step += 1
         if self._timer is not None:
             self._timer.cancel()
-        self._timer = self.create_timer(1.0, self._start_next_task)
+        self._timer = self.create_timer(BETWEEN_STEPS_SEC, self._start_next_task)
 
     def _start_next_task(self) -> None:
         if self._timer is not None:
