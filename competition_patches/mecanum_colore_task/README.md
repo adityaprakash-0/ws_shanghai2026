@@ -113,73 +113,103 @@ Colore sample rate is **`publish_rate_hz: 20`** (~50 ms max sensor lag) in
 
 ---
 
-## Calibrate colors — step by step
+## Automatic calibration — simplest method
 
-Matching uses **CIE chromaticity** from XYZ:
+The new calibration node does the XYZ → xy calculation and averaging for you.
+Do **not** run the normal mecanum launch at the same time.
+
+### Step 1 — Run one command
+
+```bash
+source ~/skill23_ws/install/setup.bash
+ros2 launch mypackage colore_calibrate.launch.py
+```
+
+This calibration launch uses:
 
 ```text
-x = X / (X + Y + Z)
-y = Y / (X + Y + Z)
+studica_control/config/params_mecanum_colore_task.yaml
 ```
 
-Distance to the reference must be ≤ `match_threshold` (default **0.08**).
+That params file enables Colore on `/dev/ttyACM0` and publishes
+`/colore0/color_info` at 20 Hz.
 
-### Step 1 — Launch HW only
+### Step 2 — Answer the prompts
 
-```bash
-ros2 launch studica_control mecanum_colore_task_m.py
-```
-
-### Step 2 — Watch raw XYZ / RGB
-
-```bash
-ros2 topic echo /colore0/color_info
-```
-
-Hold the **real arena target** (the exact card/tape the robot will see) ~same
-distance/angle as on the course. Note several samples of `x`, `y`, `z` (and `r,g,b`).
-
-### Step 3 — Compute xy
-
-Example: X=0.42, Y=0.22, Z=0.08 → sum=0.72 →  
-`x=0.42/0.72=0.583`, `y=0.22/0.72=0.306` → that is your red reference.
-
-Or use live logs: with detect running, force a watch:
-
-```bash
-ros2 topic pub --once /colore_detect/watch std_msgs/msg/String "{data: 'red'}"
-```
-
-With `log_xy_hz: 2.0` (launch default) the detect terminal prints every ~0.5 s:
+Example:
 
 ```text
-  xy=(0.583,0.306)  dist_to_red=0.045  thresh=0.08  RGB=(…)
+Enter the color name to calibrate (example: red or yellow): yellow
+
+Place the "yellow" target under the sensor at competition height.
+Keep the lighting the same as the arena.
+Press ENTER when the target is steady:
 ```
 
-When `dist_to_<color>` stays **below** threshold on the target and **above** on
-non-targets, the reference/threshold are good.
+Put the real color card/tape under the sensor, at the same height and lighting
+used during the competition. Keep it still, then press Enter.
 
-### Step 4 — Write reference into code
+### Step 3 — Wait for 40 readings
 
-Edit `colore_detect_node.py`:
+`colore_calibrate` reads 40 messages from `/colore0/color_info`, converts each
+XYZ reading to xy, then uses the median to reject an occasional bad sample.
+
+It prints:
+
+```text
+========== CALIBRATION COMPLETE ==========
+Color: yellow
+Reference xy (median): (0.4521, 0.4718)
+Reading spread: x=0.0031, y=0.0028 (smaller is better)
+
+COPY THIS LINE into REFERENCE_XY:
+    'yellow': (0.4521, 0.4718),
+```
+
+Copy the exact printed line.
+
+### Step 4 — Save the reference
+
+Open:
+
+```text
+src/mypackage/mypackage/colore_detect_node.py
+```
+
+Paste the line inside `REFERENCE_XY`:
 
 ```python
 REFERENCE_XY = {
-    'red': (0.583, 0.306),      # your measured values
+    'red': (0.64, 0.33),
     'green': (0.30, 0.60),
     'blue': (0.15, 0.20),
     'orange': (0.55, 0.41),
     'purple': (0.28, 0.18),
+    'yellow': (0.4521, 0.4718),  # printed by calibration
 }
 ```
 
-Rebuild:
+For an existing color such as red, replace its old line instead of adding a
+second red line.
+
+### Step 5 — Rebuild
 
 ```bash
-colcon build --packages-select mypackage && source install/setup.bash
+cd ~/skill23_ws
+colcon build --packages-select mypackage
+source install/setup.bash
 ```
 
-### Step 5 — Tune threshold if needed
+`ALLOWED` is generated automatically from `REFERENCE_XY`, so newly added colors
+immediately become valid choices in the task-manager prompt.
+
+### Step 6 — Repeat for every color
+
+Stop the calibration launch with Ctrl+C, run it again, enter the next color
+name, and copy the new line. Calibrate each color with the same sensor height
+and arena lighting.
+
+### Tune detection threshold if needed
 
 | Problem | Fix |
 |---------|-----|
@@ -200,28 +230,17 @@ parameters=[{
 
 ---
 
-## Add a new color — step by step
+## What the calibration code does
 
-1. Calibrate that color (steps above) → get `(x, y)`.
-2. Open `src/mypackage/mypackage/colore_detect_node.py`.
-3. Add one line to `REFERENCE_XY`:
+| File / node | Job |
+|-------------|-----|
+| `colore_calibrate.launch.py` | Asks color name and asks you to place it, starts the Colore HW using `params_mecanum_colore_task.yaml`, then starts the calibration node |
+| `colore_calibrate_node.py` / `colore_calibrate` | Takes 40 readings, converts XYZ to xy, finds median reference, prints the line to copy |
+| `colore_detect_node.py` / `colore_detect` | Used during the actual mission; compares live xy against saved `REFERENCE_XY` |
+| `task_manager_mecanum_colore.py` | Asks which saved color each `colore_on` should detect and runs the mission |
 
-```python
-REFERENCE_XY = {
-    'red': (0.64, 0.33),
-    'green': (0.30, 0.60),
-    'blue': (0.15, 0.20),
-    'orange': (0.55, 0.41),
-    'purple': (0.28, 0.18),
-    'yellow': (0.45, 0.48),   # NEW
-}
-```
-
-4. `ALLOWED` is built from those keys — the prompt accepts `yellow` automatically.
-5. Rebuild `mypackage`.
-6. Put `('colore_on',)` in `DEFAULT_MISSION_PLAN` and type `yellow` when asked.
-
-No YAML change required (matching is in the Python node, not HW `match_references`).
+No YAML color reference is required: saved references live in
+`colore_detect_node.py`.
 
 ---
 
@@ -282,8 +301,10 @@ DEFAULT_MISSION_PLAN = [
 
 | This patch file | Destination on Pi |
 |---|---|
+| `mypackage/mypackage/colore_calibrate_node.py` | `src/mypackage/mypackage/` |
 | `mypackage/mypackage/colore_detect_node.py` | `src/mypackage/mypackage/` |
 | `mypackage/mypackage/task_manager_mecanum_colore.py` | `src/mypackage/mypackage/` |
+| `mypackage/launch/colore_calibrate.launch.py` | `src/mypackage/launch/` |
 | `mypackage/setup.py` | `src/mypackage/setup.py` |
 | `mecanum/src/pid_move.cpp` | `src/mecanum/src/pid_move.cpp` |
 | `studica_control/launch/mecanum_colore_task_m.py` | `src/studica_ws/src/studica_control/launch/` |

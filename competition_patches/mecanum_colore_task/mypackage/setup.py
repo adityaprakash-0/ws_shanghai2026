@@ -31,6 +31,7 @@ setup(
             'task_manager_mecanum = mypackage.task_manager_mecanum:main',
             'task_manager_mecanum_colore = mypackage.task_manager_mecanum_colore:main',
             'colore_detect = mypackage.colore_detect_node:main',
+            'colore_calibrate = mypackage.colore_calibrate_node:main',
             'task_manager_xdrive = mypackage.task_manager_xdrive:main',
             'light_tower_play = mypackage.light_tower_play:main',
             'merged_scan_clearance = mypackage.merged_scan_clearance:main',
