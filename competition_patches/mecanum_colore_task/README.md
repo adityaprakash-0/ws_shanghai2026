@@ -292,6 +292,74 @@ Colore sample rate is **`publish_rate_hz: 20`** (~50 ms max sensor lag) in
 
 ---
 
+## Straight driving, strafing and reset settling
+
+Every move goal is:
+
+```python
+('move', distance_m, axis, heading_deg)
+# axis: 0.0 = forward/back; 1.0 = strafe
+```
+
+`pid_move` uses two controls at the same time:
+
+1. Encoder distance PID drives `linear.x` for forward/back or `linear.y` for
+   strafing.
+2. IMU heading PID continuously calculates `heading_deg - /gyro_z` and sends
+   correction on `angular.z`.
+
+Therefore this strafe holds the robot at zero relative yaw:
+
+```python
+('move', 0.50, 1.0, 0.0)
+```
+
+If one wheel slips and the robot **turns**, the IMU sees the heading error and
+the mecanum mixer applies opposite wheel correction to return toward 0 degrees.
+The correction is limited to `angular.z = ±0.2`.
+
+Important limitation: an IMU corrects **rotation**, not sideways translational
+slip. If the complete robot slides sideways without changing angle, wheel
+encoders cannot measure that floor slip. So heading stays straight, but no
+wheel-only system can guarantee perfect field position on a slippery surface.
+
+Before every move, `pid_move` now:
+
+1. Publishes zero `/cmd_vel`
+2. Requests IMU reset
+3. Requests reset of all four encoders
+4. Holds the robot stopped for **1000 ms**
+5. Clears PID error history
+6. Activates movement using fresh feedback
+
+The terminal prints:
+
+```text
+Resetting Hardware...
+IMU reset requested
+Encoder reset requested on m_0..m_3
+Holding stopped for 1000 ms reset settling time
+PID ACTIVE ...
+```
+
+`BETWEEN_STEPS_SEC = 1.0` in the task manager also gives one second between
+completed sequence steps. The PID's reset settling second starts after the next
+move goal, so movement never begins immediately on stale reset values.
+
+### Final light after all steps
+
+Yes. `_mission_complete()` sends:
+
+```python
+self._set_light('red')
+```
+
+That means **solid red**, not blinking red. Since the stopped color in
+`params_mecanum_colore_task.yaml` is also red, it remains solid red after the
+light-tower override expires.
+
+---
+
 ## Automatic calibration — simplest method
 
 The new calibration node does the XYZ → xy calculation and averaging for you.

@@ -88,6 +88,11 @@ private:
         std::string axis_str = (msg->y == 0.0) ? "X (Forward/Back)" : "Y (Strafing)";
         RCLCPP_INFO(this->get_logger(), "Move Goal: Dist=%.2f m, Axis=%s, Angle=%.2f deg. Resetting Hardware...", msg->x, axis_str.c_str(), msg->z);
 
+        // Hold the robot stopped while IMU/encoder resets settle. This also
+        // protects against a new goal arriving before the previous cmd_vel
+        // has been replaced.
+        geometry_msgs::msg::Twist stop_msg;
+        cmd_pub_->publish(stop_msg);
         target_dist_ = msg->x;
         move_mode_ = static_cast<int>(msg->y);
         target_angle_ = msg->z;
@@ -116,12 +121,14 @@ private:
             RCLCPP_WARN(this->get_logger(), "Titan Encoder Reset service unavailable!");
         }
 
-        // 3. Wait 500ms for hardware to drop to 0.0 before we start doing math
+        // 3. Wait a full second for asynchronous IMU/encoder resets and fresh
+        // zeroed feedback. PID publishes no motion during this settling time.
         if (delay_timer_) {
             delay_timer_->cancel();
             delay_timer_.reset();
         }
-        delay_timer_ = this->create_wall_timer(500ms, [this]() {
+        RCLCPP_INFO(this->get_logger(), "Holding stopped for 1000 ms reset settling time");
+        delay_timer_ = this->create_wall_timer(1000ms, [this]() {
             if (delay_timer_) {
                 delay_timer_->cancel();
                 delay_timer_.reset();
