@@ -256,6 +256,10 @@ It asks one color for every `('colore_on',)` in `DEFAULT_MISSION_PLAN`:
 ```text
 Color name for colore_on #1: red
 Color name for colore_on #2: blue
+Color name for colore_on #3: green
+Color name for colore_on #4: orange
+Color name for colore_on #5: purple
+Color name for colore_on #6: red
 Colors saved. Press the physical START button when ready.
 ```
 
@@ -577,20 +581,62 @@ steal the tower during buzzer+green.
 
 ## Edit the sequence
 
-Same file, **`DEFAULT_MISSION_PLAN`** (prompts count `colore_on` from this list):
+The template contains six watched color movements followed by a final strafe,
+90-degree turn, and forward move.
+
+First edit the named placeholder distances near the top of
+`task_manager_mecanum_colore.py`:
+
+```python
+STRAFE_1_M = 0.50       # replace
+COLOR_MOVE_1_M = 1.00   # replace
+STRAFE_2_M = 0.50
+COLOR_MOVE_2_M = 1.00
+# ... STRAFE_3_M through STRAFE_7_M
+# ... COLOR_MOVE_3_M through COLOR_MOVE_6_M
+FINAL_TURN_DEG = 90.0
+FINAL_FORWARD_M = 1.00
+```
+
+The mission template is:
 
 ```python
 DEFAULT_MISSION_PLAN = [
-    ('move', 0.50, 1.0, 0.0),   # dist_m, axis 0=fwd / 1=strafe, heading_lock
-    ('colore_on',),
-    ('move', 2.00, 0.0, 0.0),
-    ('colore_off',),
-    ('move', 0.70, 1.0, 0.0),
-    ('colore_on',),
-    ('move', 1.00, 0.0, 0.0),
-    ('colore_off',),
+    # Repeat six times:
+    # strafe → colore on → forward/backward → colore off
+    #
+    # Color movement directions:
+    # 1 forward, 2 backward, 3 forward,
+    # 4 backward, 5 forward, 6 backward
+    #
+    # Finally:
+    ('move', STRAFE_7_M, 1.0, 0.0),
+    ('turn', FINAL_TURN_DEG),
+    ('move', FINAL_FORWARD_M, 0.0, 0.0),
 ]
 ```
+
+The complete expanded sequence is in the Python file. It has six
+`('colore_on',)` entries, so the terminal asks for six color names.
+
+### Direction templates
+
+```python
+# Forward
+('move', +DISTANCE_M, 0.0, 0.0)
+
+# Backward
+('move', -DISTANCE_M, 0.0, 0.0)
+
+# Strafe left (positive ROS linear.y)
+('move', +DISTANCE_M, 1.0, 0.0)
+
+# Strafe right (negative ROS linear.y)
+('move', -DISTANCE_M, 1.0, 0.0)
+```
+
+If physical left/right is reversed because of motor wiring, swap the signs for
+the strafe distances. Forward/backward signs remain positive/negative.
 
 ---
 

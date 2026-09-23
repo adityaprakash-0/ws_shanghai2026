@@ -38,16 +38,65 @@ BUZZER_SEC = 3.0
 GREEN_FLASH_SEC = 2.0
 REMAIN_TOL_M = 0.03
 
-# Edit this plan — each ('colore_on',) gets one prompted color name (in order).
+# ----- PLACEHOLDER DISTANCES: replace these with measured competition values -----
+STRAFE_1_M = 0.50
+COLOR_MOVE_1_M = 1.00
+STRAFE_2_M = 0.50
+COLOR_MOVE_2_M = 1.00
+STRAFE_3_M = 0.50
+COLOR_MOVE_3_M = 1.00
+STRAFE_4_M = 0.50
+COLOR_MOVE_4_M = 1.00
+STRAFE_5_M = 0.50
+COLOR_MOVE_5_M = 1.00
+STRAFE_6_M = 0.50
+COLOR_MOVE_6_M = 1.00
+STRAFE_7_M = 0.50
+FINAL_TURN_DEG = 90.0
+FINAL_FORWARD_M = 1.00
+
+# Direction templates (ROS mecanum convention):
+#   FORWARD:       ('move', +DISTANCE_M, 0.0, 0.0)
+#   BACKWARD:      ('move', -DISTANCE_M, 0.0, 0.0)
+#   STRAFE LEFT:   ('move', +DISTANCE_M, 1.0, 0.0)
+#   STRAFE RIGHT:  ('move', -DISTANCE_M, 1.0, 0.0)
+# If your physical motor wiring makes left/right opposite, swap the strafe signs.
+#
+# Each ('colore_on',) gets one prompted color name, in order.
 DEFAULT_MISSION_PLAN: List[Tuple] = [
-    ('move', 0.50, 1.0, 0.0),   # strafe 50 cm
+    ('move', STRAFE_1_M, 1.0, 0.0),       # 1: strafe
     ('colore_on',),
-    ('move', 2.00, 0.0, 0.0),   # forward 200 cm (watch color)
+    ('move', COLOR_MOVE_1_M, 0.0, 0.0),   # forward, watch color #1
     ('colore_off',),
-    ('move', 0.70, 1.0, 0.0),   # strafe 70 cm
+
+    ('move', STRAFE_2_M, 1.0, 0.0),       # 2: strafe
     ('colore_on',),
-    ('move', 1.00, 0.0, 0.0),   # forward 100 cm (watch next color)
+    ('move', -COLOR_MOVE_2_M, 0.0, 0.0),  # backward, watch color #2
     ('colore_off',),
+
+    ('move', STRAFE_3_M, 1.0, 0.0),       # 3: strafe
+    ('colore_on',),
+    ('move', COLOR_MOVE_3_M, 0.0, 0.0),   # forward, watch color #3
+    ('colore_off',),
+
+    ('move', STRAFE_4_M, 1.0, 0.0),       # 4: strafe
+    ('colore_on',),
+    ('move', -COLOR_MOVE_4_M, 0.0, 0.0),  # backward, watch color #4
+    ('colore_off',),
+
+    ('move', STRAFE_5_M, 1.0, 0.0),       # 5: strafe
+    ('colore_on',),
+    ('move', COLOR_MOVE_5_M, 0.0, 0.0),   # forward, watch color #5
+    ('colore_off',),
+
+    ('move', STRAFE_6_M, 1.0, 0.0),       # 6: strafe
+    ('colore_on',),
+    ('move', -COLOR_MOVE_6_M, 0.0, 0.0),  # backward, watch color #6
+    ('colore_off',),
+
+    ('move', STRAFE_7_M, 1.0, 0.0),       # final strafe
+    ('turn', FINAL_TURN_DEG),              # rotate +90 degrees
+    ('move', FINAL_FORWARD_M, 0.0, 0.0),   # final forward
 ]
 
 
