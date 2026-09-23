@@ -34,6 +34,9 @@ public:
         sub_goal_ = this->create_subscription<geometry_msgs::msg::Point>(
             "/pid_move/goal", 10, std::bind(&PidMove::goal_callback, this, std::placeholders::_1));
 
+        sub_cancel_ = this->create_subscription<std_msgs::msg::Bool>(
+            "/pid_move/cancel", 10, std::bind(&PidMove::cancel_callback, this, std::placeholders::_1));
+
         cmd_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 10);
         done_pub_ = this->create_publisher<std_msgs::msg::Bool>("/pid_move/done", 10);
 
@@ -60,6 +63,7 @@ private:
 
     rclcpp::Subscription<std_msgs::msg::Float32>::SharedPtr sub_dist_x_, sub_dist_y_, sub_gyro_;
     rclcpp::Subscription<geometry_msgs::msg::Point>::SharedPtr sub_goal_;
+    rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr sub_cancel_;
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_pub_;
     rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr done_pub_;
     
@@ -132,6 +136,27 @@ private:
                 "PID ACTIVE — target=%.2f m  dist_x=%.3f  dist_y=%.3f  gyro_z=%.1f",
                 target_dist_, current_dist_x_, current_dist_y_, current_angle_);
         });
+    }
+
+    void cancel_callback(const std_msgs::msg::Bool::SharedPtr msg) {
+        if (!msg->data) {
+            return;
+        }
+        if (delay_timer_) {
+            delay_timer_->cancel();
+            delay_timer_.reset();
+        }
+        if (!active_) {
+            RCLCPP_INFO(this->get_logger(), "pid_move cancel ignored (not active)");
+            return;
+        }
+        RCLCPP_INFO(this->get_logger(),
+                    "pid_move CANCELED — dist_x=%.3f dist_y=%.3f target=%.3f",
+                    current_dist_x_, current_dist_y_, target_dist_);
+        geometry_msgs::msg::Twist stop_msg;
+        cmd_pub_->publish(stop_msg);
+        active_ = false;
+        // Do NOT publish /pid_move/done — caller handles remaining distance.
     }
 
     void control_loop() {
