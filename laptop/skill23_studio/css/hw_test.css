@@ -31,7 +31,7 @@
 .hw-card h3 {
   margin: 0;
   font-size: 0.85rem;
-  font-family: Outfit, sans-serif;
+  font-family: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 .hw-check {
   display: flex;
@@ -80,7 +80,7 @@
   font-size: 0.9rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  font-family: Outfit, sans-serif;
+  font-family: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 .hw-group-head span {
   font-size: 0.7rem;
@@ -117,7 +117,7 @@
 .hw-cell .val {
   font-size: 1.15rem;
   font-weight: 700;
-  font-family: Outfit, sans-serif;
+  font-family: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   color: #0b3d2e;
   line-height: 1.15;
   word-break: break-all;

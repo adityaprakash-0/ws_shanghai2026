@@ -295,7 +295,7 @@
         ctx.strokeStyle = a.c; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke();
         ctx.fillStyle = a.c;
-        ctx.font = `${Math.round(11 * (canvas.width / 700))}px Outfit, sans-serif`;
+        ctx.font = `${Math.round(11 * (canvas.width / 700))}px system-ui, sans-serif`;
         ctx.fillText(a.t, q.x + 6, q.y - 4);
       });
     }
@@ -305,11 +305,11 @@
       const j = fkRes.joints;
       const lim = model.limits;
       const fs = Math.round(11 * (canvas.width / 700));
-      ctx.font = `bold ${fs}px Outfit, sans-serif`;
+      ctx.font = `bold ${fs}px system-ui, sans-serif`;
       ctx.fillStyle = 'rgba(0,0,128,0.82)';
       const yawTxt = `yaw ${j.rotation_deg >= 0 ? '+' : ''}${j.rotation_deg.toFixed(1)}°`;
       ctx.fillText(yawTxt, 14, 20);
-      ctx.font = `${fs}px Outfit, sans-serif`;
+      ctx.font = `${fs}px system-ui, sans-serif`;
       ctx.fillText(
         `lift ${j.lift_mm.toFixed(0)} mm  Z=${fkRes.lift_physical_z_mm.toFixed(0)}  lin ${j.linear_mm.toFixed(0)} mm`,
         14, 20 + fs + 4);

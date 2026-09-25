@@ -8,8 +8,9 @@
   --muted: #5a6a7a;
   --panel: rgba(255, 255, 255, 0.82);
   --danger: #c62828;
-  --font: "Outfit", "Sora", system-ui, sans-serif;
-  --display: "Sora", "Outfit", system-ui, sans-serif;
+  /* Local/system fonts only — no network font fetch for offline venues */
+  --font: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --display: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
