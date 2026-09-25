@@ -1,0 +1,184 @@
+control_server:
+  ros__parameters:
+
+    # -------------------------------------------------------------------------
+    # Titan — CAN bus motor controller (up to 4 motors per unit)
+    # -------------------------------------------------------------------------
+    titan:
+      enabled: true
+      sensors: ["titan0"]
+      titan0:
+        can_id: 42
+        motor_freq: 15600
+        encoder_rate_hz: 20
+        motor_update_rate_hz: 50
+        limit_switches: false
+        enable_freshness: true
+        m_0:
+          encoder_mode: "quadrature"
+          dist_per_tick: 1.0
+          invert_motor: true
+          invert_encoder: true
+          invert_rpm: false
+        m_1:
+          encoder_mode: "quadrature"
+          dist_per_tick: 1.0
+          invert_motor: true
+          invert_encoder: true
+          invert_rpm: false
+        m_2:
+          encoder_mode: "quadrature"
+          dist_per_tick: 1.0
+          invert_motor: false
+          invert_encoder: false
+          invert_rpm: false
+        m_3:
+          encoder_mode: "quadrature"
+          dist_per_tick: 1.0
+          invert_motor: false
+          invert_encoder: false
+          invert_rpm: false
+
+    # -------------------------------------------------------------------------
+    # IMU — onboard 9-axis IMU
+    # -------------------------------------------------------------------------
+    imu:
+      enabled: true
+      name: "imu"
+      topic: "imu"
+      frame_id: "imu_link"
+
+    # -------------------------------------------------------------------------
+    # Encoder — quadrature encoder via two digital input channels
+    # -------------------------------------------------------------------------
+    encoder:
+      enabled: false
+      sensors: ["external_encoder"]
+      external_encoder:
+        port_a: 0
+        port_b: 1
+        topic: "external_encoder"
+
+    # -------------------------------------------------------------------------
+    # Duty Cycle Encoder — absolute encoder via PWM duty cycle
+    # -------------------------------------------------------------------------
+    duty_cycle:
+      enabled: false
+      sensors: ["absolute_encoder"]
+      absolute_encoder:
+        port: 8
+        topic: "duty_cycle_encoder"
+
+    # -------------------------------------------------------------------------
+    # Servo — standard, continuous, or linear servo
+    # -------------------------------------------------------------------------
+    servo:
+      enabled: false
+      sensors: ["arm_servo"]
+      arm_servo:
+        port: 14
+        type: "standard" # "standard", "continuous", or "linear"
+
+    # -------------------------------------------------------------------------
+    # Ultrasonic — HC-SR04-style sonar range sensor
+    # -------------------------------------------------------------------------
+    ultrasonic:
+      enabled: false
+      sensors: ["front_sonar"]
+      front_sonar:
+        ping: 8
+        echo: 9
+        frame_id: "front_sonar_link"
+
+    # -------------------------------------------------------------------------
+    # Sharp — GP2Y-series infrared range sensor
+    # -------------------------------------------------------------------------
+    sharp:
+      enabled: false
+      sensors: ["wall_sensor"]
+      wall_sensor:
+        port: 22
+        frame_id: "sharp_link"
+
+    # -------------------------------------------------------------------------
+    # DIO — digital input or output pin
+    # -------------------------------------------------------------------------
+    dio:
+      enabled: true
+      sensors: ["start_switch"]
+      start_switch:
+        pin: 8
+        type: "input"
+        interrupt_edge: "falling"
+        debounce_ms: 50
+
+    # -------------------------------------------------------------------------
+    # Cobra — 4-channel reflectance sensor array (I2C)
+    # -------------------------------------------------------------------------
+    cobra:
+      enabled: false
+      sensors: ["line_follower"]
+      line_follower:
+        vref: 5.0
+
+    # -------------------------------------------------------------------------
+    # Light Tower — 5-output indicator LED tower (VMX FlexDIO 0–4)
+    # continuous=0, red=1, green=2, yellow=3, buzzer=4
+    # -------------------------------------------------------------------------
+    light_tower:
+      enabled: true
+      name: "light_tower"
+      pin_continuous: 0
+      pin_red: 1
+      pin_green: 2
+      pin_yellow: 3
+      pin_buzzer: 4
+      default_blink_hz: 1.0
+
+    # -------------------------------------------------------------------------
+    # Colore — Studica color sensor (CAN or USB)
+    # -------------------------------------------------------------------------
+    colore:
+      enabled: false
+      sensors: ["colore0"]
+      colore0:
+        transport: "usb"
+        can_id: 0
+        serial_port: "/dev/ttyACM0"
+        publish_rate_hz: 10
+        publish_outputs: ["info"]
+        brightness: 50
+        measmode: "off"
+        measmode_z_mm: -1.0
+        # omit match_references (Humble crashes on YAML [])
+        match_threshold: 0.05
+
+    # -------------------------------------------------------------------------
+    # Parsec — Studica multi-zone ToF (CAN or USB)
+    # -------------------------------------------------------------------------
+    parsec:
+      enabled: false
+      sensors: ["parsec0"]
+      parsec0:
+        transport: "usb"
+        can_id: 0
+        serial_port: "/dev/ttyACM0"
+        frame_id: "parsec0"
+        publish_rate_hz: 15
+        publish_outputs: ["grid"]
+
+    # -------------------------------------------------------------------------
+    # Gamepad — disabled during autonomous Nav2 (fights /cmd_vel with Nav2)
+    # -------------------------------------------------------------------------
+    gamepad:
+      enabled: false  # off during PID sequence (fights /cmd_vel)
+      axis_linear_x: 1
+      axis_linear_y: -1
+      axis_angular_z: 2
+      button_turbo: 5
+      linear_scale: 0.3
+      angular_scale: 0.2 
+      deadzone: 0.05
+      turbo_multiplier: 2.0
+      publish_rate: 50
+      cmd_vel_topic: "cmd_vel"

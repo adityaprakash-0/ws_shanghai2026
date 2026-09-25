@@ -1,0 +1,7 @@
+# Optional laptop deps for teleop_capture.py
+opencv-python
+numpy
+# YOLO (optional — install if you use YOLO button)
+# ultralytics
+# AprilTag (optional — OpenCV AprilTag dict works without this)
+# pupil_apriltags
