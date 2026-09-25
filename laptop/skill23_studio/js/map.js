@@ -716,7 +716,7 @@ const StudioMap = (() => {
     const pad = 10 * dpr;
     const fontPx = 11 * dpr;
     ctx.save();
-    ctx.font = `${fontPx}px system-ui, sans-serif`;
+    ctx.font = `${fontPx}px Outfit, sans-serif`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'bottom';
     const label = `cell ${res.toFixed(3)} m · major ${formatLen(majorCells * res)}`;
@@ -759,7 +759,7 @@ const StudioMap = (() => {
     const cells = mapData ? dist / mapData.resolution : 0;
     const text = `${formatLen(dist)}  (${cells.toFixed(1)} cells)`;
     const fontPx = 12 * dpr;
-    ctx.font = `bold ${fontPx}px system-ui, sans-serif`;
+    ctx.font = `bold ${fontPx}px Outfit, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const tw = ctx.measureText(text).width;
@@ -816,7 +816,7 @@ const StudioMap = (() => {
     ctx.fillStyle = '#FF9933';
     ctx.fill();
     ctx.fillStyle = '#000080';
-    ctx.font = `bold ${11 * (window.devicePixelRatio || 1)}px system-ui, sans-serif`;
+    ctx.font = `bold ${11 * (window.devicePixelRatio || 1)}px Outfit, sans-serif`;
     ctx.textAlign = 'center';
     ctx.fillText('0°', 0, size * 0.85);
     ctx.restore();
@@ -949,12 +949,12 @@ const StudioMap = (() => {
       ctx.arc(sc.x, sc.y, wp.sticker ? 10 : 7, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = '#fff';
-      ctx.font = wp.sticker ? 'bold 10px system-ui, sans-serif' : '11px system-ui, sans-serif';
+      ctx.font = wp.sticker ? 'bold 10px Outfit, sans-serif' : '11px Outfit, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(mapLabel || String(i + 1), sc.x, sc.y);
       if (wp.sticker) {
-        ctx.font = '9px system-ui, sans-serif';
+        ctx.font = '9px Outfit, sans-serif';
         ctx.fillStyle = '#000080';
         ctx.fillText(String(i + 1), sc.x, sc.y + 16);
       }
@@ -968,7 +968,7 @@ const StudioMap = (() => {
       ctx.stroke();
       // Angle label (degrees) next to the arrow tip
       const label = `${deg}°`;
-      ctx.font = 'bold 11px system-ui, sans-serif';
+      ctx.font = 'bold 11px Outfit, sans-serif';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'bottom';
       const lx = tip.x + 6;
@@ -992,7 +992,7 @@ const StudioMap = (() => {
       ctx.moveTo(sc.x, sc.y);
       ctx.lineTo(tip.x, tip.y);
       ctx.stroke();
-      ctx.font = 'bold 11px system-ui, sans-serif';
+      ctx.font = 'bold 11px Outfit, sans-serif';
       ctx.fillStyle = '#000080';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'bottom';
@@ -1028,7 +1028,7 @@ const StudioMap = (() => {
       ctx.lineWidth = 2;
       ctx.stroke();
       ctx.fillStyle = '#fff';
-      ctx.font = 'bold 11px system-ui, sans-serif';
+      ctx.font = 'bold 11px Outfit, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(i === 0 ? 'A' : 'B', sc.x, sc.y);
